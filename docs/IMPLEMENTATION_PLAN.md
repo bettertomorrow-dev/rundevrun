@@ -1,6 +1,6 @@
 # План реализации rundevrun
 
-Основа: [PRD 0.4](PRD.md). Статус: этапы 0–2 реализованы и приняты на Linux; этап 3 в работе. Реальная macOS-проверка остаётся открытой.
+Основа: [PRD 0.4](PRD.md). Статус: этапы 0–4 реализованы и приняты на Linux, A1 закрыта; этап 5 в работе. Реальная macOS-проверка остаётся открытой.
 
 Цель первой версии: заменить текущий launcher MillDrum универсальным CLI для агента и подтвердить работу на втором проекте. Промежуточные этапы пригодны для проверки, но не считаются готовым релизом.
 
@@ -221,16 +221,16 @@ Sol исправляет мелкие замечания сам. Существ�
 Sol обновляет этот раздел после интеграции этапа. Допустимые состояния: pending, in_progress, blocked, done. Для blocked обязательно указать условие разблокировки, для done указать проверенную ревизию и доказательство приёмки.
 
 ```text
-Текущие этапы: 4 и 5
+Текущий этап: 5
 Статус: in_progress
-Активные задания: Terra 4B1 pure switch planner; отдельный Terra 5C detached proxy/control/reload. Hooks 4A и CLI adapter приняты; routing 5A и handler 5B приняты как подэтапы. Luna сейчас idle, третьего builder нет.
-Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa; 2 done на 301afb9 по Linux-проверкам; 3 done на 12a245756c086a6247c54b529221386d06ac5731 по Linux-проверкам. Darwin реализация есть, runtime приёмка pending и не считается подтверждённой.
-Последние интегрированные ревизии: 12a2457 этап 3; 028759b routing/TLS config; fb58efe hooks и verified proxy handler; 4641840 CLI hook retry/status. Приняты UpGraph/DownGraph/RestartGraph и batch/default/global CLI. Public mini scenario PASS с подтверждённой остановкой всех fixture processes.
+Активные задания: Terra 5F read-only diagnostics в internal/diagnostics/**; Luna 5D3b open/doctor и публичный TLS-сценарий в internal/cli/** и examples/mini/**. Sol ведёт интеграцию и документацию. Одновременно два builders.
+Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa; 2 done на 301afb9 по Linux-проверкам; 3 done на 12a245756c086a6247c54b529221386d06ac5731 по Linux-проверкам; 4 done на a825cb3edbbcef16881ef8a471c9b796f840158d, Astra A1 re-check без оставшихся подтверждённых P1/P2 в проверенном scope. Darwin реализация есть, runtime приёмка pending и не считается подтверждённой.
+Последние интегрированные ревизии: bacc5c9 switch core/CLI и публичный сценарий; 60efe47, 8b7b180 и a825cb3 исправления A1; 6bc734f proxy/alias CLI, external TLS и безопасный reload. Приняты UpGraph/DownGraph/RestartGraph и batch/default/global CLI. Public mini scenario PASS с подтверждённой остановкой всех fixture processes.
 Проверки: go test ./...; go vet ./...; go test -race ./...; git diff --check. Darwin arm64 и amd64 go build ./... прошли, реальные syscall/lifecycle там НЕ запускались. На Linux проверены actual binary discovery, single-service lifecycle, repeat/restart/fixed ports, HTTP/process readiness, logs/rotation, stop без конфигурации, SIGSTOP supervisor, build failures/timeouts, реальный SIGKILL frontend во время build и восстановление через down/up/restart, сохранение old app, EOF before ACK, поздний потомок после stop snapshot, foreign identity safety, семь restart с current + пятью historical runs.
 Публичный binary /tmp/rundevrun-stage2-rdr также проверен на config drift: up не заменяет running run, показывает config_changed/restart_required; status с explicit selectors показывает actual state и config_error после invalid TOML; down работает без valid config. Все временные процессы остановлены.
-Замечания Astra: A0 закрыта для контрактов на 0478d52. Следующая критическая проверка A1 после этапа4. Для A1 отдельно проверить fail-closed отсутствие anchor, cleanup kernel snapshots, native Darwin proc_info ABI и retention безопасности.
+Замечания Astra: A0 закрыта на 0478d52; A1 закрыта на a825cb3 после двух re-check. Исправлены retry hook неизменённой зависимости, missing supervisor/revoked intent, retention после switch и подтверждённая очистка accepted claim с Child=ZERO. Неизвестные survivors остаются OWNERSHIP_UNKNOWN. A2 требуется после интеграции этапа 6; macOS runtime остаётся открытой приёмкой.
 Внешние условия: второй проект /home/alex/dev/twikko выбран пользователем; macOS runtime на обеих архитектурах; HTTPS-вход пользователя home.litvinovich.dev через Nginx Proxy Manager, доступ к PEM и route runner ещё не подготовлены, наблюдения в docs/LOCAL_HTTPS.md; реальный Cloudflare share; OAuth в защищённом preview отключается по явному решению пользователя 2026-11-13, см. MIGRATION_MAP; обычный вход остаётся в миграционной приёмке. Кросс-компиляция не закрывает критерий12, релиз не готов.
-Следующий шаг: принять pure switch planner, затем общий switch executor; параллельно завершить proxy daemon и подключить URL planning/route reservation/main/CLI. Astra A1 после интеграции этапа 4. Полные этапы 4/5 ещё не приняты.
+Следующий шаг: принять open/doctor и публичный TLS-сценарий, затем открыть этап 6 share/snapshot. Этап 5 ещё не принят целиком: реальный вход пользователя не настроен, транспортные сценарии завершаются.
 
 История этапа2:
 2A core и 2B CLI интегрированы в a840226 как промежуточный результат, ещё с двумя открытыми crash-safety пунктами.

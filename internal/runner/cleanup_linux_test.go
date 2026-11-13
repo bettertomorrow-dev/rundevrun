@@ -97,7 +97,18 @@ func TestStopDoesNotConfirmCleanupOfLateFork(t *testing.T) {
 	marker := filepath.Join(dir, "late-child")
 	// A valid but uncooperative supervisor forks after Stop has taken its
 	// pre-signal snapshot. The new child is absent from the durable run record.
-	cmd := exec.Command("/bin/sh", "-c", `trap 'sleep 60 & echo $! > "$1"; exit' TERM; echo ready; read wait`, "sh", marker)
+	cmd := exec.Command("python3", "-u", "-c", `
+import os, signal, subprocess, sys
+child = subprocess.Popen(["sleep", "60"], preexec_fn=os.setpgrp)
+def stop(signum, frame):
+    late = subprocess.Popen(["sleep", "60"], preexec_fn=os.setpgrp)
+    with open(sys.argv[1], "w") as f:
+        f.write(str(late.pid))
+    os._exit(0)
+signal.signal(signal.SIGTERM, stop)
+print(child.pid)
+sys.stdin.readline()
+`, marker)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -122,9 +133,19 @@ func TestStopDoesNotConfirmCleanupOfLateFork(t *testing.T) {
 			}
 		}
 	})
-	if _, err := bufio.NewReader(out).ReadString('\n'); err != nil {
+	line, err := bufio.NewReader(out).ReadString('\n')
+	if err != nil {
 		t.Fatal(err)
 	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialChild, err := procid.Observe(childPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { procid.Terminate([]procid.Ref{initialChild}, time.Second) })
 	supervisor, err := procid.Observe(cmd.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +163,7 @@ func TestStopDoesNotConfirmCleanupOfLateFork(t *testing.T) {
 	if err := store.WriteManifest("run", state.Manifest{RunID: "run", InstanceID: id, OperationID: "op", Launch: state.LaunchContract{StopTimeout: "1s"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.WriteRun("run", state.RunRecord{Claim: "accepted", Supervisor: supervisor, State: "starting"}); err != nil {
+	if err := store.WriteRun("run", state.RunRecord{Claim: "accepted", Supervisor: supervisor, Child: initialChild, State: "starting"}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

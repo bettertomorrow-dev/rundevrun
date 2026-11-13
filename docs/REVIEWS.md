@@ -26,9 +26,9 @@ Port conflict after old-process shutdown leaves it stopped; only preparation
 failure promises preservation of the old live process.
 
 Unresolved external/product acceptance: macOS lifecycle, real TLS domain and share,
-MillDrum preview OAuth metadata requiring unauthenticated access. Generic password
-gate must protect every path; stage 7 cannot claim old OAuth behavior is preserved
-without resolving that conflict. These do not block independent stage 1 work once
+MillDrum migration. User resolved the preview conflict on 2026-11-13: protected
+preview may disable OAuth; every gateway path remains password protected. Normal
+project sign-in remains a migration requirement. These do not block independent stage 1 work once
 contracts are accepted. Second project selected by user: /home/alex/dev/twikko.
 
 ## A0 re-check, 0478d52
@@ -153,3 +153,45 @@ down does not replay it, --retry-hooks executes the saved old command after a
 config edit, status excludes private environment, and final cleanup is confirmed.
 This accepts stage 4A only. Switch, interrupted switch and independent Astra A1
 remain outstanding.
+
+## Stage 4 switch and A1 closure, a825cb3
+
+The public binary completed `examples/mini/switch_scenario.py` on the integrated
+switch CLI/core revision bacc5c9. Single, list, file and all-services mappings,
+invalid-last-selector preservation, independent runs, stopped-consumer binding
+updates and failed preparation were exercised. Cleanup was confirmed through
+public status. All-package Linux test/vet/race passed before the A1 corrections.
+
+Astra A1 found three defects: hook retry reached unchanged dependencies, a
+revoked launch without a supervisor could remain starting, and successful switch
+did not prune completed runs. Corrections in 60efe47 added node-scoped retry,
+phase-aware recovery and pruning only after a durable completed journal.
+
+The first re-check found a fourth case: accepted claim with Child=ZERO after
+startup failure could never recover. Revisions 8b7b180 and a825cb3 require a full
+matching supervisor identity, matching operation/run intent and verified absence
+of the whole session before recording stopped. That branch sends no termination
+signals and skips stop hooks. Partial identity, another boot or an unknown
+survivor preserves the registry and returns OWNERSHIP_UNKNOWN. Startup failures
+persist their cause after accepted claim; child identity remains durable before
+bootstrap ACK. The CLI process reaps its own detached supervisor with async Wait.
+
+A fresh Astra re-check of exact a825cb3 found no remaining confirmed P1/P2 in the
+reviewed scope. Four targeted real-process tests passed, 6.474 s; those tests plus
+retention protection passed under race, 7.860 s. State/procid and bootstrap ACK
+tests passed from a clean git archive. The full switch/crash suite was not rerun
+by that reviewer. A1 is closed; macOS runtime and stage 5/6 acceptance are separate.
+
+## Stage 5 integration, 6bc734f
+
+The detached proxy, private control socket, route reservations, worktree and
+service aliases and CLI are integrated. Provided TLS loads keypairs; external TLS
+accepts public certificates only and requires explicit loopback proxy trust and
+public HTTPS port. Invalid reload keeps the active configuration. Proxy stop
+does not stop applications. No DNS, certificate issuance, trust store or existing
+Nginx Proxy Manager configuration was changed.
+
+Targeted external/provided daemon and routing race tests passed, as did 39 CLI
+tests, CLI vet and build. Open/doctor and a public transport scenario remain
+pending. Existing local domain observations are recorded in LOCAL_HTTPS.md; they
+do not demonstrate a working runner ingress.
