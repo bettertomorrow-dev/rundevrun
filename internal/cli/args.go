@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -11,11 +12,14 @@ type options struct {
 	json     bool
 	dryRun   bool
 	help     bool
+	follow   bool
+	tail     int
+	tailSet  bool
 }
 
 // Common flags may precede or follow the command and selectors.
 func parseArgs(args []string) (options, []string, error) {
-	var opts options
+	opts := options{tail: 100}
 	var positional []string
 	seen := make(map[string]bool)
 	for i := 0; i < len(args); i++ {
@@ -34,7 +38,7 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h":
+		case "--json", "--dry-run", "--help", "-h", "--follow":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
@@ -43,10 +47,12 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.json = true
 			case "--dry-run":
 				opts.dryRun = true
+			case "--follow":
+				opts.follow = true
 			default:
 				opts.help = true
 			}
-		case "--project", "--worktree":
+		case "--project", "--worktree", "--tail":
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 					return opts, positional, fmt.Errorf("%s requires a value", name)
@@ -57,7 +63,13 @@ func parseArgs(args []string) (options, []string, error) {
 			if value == "" {
 				return opts, positional, fmt.Errorf("%s requires a nonempty value", name)
 			}
-			if name == "--project" {
+			if name == "--tail" {
+				n, err := strconv.Atoi(value)
+				if err != nil || n < 0 || n > 10000 {
+					return opts, positional, fmt.Errorf("--tail requires an integer from 0 to 10000")
+				}
+				opts.tail, opts.tailSet = n, true
+			} else if name == "--project" {
 				opts.project = value
 			} else {
 				opts.worktree = value

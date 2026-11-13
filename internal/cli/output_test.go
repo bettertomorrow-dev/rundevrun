@@ -41,3 +41,15 @@ func TestInterspersedSelectorsAndInvalidFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestLogOptions(t *testing.T) {
+	opts, args, err := parseArgs([]string{"logs", "worker", "--tail=25", "--follow"})
+	if err != nil || !opts.follow || !opts.tailSet || opts.tail != 25 || len(args) != 2 {
+		t.Fatalf("options=%+v args=%v error=%v", opts, args, err)
+	}
+	for _, args := range [][]string{{"--tail"}, {"--tail=bad"}, {"--tail=-1"}, {"--tail=10001"}} {
+		if _, _, err := parseArgs(args); err == nil {
+			t.Fatalf("accepted %v", args)
+		}
+	}
+}

@@ -51,6 +51,14 @@ type instanceInfo struct {
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
 func execute(ctx context.Context, args []string, opts options, e *envelope) {
+	if (opts.follow || opts.tailSet) && e.Command != "logs" {
+		e.fail("USAGE", "--follow and --tail are only valid with logs")
+		return
+	}
+	if opts.follow && opts.json {
+		e.fail("USAGE", "--json --follow is unsupported; omit --follow for one JSON result")
+		return
+	}
 	root, err := runtimeRoot()
 	if err != nil {
 		failError(e, err)
