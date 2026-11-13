@@ -30,6 +30,7 @@ type Settings struct {
 	TLS               TLSSettings `toml:"tls"`
 }
 type TLSSettings struct {
+	Mode         string        `toml:"mode"`
 	Certificates []Certificate `toml:"certificates"`
 }
 type Certificate struct {
@@ -123,19 +124,22 @@ func Load(path string) (Config, error) {
 	if _, err = c.Hostname("service", "worktree", "project", "example.test"); err != nil {
 		return Config{}, invalid(fmt.Errorf("hostname template: %w", err))
 	}
+	if err := c.validateTLSMode(); err != nil {
+		return Config{}, err
+	}
 	base, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
 		return Config{}, err
 	}
 	for i := range c.Routing.TLS.Certificates {
 		cert := &c.Routing.TLS.Certificates[i]
-		if cert.CertFile == "" || cert.KeyFile == "" {
-			return Config{}, invalid(errors.New("certificate requires cert_file and key_file"))
+		if cert.CertFile == "" || (!c.ExternalTLS() && cert.KeyFile == "") {
+			return Config{}, invalid(errors.New("certificate requires cert_file and, in provided mode, key_file"))
 		}
 		if !filepath.IsAbs(cert.CertFile) {
 			cert.CertFile = filepath.Join(base, cert.CertFile)
 		}
-		if !filepath.IsAbs(cert.KeyFile) {
+		if cert.KeyFile != "" && !filepath.IsAbs(cert.KeyFile) {
 			cert.KeyFile = filepath.Join(base, cert.KeyFile)
 		}
 	}
@@ -162,4 +166,44 @@ func (c Config) URL(host string) (string, error) {
 		return "https://" + host, nil
 	}
 	return "https://" + net.JoinHostPort(host, port), nil
+}
+
+// ExternalTLS indicates a separately managed local TLS terminator.
+func (c Config) ExternalTLS() bool { return c.Routing.TLS.Mode == "external" }
+func (c Config) validateTLSMode() error {
+	mode := c.Routing.TLS.Mode
+	if mode != "" && mode != "provided" && mode != "external" {
+		return invalid(errors.New("routing.tls.mode must be provided or external"))
+	}
+	if mode == "external" {
+		if len(c.Routing.TrustedProxies) == 0 || c.Routing.ExternalHTTPSPort == nil {
+			return invalid(errors.New("external TLS requires trusted_proxies and explicit external_https_port"))
+		}
+		if *c.Routing.ExternalHTTPSPort < 1 || *c.Routing.ExternalHTTPSPort > 65535 {
+			return invalid(errors.New("invalid external_https_port"))
+		}
+		for _, entry := range c.Routing.TrustedProxies {
+			ip := net.ParseIP(entry)
+			if ip != nil && ip.IsLoopback() {
+				continue
+			}
+			ip, network, err := net.ParseCIDR(entry)
+			if err != nil || !ip.IsLoopback() || !network.IP.IsLoopback() {
+				return invalid(errors.New("trusted_proxies must contain loopback IPs or CIDRs"))
+			}
+			ones, bits := network.Mask.Size()
+			if (bits == 32 && ones < 8) || (bits == 128 && ones != 128) {
+				return invalid(errors.New("trusted proxy network must be loopback only"))
+			}
+		}
+		if len(c.Routing.TLS.Certificates) == 0 {
+			return invalid(errors.New("external TLS requires a public cert_file"))
+		}
+		for _, cert := range c.Routing.TLS.Certificates {
+			if cert.CertFile == "" || cert.KeyFile != "" {
+				return invalid(errors.New("external TLS requires cert_file and forbids key_file"))
+			}
+		}
+	}
+	return nil
 }

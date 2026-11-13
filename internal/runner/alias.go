@@ -211,7 +211,7 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 	}
 	sort.Strings(hosts)
 	if len(hosts) > 0 {
-		if _, err = routing.LoadTLS(*r.Routing, hosts); err != nil {
+		if err = routing.ValidateHosts(*r.Routing, hosts); err != nil {
 			var re *routing.Error
 			if errors.As(err, &re) {
 				return AliasPlan{}, &Error{re.Code, re.Err}

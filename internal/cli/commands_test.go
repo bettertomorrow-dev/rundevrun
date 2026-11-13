@@ -12,6 +12,8 @@ import (
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
+	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
+	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -112,10 +114,322 @@ func TestUsageAndVersionErrorsAreJSON(t *testing.T) {
 	}
 }
 
+func TestProxyStatusReadOnlyAndGrammar(t *testing.T) {
+	base := t.TempDir()
+	runtime := filepath.Join(base, "runtime")
+	cfgDir := filepath.Join(base, "config")
+	if err := os.MkdirAll(cfgDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("invalid = ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RDR_HOME", runtime)
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	e, code := invoke(t, "proxy", "status", "--json")
+	if code != 0 || e.Proxy == nil || e.Proxy.State != "stopped" {
+		t.Fatalf("proxy status: %d %+v", code, e)
+	}
+	if _, err := os.Stat(runtime); !os.IsNotExist(err) {
+		t.Fatalf("readonly status created runtime: %v", err)
+	}
+	if _, code = invoke(t, "proxy", "status", "--project", "x", "--json"); code != 2 {
+		t.Fatalf("proxy selector accepted: %d", code)
+	}
+	for _, args := range [][]string{{"proxy", "stop", "--no-proxy", "--json"}, {"logs", "worker", "--no-proxy", "--json"}, {"status", "--no-proxy", "--json"}} {
+		if _, code := invoke(t, args...); code != 2 {
+			t.Fatalf("invalid no-proxy scope accepted %v: %d", args, code)
+		}
+	}
+	if e, code := invoke(t, "proxy", "reload", "--dry-run", "--json"); code != 2 || len(e.Errors) != 1 || e.Errors[0].Code != "NOT_FOUND" {
+		t.Fatalf("reload dry run should report stopped daemon before reading config: %d %+v", code, e)
+	}
+	encoded, _ := json.Marshal(e)
+	if bytes.Contains(encoded, []byte("identity")) || bytes.Contains(encoded, []byte("boot")) {
+		t.Fatalf("proxy identity leaked: %s", encoded)
+	}
+}
+
+func TestDownAndLogsDoNotParseMachineRoutingConfig(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	cfg := filepath.Join(base, "config")
+	t.Setenv("RDR_HOME", runtime)
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register: %d", code)
+	}
+	if err := os.MkdirAll(cfg, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "config.toml"), []byte("bad = ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if e, code := invoke(t, "down", "worker", "--json"); code != 0 || len(e.ProxyErrors) > 0 {
+		t.Fatalf("down parsed bad routing config: %d %+v", code, e)
+	}
+	if e, code := invoke(t, "logs", "worker", "--json"); code == 0 || len(e.Errors) == 0 || e.Errors[0].Code == "CONFIG_INVALID" {
+		t.Fatalf("logs parsed bad routing config: %d %+v", code, e)
+	}
+}
+
+func TestInvalidMachineRoutingPreflightsStartCommandsWithoutMutation(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	cfgDir := filepath.Join(base, "config")
+	t.Setenv("RDR_HOME", runtime)
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	writeProject(t, root)
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	project := registered.Scope.Project
+	if err := os.MkdirAll(filepath.Join(cfgDir, "rundevrun"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "rundevrun", "config.toml"), []byte("broken = ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"up", "worker"}, {"restart", "worker"}, {"switch", "worker", "--project", project, "--worktree", root, "--to-worktree", root}, {"up", "worker", "--dry-run"}, {"switch", "worker", "--project", project, "--worktree", root, "--to-worktree", root, "--dry-run"}} {
+		e, code := invoke(t, append(args, "--json")...)
+		if code != 2 || len(e.Errors) == 0 || e.Errors[0].Code != "CONFIG_INVALID" {
+			t.Fatalf("%v did not preflight bad routing config: %d %+v", args, code, e)
+		}
+		after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatalf("%v mutated registry before config validation: %v", args, err)
+		}
+		if _, err := os.Stat(filepath.Join(runtime, "runs")); !os.IsNotExist(err) {
+			t.Fatalf("%v created run state before config validation: %v", args, err)
+		}
+	}
+}
+
+func TestReregisterPreservesWorktreeAliasAndRouteBookURL(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register: %d", code)
+	}
+	store := &state.Store{Root: runtime}
+	var project state.Project
+	if err := store.Update(func(reg *state.Registry) error {
+		for id := range reg.Projects {
+			p, err := reg.Project(id)
+			if err != nil {
+				return err
+			}
+			project = p
+			project.Worktrees[0].Alias = "remembered"
+			inst := project.Instances[project.ID+"/"+project.Worktrees[0].ID+"/worker"]
+			inst.RouteURL = "https://worker-remembered.example.test"
+			project.Instances[inst.ID] = inst
+			return reg.SetProject(id, project)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("reregister: %d", code)
+	}
+	reg, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := reg.Project(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Worktrees[0].Alias != "remembered" {
+		t.Fatalf("alias lost on refresh: %+v", saved.Worktrees[0])
+	}
+	target := saved.Instances[project.ID+"/"+saved.Worktrees[0].ID+"/worker"]
+	if target.RouteURL != "https://worker-remembered.example.test" {
+		t.Fatalf("route book changed on disabled registration: %+v", target)
+	}
+	e, code := invoke(t, "status", "--project", project.ID, "--json")
+	if code != 0 {
+		t.Fatalf("status: %d %+v", code, e)
+	}
+	item := e.Results[0].(map[string]any)
+	if item["url"] != target.RouteURL {
+		t.Fatalf("stopped route URL missing: %+v", item)
+	}
+	services, code := invoke(t, "services", "--project", project.ID, "--worktree", root, "--json")
+	if code != 0 || services.Results[0].(map[string]any)["url"] != target.RouteURL {
+		t.Fatalf("service route URL: %d %+v", code, services)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "config", "rundevrun"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "config", "rundevrun", "config.toml"), []byte("broken = ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if e, code := invoke(t, "register", ".", "--json"); code != 5 || e.Status != "partial" || len(e.RoutingErrors) != 1 {
+		t.Fatalf("invalid routing config should retain registration with partial status: %d %+v", code, e)
+	}
+	reg, err = store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err = reg.Project(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target = saved.Instances[target.ID]
+	if target.RouteURL != "https://worker-remembered.example.test" {
+		t.Fatalf("failed route assignment changed old route: %+v", target)
+	}
+}
+
+func TestRouteURLChangeRequiresRestartAndDirectURLStaysManifestValue(t *testing.T) {
+	store := &state.Store{Root: t.TempDir()}
+	instance := state.Instance{ID: "p/w/api", RunID: "route-run", RouteURL: "https://new.example.test"}
+	manifest := state.Manifest{RunID: "route-run", InstanceID: instance.ID, Launch: state.LaunchContract{Protocol: "http"}, Addresses: map[string]string{"url": "https://old.example.test", "direct_url": "http://127.0.0.1:31313"}}
+	if err := store.WriteManifest(instance.RunID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	info := instanceInfo{State: "running"}
+	addRunDetails(store, instance, &info)
+	applyRouteView(store, instance, &info)
+	if info.URL != instance.RouteURL || info.DirectURL != manifest.Addresses["direct_url"] || !info.RouteChanged || !info.RestartRequired {
+		t.Fatalf("route overlay/drift wrong: %+v", info)
+	}
+}
+
+func TestDisabledRouteUsesDirectURLAndFlagsActiveRouteDrift(t *testing.T) {
+	store := &state.Store{Root: t.TempDir()}
+	instance := state.Instance{ID: "p/w/api", RunID: "route-run"}
+	manifest := state.Manifest{RunID: "route-run", InstanceID: instance.ID, Launch: state.LaunchContract{Protocol: "http"}, Addresses: map[string]string{"url": "https://stale.example.test", "direct_url": "http://127.0.0.1:31313"}}
+	if err := store.WriteManifest(instance.RunID, manifest); err != nil {
+		t.Fatal(err)
+	}
+	info := instanceInfo{State: "running"}
+	addRunDetails(store, instance, &info)
+	applyRouteView(store, instance, &info)
+	if info.URL != manifest.Addresses["direct_url"] || !info.RouteChanged || !info.RestartRequired {
+		t.Fatalf("disabled routing did not choose direct URL/drift: %+v", info)
+	}
+}
+
+func TestGraphNeedsProxySkipsProcessOnlyAndFollowsHTTPBinding(t *testing.T) {
+	makeStore := func(t *testing.T, withAPI bool) *state.Store {
+		t.Helper()
+		store, err := state.New(filepath.Join(t.TempDir(), "state"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := state.Project{ID: "p", Name: "p", Root: "/p", Worktrees: []state.Worktree{{ID: "w", Root: "/p"}}, Instances: map[string]state.Instance{"p/w/worker": {ID: "p/w/worker", Service: "worker", WorktreeID: "w", State: "running", RunID: "worker-run"}}}
+		if withAPI {
+			p.Instances["p/w/api"] = state.Instance{ID: "p/w/api", Service: "api", WorktreeID: "w", State: "ready", RunID: "api-run", RouteURL: "https://api.example.test"}
+		}
+		if err := store.Update(func(reg *state.Registry) error { return reg.SetProject("p", p) }); err != nil {
+			t.Fatal(err)
+		}
+		worker := state.Manifest{RunID: "worker-run", InstanceID: "p/w/worker", Launch: state.LaunchContract{Protocol: "process"}}
+		if withAPI {
+			worker.EffectiveBindings = map[string]string{"api": "p/w/api"}
+		}
+		if err := store.WriteManifest("worker-run", worker); err != nil {
+			t.Fatal(err)
+		}
+		if withAPI {
+			if err := store.WriteManifest("api-run", state.Manifest{RunID: "api-run", InstanceID: "p/w/api", Launch: state.LaunchContract{Protocol: "http"}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return store
+	}
+	result := []runner.Result{{InstanceID: "p/w/worker", RunID: "worker-run", State: "running", Status: "completed"}}
+	needs, err := graphNeedsProxy(makeStore(t, false), result)
+	if err != nil || needs {
+		t.Fatalf("process-only graph needs proxy: %t %v", needs, err)
+	}
+	needs, err = graphNeedsProxy(makeStore(t, true), result)
+	if err != nil || !needs {
+		t.Fatalf("routed effective dependency did not need proxy: %t %v", needs, err)
+	}
+}
+
+func TestProxyReloadDryRunRequiresMatchingActiveListeners(t *testing.T) {
+	cfg := routing.Config{Routing: routing.Settings{HTTPListen: "127.0.0.1:8080", HTTPSListen: "127.0.0.1:8443"}}
+	err := proxyReloadCompatibility(proxy.Info{State: "ready", HTTPListen: "127.0.0.1:8081", HTTPSListen: "127.0.0.1:8443", TLSMode: "provided"}, cfg)
+	var pe *proxy.Error
+	if !errors.As(err, &pe) || pe.Code != "CONFIG_INVALID" {
+		t.Fatalf("listener mismatch should require restart: %v", err)
+	}
+}
+
+func TestAliasProxyStatusFailureKeepsMetadataResult(t *testing.T) {
+	store, err := state.New(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Root, "proxy.json"), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e := result("alias", options{})
+	e.Results = append(e.Results, map[string]any{"instance_id": "p/w/api", "new_url": "https://api.example.test"})
+	refreshProxyAfterAlias(context.Background(), store, &e)
+	if e.Status != "partial" || len(e.ProxyErrors) != 1 || e.Results[0].(map[string]any)["new_url"] != "https://api.example.test" {
+		t.Fatalf("proxy status failure hid successful alias metadata: %+v", e)
+	}
+}
+
+func TestProxyAndRoutingErrorsKeepStableCodes(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{{&proxy.Error{Code: "BUSY", Message: "busy"}, "BUSY"}, {&routing.Error{Code: "TLS_INVALID", Err: errors.New("bad cert")}, "TLS_INVALID"}, {state.ErrOwnershipUnknown, "OWNERSHIP_UNKNOWN"}} {
+		e := result("proxy status", options{})
+		failError(&e, tc.err)
+		if e.Errors[0].Code != tc.want {
+			t.Fatalf("%T code=%s want %s", tc.err, e.Errors[0].Code, tc.want)
+		}
+	}
+}
+
+func TestProxyFailureIsSeparateFromSuccessfulAppState(t *testing.T) {
+	e := result("up", options{})
+	e.Results = append(e.Results, map[string]any{"instance_id": "p/w/api", "state": "ready", "status": "completed"})
+	appendProxyError(context.Background(), &e, &proxy.Error{Code: "BUSY", Message: "proxy unavailable"})
+	if e.Status != "partial" || len(e.ProxyErrors) != 1 || len(e.Errors) != 0 {
+		t.Fatalf("proxy error envelope: %+v", e)
+	}
+	item := e.Results[0].(map[string]any)
+	if item["state"] != "ready" || item["status"] != "completed" {
+		t.Fatalf("proxy failure replaced app state: %+v", item)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e = result("up", options{})
+	appendProxyError(ctx, &e, errors.New("wrapped proxy error"))
+	if len(e.Errors) == 0 || e.Errors[0].Code != "CANCELLED" {
+		t.Fatalf("cancel was not prioritized: %+v", e)
+	}
+}
+
 func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")
 	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
 	writeProject(t, root)
 	t.Chdir(root)
 	if e, code := invoke(t, "register", ".", "--json"); code != 0 || e.Status != "ok" {
@@ -124,6 +438,9 @@ func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	e, code := invoke(t, "up", "worker", "--dry-run", "--json")
 	if code != 0 || e.Plan == nil || len(e.Results) != 0 {
 		t.Fatalf("dry run: %d %+v", code, e)
+	}
+	if e, code = invoke(t, "up", "worker", "--dry-run", "--no-proxy", "--json"); code != 0 || e.Plan == nil {
+		t.Fatalf("no-proxy dry run: %d %+v", code, e)
 	}
 	if _, code = invoke(t, "up", "--dry-run", "--json"); code != 2 {
 		t.Fatalf("missing service exit=%d", code)
@@ -656,7 +973,7 @@ func TestDependencyBindingAndAddressDriftDoNotExposeEnvironment(t *testing.T) {
 	if err := store.Update(func(reg *state.Registry) error { return reg.SetProject(project.ID, project) }); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.WriteManifest("worker-run", state.Manifest{RunID: "worker-run", InstanceID: workerID, EffectiveBindings: map[string]string{"api": localAPIID}, StopContract: state.StopContract{Env: map[string]string{"TOKEN": "PRIVATE_DEPENDENCY_SECRET", "RDR_DEP_API_DIRECT_URL": "http://127.0.0.1:20000", "RDR_DEP_API_PORT": "20000"}}}); err != nil {
+	if err := store.WriteManifest("worker-run", state.Manifest{RunID: "worker-run", InstanceID: workerID, EffectiveBindings: map[string]string{"api": localAPIID}, StopContract: state.StopContract{Env: map[string]string{"TOKEN": "PRIVATE_DEPENDENCY_SECRET", "RDR_DEP_API_DIRECT_URL": "http://127.0.0.1:20000", "RDR_DEP_API_PORT": "20000", "RDR_DEP_API_URL": "http://127.0.0.1:20000"}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -666,16 +983,19 @@ func TestDependencyBindingAndAddressDriftDoNotExposeEnvironment(t *testing.T) {
 		runID       string
 		desired     string
 		address     map[string]string
+		routeURL    string
 		wantRestart bool
 		wantDepErr  bool
 	}{
 		{name: "pending desired bind", runID: "api-run-1", desired: otherAPIID, address: map[string]string{"port": "20000", "direct_url": "http://127.0.0.1:20000", "url": "http://127.0.0.1:20000", "host": "127.0.0.1"}, wantRestart: true},
 		{name: "effective dependency address changed", runID: "api-run-2", desired: localAPIID, address: map[string]string{"port": "32000", "direct_url": "http://127.0.0.1:32000", "url": "http://127.0.0.1:32000", "host": "127.0.0.1"}, wantRestart: true},
+		{name: "effective routed URL changed", runID: "api-run-route", desired: localAPIID, routeURL: "https://api-new.example.test", address: map[string]string{"port": "20000", "direct_url": "http://127.0.0.1:20000", "url": "http://127.0.0.1:20000", "host": "127.0.0.1"}, wantRestart: true},
 		{name: "invalid pending target remains separate", runID: "api-run-3", desired: project.ID + "/w_missing/api", address: map[string]string{"port": "20000", "direct_url": "http://127.0.0.1:20000", "url": "http://127.0.0.1:20000", "host": "127.0.0.1"}, wantRestart: true, wantDepErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			worker.DesiredBindings = map[string]string{"api": tc.desired}
 			localAPI.RunID = tc.runID
+			localAPI.RouteURL = tc.routeURL
 			project.Instances[localAPIID] = localAPI
 			if err := store.Update(func(reg *state.Registry) error { return reg.SetProject(project.ID, project) }); err != nil {
 				t.Fatal(err)

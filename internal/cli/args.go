@@ -15,6 +15,7 @@ type options struct {
 	allServices bool
 	cascade     bool
 	retryHooks  bool
+	noProxy     bool
 	json        bool
 	dryRun      bool
 	help        bool
@@ -44,7 +45,7 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services":
+		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services", "--no-proxy":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
@@ -63,6 +64,8 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.retryHooks = true
 			case "--all-services":
 				opts.allServices = true
+			case "--no-proxy":
+				opts.noProxy = true
 			default:
 				opts.help = true
 			}

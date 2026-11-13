@@ -29,6 +29,10 @@ Discovery and registration:
   rdr switch --file path  Read version 1 mappings from a JSON file.
   rdr bind <service> <dependency> --to-worktree ID|PATH|NAME
                           Set a desired dependency binding; live services need restart.
+  rdr alias LABEL         Name each service route in one worktree.
+  rdr alias SERVICE HOST  Assign one HTTP service a full hostname.
+  rdr proxy status|reload|stop
+                          Inspect or control the local routing proxy.
   rdr logs <service>      Show recent application output.
   rdr ls                  Show known instances across registered projects.
   rdr status              Show known instances, optionally scoped to a project.
@@ -44,6 +48,7 @@ Options may appear before or after the command:
   --cascade               Include live consumers in a down plan.
   --all                   Global down scope; cannot combine with selectors.
   --retry-hooks           Retry a saved failed or interrupted stop hook.
+  --no-proxy              Skip automatic proxy start/reload after up, restart, or switch.
   --tail N                Show the last N log lines, default 100, maximum 10000.
   --follow                Follow application logs; cannot combine with --json.
   --help, -h              Show this help.
@@ -59,7 +64,8 @@ Examples:
 
 Graph dry-runs support service lists, default down, and global down. Retry uses
 the original stopped run's hook record; a new consumer does not retry a failed
-after_start hook. Proxy and sharing are not implemented.
+after_start hook.
+--no-proxy skips only automatic proxy startup; routed addresses remain planned and direct URLs stay available.
 Switch journals are shown by status and ls without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
 down to recover explicitly. A failed after_start hook remains attached to its run.
@@ -81,6 +87,9 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	if len(positional) > 0 {
 		command = positional[0]
 		if command == "config" && len(positional) > 1 {
+			command += " " + positional[1]
+		}
+		if command == "proxy" && len(positional) > 1 {
 			command += " " + positional[1]
 		}
 	}

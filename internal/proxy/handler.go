@@ -145,6 +145,10 @@ func (h *handler) selectRoute(host, path string) (selection, bool, error) {
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	authority := r.Host
 	trusted := h.trusted(r.RemoteAddr)
+	if h.cfg.ExternalTLS() && (!trusted || r.TLS != nil || len(r.Header.Values("X-Forwarded-Proto")) != 1 || r.Header.Get("X-Forwarded-Proto") != "https") {
+		http.Error(w, "trusted HTTPS proxy required", http.StatusForbidden)
+		return
+	}
 	if trusted && r.TLS == nil && r.Header.Get("X-Forwarded-Host") != "" {
 		authority = r.Header.Get("X-Forwarded-Host")
 	}

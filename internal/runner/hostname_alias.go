@@ -155,7 +155,7 @@ func (r *Runner) planHostnameAlias(ctx context.Context, reg state.Registry, sele
 		hosts = append(hosts, host)
 	}
 	sort.Strings(hosts)
-	if _, err = routing.LoadTLS(*r.Routing, hosts); err != nil {
+	if err = routing.ValidateHosts(*r.Routing, hosts); err != nil {
 		var re *routing.Error
 		if errors.As(err, &re) {
 			return HostnameAliasPlan{}, &Error{re.Code, re.Err}

@@ -191,6 +191,24 @@ func TestDaemonLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 	waitProxyStop(t, store)
+	deadline := time.Now().Add(time.Second)
+	for {
+		_, statErr := os.Stat(fmt.Sprintf("/proc/%d", info.Identity.PID))
+		if errors.Is(statErr, os.ErrNotExist) {
+			break
+		}
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		current, observeErr := procid.Observe(info.Identity.PID)
+		if observeErr == nil && current != info.Identity {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stopped proxy child was not reaped")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	alive, e := procid.Check(record.Child)
 	if e != nil || !alive {
 		t.Fatalf("app stopped with proxy: %v %v", alive, e)

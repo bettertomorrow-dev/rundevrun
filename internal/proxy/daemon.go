@@ -27,6 +27,16 @@ type candidate struct {
 	handler http.Handler
 }
 
+// ValidateConfiguration builds the same reload candidate without starting or
+// changing the daemon. It only reads registry, configuration and certificates.
+func ValidateConfiguration(store *state.Store, path string) (routing.Config, error) {
+	next, err := buildCandidate(store, path)
+	if err != nil {
+		return routing.Config{}, err
+	}
+	return next.config, nil
+}
+
 func buildCandidate(store *state.Store, path string) (*candidate, error) {
 	cfg, err := routing.Load(path)
 	if err != nil {
@@ -57,7 +67,12 @@ func buildCandidate(store *state.Store, path string) (*candidate, error) {
 			hosts = append(hosts, instance.Hostname)
 		}
 	}
-	tlsConfig, err := routing.LoadTLS(cfg, hosts)
+	var tlsConfig *tls.Config
+	if cfg.ExternalTLS() {
+		err = routing.ValidateHosts(cfg, hosts)
+	} else {
+		tlsConfig, err = routing.LoadTLS(cfg, hosts)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -127,11 +142,14 @@ func Serve(root, configPath string) (result error) {
 		return err
 	}
 	defer httpListener.Close()
-	httpsListener, err := net.Listen("tcp", initial.config.Routing.HTTPSListen)
-	if err != nil {
-		return err
+	var httpsListener net.Listener
+	if !initial.config.ExternalTLS() {
+		httpsListener, err = net.Listen("tcp", initial.config.Routing.HTTPSListen)
+		if err != nil {
+			return err
+		}
+		defer httpsListener.Close()
 	}
-	defer httpsListener.Close()
 	socket := store.ProxySocket()
 	if err = removeSocket(socket); err != nil {
 		return err
@@ -155,15 +173,30 @@ func Serve(root, configPath string) (result error) {
 	stop := make(chan struct{})
 	var once sync.Once
 	var reload sync.Mutex
-	info := Info{State: "ready", Identity: self, ConfigPath: configPath}
+	info := Info{State: "ready", Identity: self, ConfigPath: configPath, HTTPListen: initial.config.Routing.HTTPListen, TLSMode: "provided"}
+	if initial.config.ExternalTLS() {
+		info.TLSMode = "external"
+	} else {
+		info.HTTPSListen = initial.config.Routing.HTTPSListen
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(reply{Info: info}) })
 	mux.HandleFunc("/reload", func(w http.ResponseWriter, r *http.Request) {
 		reload.Lock()
 		defer reload.Unlock()
-		next, e := buildCandidate(store, configPath)
-		if e == nil && (next.config.Routing.HTTPListen != initial.config.Routing.HTTPListen || next.config.Routing.HTTPSListen != initial.config.Routing.HTTPSListen) {
-			e = &Error{Code: "CONFIG_INVALID", Message: "listener addresses changed; restart proxy"}
+		changed := func(cfg routing.Config) bool {
+			return cfg.Routing.HTTPListen != initial.config.Routing.HTTPListen || cfg.Routing.HTTPSListen != initial.config.Routing.HTTPSListen || cfg.ExternalTLS() != initial.config.ExternalTLS()
+		}
+		cfg, e := routing.Load(configPath)
+		if e == nil && changed(cfg) {
+			e = &Error{Code: "CONFIG_INVALID", Message: "TLS mode or listener addresses changed; restart proxy"}
+		}
+		var next *candidate
+		if e == nil {
+			next, e = buildCandidate(store, configPath)
+		}
+		if e == nil && changed(next.config) {
+			e = &Error{Code: "CONFIG_INVALID", Message: "TLS mode or listener addresses changed; restart proxy"}
 		}
 		if e != nil {
 			code, message := errorReply(e)
@@ -187,7 +220,9 @@ func Serve(root, configPath string) (result error) {
 	}
 	errs := make(chan error, 3)
 	go func() { errs <- serverHTTP.Serve(httpListener) }()
-	go func() { errs <- serverTLS.Serve(tls.NewListener(httpsListener, liveTLS)) }()
+	if httpsListener != nil {
+		go func() { errs <- serverTLS.Serve(tls.NewListener(httpsListener, liveTLS)) }()
+	}
 	go func() { errs <- serverControl.Serve(controlListener) }()
 	defer serverHTTP.Close()
 	defer serverTLS.Close()

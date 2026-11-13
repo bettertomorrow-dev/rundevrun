@@ -432,6 +432,14 @@ Local machine config: $XDG_CONFIG_HOME/rundevrun/config.toml or
 domain, hostname='{service}-{worktree}-{project}.{domain}', http_listen='127.0.0.1:8080',
 https_listen='127.0.0.1:8443', external_https_port=443 only when explicitly set,
 trusted_proxies=[]; [[routing.tls.certificates]] cert_file/key_file.
+`routing.tls.mode` is `provided` by default. In `external` mode each certificate
+entry supplies only a public `cert_file`; `key_file` is forbidden. The public
+chain must cover every registered hostname and have valid dates. External mode
+requires explicit `external_https_port` and nonempty loopback-only
+`trusted_proxies`. It opens only the HTTP backend and private control socket,
+and accepts application requests only from a configured trusted peer with one
+`X-Forwarded-Proto: https` value. The external terminator owns the private key.
+There is no implicit switch to external mode after a local TLS error.
 Project may override domain in [routing] of dev.toml. Runtime stores explicit
 worktree alias and per-instance hostname; alias changes require explicit command.
 Default worktree label is directory name, optional branch label must be explicit.
@@ -448,6 +456,8 @@ key pair, dates and SAN coverage for every hostname. SNI chooses provided cert;
 Host must match accepted TLS name, no domain fronting. Reload validates complete
 new config first and swaps atomically, keeping old config on failure. Never
 fallback to plaintext. Proxy restarts don't stop apps. No DNS or CA changes.
+Changing TLS mode or listener addresses requires an explicit proxy stop/start;
+reload rejects that change while retaining the active configuration.
 Forward original Host and scheme, strip untrusted forwarded headers, honor only
 explicit trusted local terminating proxies. ReverseProxy handles upgrades and
 streaming with immediate flushing, preserves application cookies and CORS.

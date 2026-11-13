@@ -116,7 +116,7 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 			hosts = append(hosts, host)
 		}
 		sort.Strings(hosts)
-		if _, err := routing.LoadTLS(*r.Routing, hosts); err != nil {
+		if err := routing.ValidateHosts(*r.Routing, hosts); err != nil {
 			var te *routing.Error
 			if errors.As(err, &te) {
 				return nil, &Error{te.Code, te.Err}

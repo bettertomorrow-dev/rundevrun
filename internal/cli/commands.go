@@ -15,6 +15,8 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
+	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
+	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -65,6 +67,7 @@ type instanceInfo struct {
 	PID               int               `json:"pid,omitempty"`
 	DirectURL         string            `json:"direct_url,omitempty"`
 	URL               string            `json:"url,omitempty"`
+	RouteChanged      bool              `json:"route_changed,omitempty"`
 	LogPaths          map[string]string `json:"log_paths,omitempty"`
 }
 
@@ -97,6 +100,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--retry-hooks is only valid with up, down, restart, or switch")
 		return
 	}
+	if opts.noProxy && e.Command != "up" && e.Command != "restart" && e.Command != "switch" {
+		e.fail("USAGE", "--no-proxy is only valid with up, restart, or switch")
+		return
+	}
 	if opts.toWorktree != "" && e.Command != "bind" && e.Command != "switch" {
 		e.fail("USAGE", "--to-worktree is only supported by bind or switch")
 		return
@@ -120,6 +127,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	store := &state.Store{Root: root}
 	switch e.Command {
+	case "proxy status", "proxy reload", "proxy stop":
+		proxyCommand(ctx, store, args[1:], opts, e)
+	case "alias":
+		aliasCommand(ctx, store, args[1:], opts, e)
 	case "switch":
 		switchCommand(ctx, store, args[1:], opts, e)
 	case "bind":
@@ -336,6 +347,12 @@ func switchCommand(ctx context.Context, store *state.Store, services []string, o
 	}
 	r := runner.New(store, executablePath())
 	r.RetryHooks = opts.retryHooks
+	cfg, cfgPath, cfgErr := machineRouting()
+	if cfgErr != nil {
+		failError(e, cfgErr)
+		return
+	}
+	r.Routing = &cfg
 	if opts.dryRun {
 		plan, err := r.PlanSwitch(ctx, mappings)
 		if err != nil {
@@ -362,6 +379,21 @@ func switchCommand(ctx context.Context, store *state.Store, services []string, o
 	}
 	for _, ge := range out.Errors {
 		e.Errors = append(e.Errors, commandError{Code: ge.Code, Message: ge.Message, InstanceID: ge.InstanceID, Actions: []string{}})
+	}
+	started := false
+	for _, item := range out.Results {
+		if item.Status == "completed" && !item.StateUnknown && liveState(item.State) {
+			started = true
+			break
+		}
+	}
+	if started && !opts.noProxy && cfg.Routing.Enabled {
+		needs, checkErr := graphNeedsProxy(store, out.Results)
+		if checkErr != nil {
+			appendProxyError(ctx, e, checkErr)
+		} else if needs {
+			ensureProxyAfterStart(ctx, store, cfgPath, e)
+		}
 	}
 	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 		for _, failure := range e.Errors {
@@ -413,6 +445,242 @@ func readSwitchFile(path string) (switchFile, error) {
 func liveState(s string) bool {
 	return s == "starting" || s == "running" || s == "ready" || s == "unhealthy"
 }
+
+func machineRouting() (routing.Config, string, error) {
+	path, err := routing.DefaultPath()
+	if err != nil {
+		return routing.Config{}, "", err
+	}
+	cfg, err := routing.Load(path)
+	return cfg, path, err
+}
+
+func proxyView(info proxy.Info) *proxyInfoView {
+	return &proxyInfoView{State: info.State, PID: info.Identity.PID, HTTPListen: info.HTTPListen, HTTPSListen: info.HTTPSListen, TLSMode: info.TLSMode, ConfigPath: info.ConfigPath}
+}
+
+func proxyCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+	if opts.project != "" || opts.worktree != "" || opts.toWorktree != "" || opts.file != "" || opts.all || opts.cascade || opts.retryHooks || opts.allServices || opts.noProxy || opts.follow || opts.tailSet {
+		e.fail("USAGE", "proxy commands do not accept selectors or unrelated flags")
+		return
+	}
+	if len(args) != 1 {
+		e.fail("USAGE", "proxy requires status, reload, or stop")
+		return
+	}
+	switch args[0] {
+	case "status":
+		if opts.dryRun {
+			e.fail("USAGE", "proxy status does not support --dry-run")
+			return
+		}
+		info, err := proxy.Status(store)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Proxy = proxyView(info)
+	case "reload":
+		if opts.dryRun {
+			info, err := proxy.Status(store)
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			if info.State != "ready" {
+				failError(e, &proxy.Error{Code: "NOT_FOUND", Message: "proxy is not running"})
+				return
+			}
+			cfg, err := proxy.ValidateConfiguration(store, info.ConfigPath)
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			expectedHTTPS := cfg.Routing.HTTPSListen
+			expectedTLS := "provided"
+			if cfg.ExternalTLS() {
+				expectedHTTPS = ""
+				expectedTLS = "external"
+			}
+			candidate := map[string]any{"http_listen": cfg.Routing.HTTPListen, "https_listen": expectedHTTPS, "tls_mode": expectedTLS, "config_path": info.ConfigPath}
+			e.Plan = map[string]any{"action": "proxy reload", "proxy": proxyView(info), "candidate": candidate}
+			if err := proxyReloadCompatibility(info, cfg); err != nil {
+				failError(e, err)
+				return
+			}
+			return
+		}
+		if err := proxy.Reload(ctx, store); err != nil {
+			failError(e, err)
+			return
+		}
+		info, err := proxy.Status(store)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Proxy = proxyView(info)
+	case "stop":
+		if opts.dryRun {
+			info, err := proxy.Status(store)
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			e.Plan = map[string]any{"action": "proxy stop", "proxy": proxyView(info)}
+			return
+		}
+		if err := proxy.Stop(ctx, store); err != nil {
+			failError(e, err)
+			return
+		}
+		info, err := proxy.Status(store)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Proxy = proxyView(info)
+	default:
+		e.fail("USAGE", "unknown proxy command: "+args[0])
+	}
+}
+
+func proxyReloadCompatibility(info proxy.Info, cfg routing.Config) error {
+	expectedHTTPS := cfg.Routing.HTTPSListen
+	if cfg.ExternalTLS() {
+		expectedHTTPS = ""
+	}
+	expectedTLS := "provided"
+	if cfg.ExternalTLS() {
+		expectedTLS = "external"
+	}
+	if info.HTTPListen != cfg.Routing.HTTPListen || info.HTTPSListen != expectedHTTPS || info.TLSMode != expectedTLS {
+		return &proxy.Error{Code: "CONFIG_INVALID", Message: "proxy listener or TLS mode change requires restart"}
+	}
+	return nil
+}
+
+func aliasCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+	if opts.toWorktree != "" || opts.file != "" || opts.all || opts.cascade || opts.retryHooks || opts.allServices || opts.noProxy || opts.follow || opts.tailSet {
+		e.fail("USAGE", "alias does not accept lifecycle or file flags")
+		return
+	}
+	if len(args) < 1 || len(args) > 2 {
+		e.fail("USAGE", "alias requires LABEL or SERVICE FULL_HOSTNAME")
+		return
+	}
+	d, w := resolveCommandSelection(store, opts, true, e)
+	if d == nil {
+		return
+	}
+	cfg, _, err := machineRouting()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	r := runner.New(store, executablePath())
+	r.Routing = &cfg
+	var result any
+	if len(args) == 1 {
+		if opts.dryRun {
+			result, err = r.PlanAlias(ctx, d, w, args[0])
+		} else {
+			result, err = r.SetAlias(ctx, d, w, args[0])
+		}
+	} else {
+		selection := runner.Selection{Project: d, Worktree: w, Service: args[0]}
+		if opts.dryRun {
+			result, err = r.PlanHostnameAlias(ctx, selection, args[1])
+		} else {
+			result, err = r.SetHostnameAlias(ctx, selection, args[1])
+		}
+	}
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	if opts.dryRun {
+		e.Plan = result
+		return
+	}
+	e.Results = append(e.Results, result)
+	refreshProxyAfterAlias(ctx, store, e)
+}
+
+func refreshProxyAfterAlias(ctx context.Context, store *state.Store, e *envelope) {
+	info, statusErr := proxy.Status(store)
+	if ctx.Err() != nil {
+		appendProxyError(ctx, e, ctx.Err())
+		return
+	}
+	if statusErr != nil {
+		appendProxyError(ctx, e, statusErr)
+		return
+	}
+	e.Proxy = proxyView(info)
+	if info.State == "ready" {
+		if err := proxy.Reload(ctx, store); err != nil {
+			appendProxyError(ctx, e, err)
+			return
+		}
+		info, err := proxy.Status(store)
+		if err != nil {
+			appendProxyError(ctx, e, err)
+			return
+		}
+		e.Proxy = proxyView(info)
+	}
+}
+
+func appendProxyError(ctx context.Context, e *envelope, err error) {
+	code := proxyErrorCode(ctx, err)
+	e.ProxyErrors = append(e.ProxyErrors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
+	if code == "CANCELLED" {
+		e.fail("CANCELLED", err.Error())
+		return
+	}
+	e.Status = "partial"
+}
+
+func appendRoutingError(err error, e *envelope) {
+	code := "IO_ERROR"
+	var re *routing.Error
+	var pe *proxy.Error
+	var runErr *runner.Error
+	switch {
+	case errors.As(err, &re):
+		code = re.Code
+	case errors.As(err, &pe):
+		code = pe.Code
+	case errors.As(err, &runErr):
+		code = runErr.Code
+	case errors.Is(err, state.ErrCorrupt):
+		code = "STATE_CORRUPT"
+	}
+	e.RoutingErrors = append(e.RoutingErrors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
+	e.Status = "partial"
+}
+
+func proxyErrorCode(ctx context.Context, err error) string {
+	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		return "CANCELLED"
+	}
+	var pe *proxy.Error
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	var re *routing.Error
+	if errors.As(err, &re) {
+		return re.Code
+	}
+	if errors.Is(err, state.ErrOwnershipUnknown) {
+		return "OWNERSHIP_UNKNOWN"
+	}
+	if errors.Is(err, state.ErrCorrupt) {
+		return "STATE_CORRUPT"
+	}
+	return "IO_ERROR"
+}
 func mustProjectInstances(store *state.Store, id string, e *envelope) map[string]state.Instance {
 	r, err := store.Read()
 	if err != nil {
@@ -462,7 +730,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
 			return
 		}
-		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, e)
+		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, opts.noProxy, e)
 		return
 	}
 	if e.Command == "down" && len(services) == 0 {
@@ -485,7 +753,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
 			return
 		}
-		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, e)
+		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, opts.noProxy, e)
 		return
 	}
 
@@ -533,7 +801,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 		setGraphPlan(ctx, store, e.Command, selections, opts.cascade, reg.Revision, e)
 		return
 	}
-	runGraph(ctx, store, e.Command, selections, opts.cascade, opts.retryHooks, e)
+	runGraph(ctx, store, e.Command, selections, opts.cascade, opts.retryHooks, opts.noProxy, e)
 }
 
 func setGraphPlan(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, revision uint64, e *envelope) {
@@ -541,7 +809,16 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 		e.Plan = runner.GraphPlan{Action: action, Revision: revision, Instances: []runner.PlannedInstance{}}
 		return
 	}
-	plan, err := runner.New(store, executablePath()).PlanGraph(ctx, action, selections, cascade)
+	r := runner.New(store, executablePath())
+	if action == "up" || action == "restart" {
+		cfg, _, err := machineRouting()
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		r.Routing = &cfg
+	}
+	plan, err := r.PlanGraph(ctx, action, selections, cascade)
 	if err != nil {
 		failError(e, err)
 		return
@@ -549,8 +826,20 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 	e.Plan = plan
 }
 
-func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks bool, e *envelope) {
+func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) {
 	r := runner.New(store, executablePath())
+	var routeCfg *routing.Config
+	var routePath string
+	if action == "up" || action == "restart" {
+		cfg, path, err := machineRouting()
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		routePath = path
+		routeCfg = &cfg
+		r.Routing = routeCfg
+	}
 	if retryHooks {
 		r.RetryHooks = true
 	}
@@ -619,6 +908,100 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 			}
 		}
 	}
+	if (action == "up" || action == "restart") && hasSuccessfulLiveResult(result.Results) {
+		if routeCfg != nil && routeCfg.Routing.Enabled && !noProxy {
+			needs, checkErr := graphNeedsProxy(store, result.Results)
+			if checkErr != nil {
+				appendProxyError(ctx, e, checkErr)
+			} else if needs {
+				ensureProxyAfterStart(ctx, store, routePath, e)
+			}
+		}
+	}
+}
+
+func ensureProxyAfterStart(ctx context.Context, store *state.Store, path string, e *envelope) {
+	if err := proxy.Ensure(ctx, store, executablePath(), path); err != nil {
+		appendProxyError(ctx, e, err)
+		return
+	}
+	info, err := proxy.Status(store)
+	if err != nil {
+		appendProxyError(ctx, e, err)
+		return
+	}
+	e.Proxy = proxyView(info)
+}
+
+func hasSuccessfulLiveResult(results []runner.Result) bool {
+	for _, r := range results {
+		if (r.Status == "completed" || r.Status == "unchanged") && !r.StateUnknown && liveState(r.State) {
+			return true
+		}
+	}
+	return false
+}
+
+func graphNeedsProxy(store *state.Store, results []runner.Result) (bool, error) {
+	reg, err := store.Read()
+	if err != nil {
+		return false, err
+	}
+	queue := []string{}
+	seen := map[string]bool{}
+	for _, result := range results {
+		if (result.Status != "completed" && result.Status != "unchanged") || result.StateUnknown || !liveState(result.State) {
+			continue
+		}
+		if result.URLs["url"] != "" && result.URLs["url"] != result.URLs["direct_url"] {
+			return true, nil
+		}
+		queue = append(queue, result.InstanceID)
+	}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		parts := strings.Split(id, "/")
+		if len(parts) != 3 {
+			continue
+		}
+		p, err := reg.Project(parts[0])
+		if err != nil {
+			return false, err
+		}
+		instance, ok := p.Instances[id]
+		if !ok {
+			continue
+		}
+		if instance.RouteURL != "" {
+			return true, nil
+		}
+		runID := instance.RunID
+		for _, result := range results {
+			if result.InstanceID == id && result.RunID != "" {
+				runID = result.RunID
+				break
+			}
+		}
+		if runID == "" {
+			continue
+		}
+		manifest, err := store.ReadManifest(runID)
+		if err != nil {
+			return false, err
+		}
+		if manifest.InstanceID != id {
+			return false, state.ErrCorrupt
+		}
+		for _, target := range manifest.EffectiveBindings {
+			queue = append(queue, target)
+		}
+	}
+	return false, nil
 }
 
 func graphFailureCode(ctx context.Context, err error) string {
@@ -695,7 +1078,10 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 	}
 	changed, restartRequired := configDrift(store, instance, cfg.Digest, e)
 	info := instanceInfo{ID: instance.ID, ProjectID: project.ID, WorktreeID: worktree.ID, Service: instance.Service, State: result.State, StateUnknown: result.StateUnknown, RunID: instance.RunID, ConfigChanged: changed, RestartRequired: restartRequired}
+	addRunDetails(store, instance, &info)
 	addDependencyDetails(store, project, worktree, &service, instance, true, &info, e)
+	applyRouteView(store, instance, &info)
+	applyRouteView(store, instance, &info)
 	fields["config_changed"] = info.ConfigChanged
 	fields["restart_required"] = info.RestartRequired
 	if len(info.DesiredBindings) > 0 {
@@ -706,6 +1092,15 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 	}
 	if info.DependencyError != "" {
 		fields["dependency_error"] = info.DependencyError
+	}
+	if info.URL != "" {
+		fields["url"] = info.URL
+	}
+	if info.DirectURL != "" {
+		fields["direct_url"] = info.DirectURL
+	}
+	if info.RouteChanged {
+		fields["route_changed"] = true
 	}
 	return fields
 }
@@ -827,6 +1222,8 @@ func register(store *state.Store, path string, dryRun bool, e *envelope) {
 		failError(e, err)
 		return
 	}
+	routeCfg, _, routeCfgErr := machineRouting()
+	routeEnabled := routeCfgErr == nil && routeCfg.Routing.Enabled
 	e.Results = append(e.Results, projectInfo{p.ID, p.Name, p.Root})
 	// A sibling without usable configuration remains discoverable by its ID.
 	for _, w := range p.Worktrees {
@@ -838,48 +1235,88 @@ func register(store *state.Store, path string, dryRun bool, e *envelope) {
 		e.Results = append(e.Results, info)
 	}
 	if dryRun {
+		candidate := r
+		saved, readErr := candidate.Project(p.ID)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			failError(e, readErr)
+			return
+		}
+		mergeDiscoveredProject(&saved, p)
+		if err := candidate.SetProject(p.ID, saved); err != nil {
+			failError(e, err)
+			return
+		}
+		if routeCfgErr != nil {
+			appendRoutingError(routeCfgErr, e)
+		} else if routeEnabled {
+			rr := runner.New(store, executablePath())
+			rr.Routing = &routeCfg
+			if err := rr.AssignProjectRoutes(&candidate, p); err != nil {
+				appendRoutingError(err, e)
+			}
+		}
 		if len(e.Errors) > 0 {
 			e.Status = "partial"
 		}
 		return
 	}
+	var routeErr error
 	err = store.Update(func(r *state.Registry) error {
 		saved, err := r.Project(p.ID)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		saved.ID, saved.Name, saved.Root, saved.GitCommonDir = p.ID, p.Name, p.Root, p.GitCommonDir
-		// Historical/live instances still need descriptors of removed worktrees.
-		knownWorktrees := make(map[string]state.Worktree)
-		for _, w := range saved.Worktrees {
-			knownWorktrees[w.ID] = w
+		mergeDiscoveredProject(&saved, p)
+		if err := r.SetProject(p.ID, saved); err != nil {
+			return err
 		}
-		if saved.Instances == nil {
-			saved.Instances = make(map[string]state.Instance)
-		}
-		for _, w := range p.Worktrees {
-			knownWorktrees[w.ID] = state.Worktree{ID: w.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached}
-			if w.Config == nil {
-				continue
-			}
-			for name := range w.Config.Services {
-				id := p.ID + "/" + w.ID + "/" + name
-				if _, exists := saved.Instances[id]; !exists {
-					saved.Instances[id] = state.Instance{ID: id, Service: name, WorktreeID: w.ID, State: "stopped"}
-				}
+		if routeCfgErr != nil {
+			routeErr = routeCfgErr
+		} else if routeEnabled {
+			rr := runner.New(store, executablePath())
+			rr.Routing = &routeCfg
+			if routeErr = rr.AssignProjectRoutes(r, p); routeErr != nil {
+				return nil
 			}
 		}
-		saved.Worktrees = nil
-		for _, id := range sortedKeys(knownWorktrees) {
-			saved.Worktrees = append(saved.Worktrees, knownWorktrees[id])
-		}
-		return r.SetProject(p.ID, saved)
+		return nil
 	})
 	if err != nil {
 		e.Results = []any{}
 		failError(e, err)
 	} else if len(e.Errors) > 0 {
 		e.Status = "partial"
+	}
+	if routeErr != nil {
+		appendRoutingError(routeErr, e)
+	}
+}
+
+func mergeDiscoveredProject(saved *state.Project, p *discovery.Project) {
+	saved.ID, saved.Name, saved.Root, saved.GitCommonDir = p.ID, p.Name, p.Root, p.GitCommonDir
+	known := map[string]state.Worktree{}
+	for _, w := range saved.Worktrees {
+		known[w.ID] = w
+	}
+	if saved.Instances == nil {
+		saved.Instances = map[string]state.Instance{}
+	}
+	for _, w := range p.Worktrees {
+		old := known[w.ID]
+		known[w.ID] = state.Worktree{Alias: old.Alias, ID: w.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached}
+		if w.Config == nil {
+			continue
+		}
+		for name := range w.Config.Services {
+			id := p.ID + "/" + w.ID + "/" + name
+			if _, ok := saved.Instances[id]; !ok {
+				saved.Instances[id] = state.Instance{ID: id, Service: name, WorktreeID: w.ID, State: "stopped"}
+			}
+		}
+	}
+	saved.Worktrees = nil
+	for _, id := range sortedKeys(known) {
+		saved.Worktrees = append(saved.Worktrees, known[id])
 	}
 }
 
@@ -999,6 +1436,7 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 				info.Preparation = preparationView(store, instance)
 				info.Hook = hookView(store, instance.Hook)
 				addRunDetails(store, instance, &info)
+				applyRouteView(store, instance, &info)
 			}
 			addDependencyDetails(store, viewProject, state.Worktree{ID: w.ID, Root: w.Root}, &service, instance, registered, &info, e)
 			e.Results = append(e.Results, info)
@@ -1149,6 +1587,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 				info.ConfigError = "registered worktree metadata is missing"
 				addDependencyDetails(store, p, state.Worktree{ID: i.WorktreeID}, nil, i, true, &info, e)
 			}
+			applyRouteView(store, i, &info)
 			e.Results = append(e.Results, info)
 		}
 	}
@@ -1195,6 +1634,31 @@ func addRunDetails(store *state.Store, instance state.Instance, info *instanceIn
 		if record, err := store.ReadRun(instance.RunID); err == nil {
 			info.PID = record.Child.PID
 		}
+	}
+}
+
+func applyRouteView(store *state.Store, instance state.Instance, info *instanceInfo) {
+	if instance.RunID == "" || info.StateUnknown {
+		if instance.RouteURL != "" {
+			info.URL = instance.RouteURL
+		}
+		return
+	}
+	manifest, err := store.ReadManifest(instance.RunID)
+	if err != nil || manifest.Launch.Protocol != "http" {
+		if instance.RouteURL != "" {
+			info.URL = instance.RouteURL
+		}
+		return
+	}
+	desiredURL := instance.RouteURL
+	if desiredURL == "" {
+		desiredURL = manifest.Addresses["direct_url"]
+	}
+	info.URL = desiredURL
+	if liveState(info.State) && manifest.Addresses["url"] != desiredURL {
+		info.RouteChanged = true
+		info.RestartRequired = true
 	}
 }
 
@@ -1295,8 +1759,16 @@ func addDependencyDetails(store *state.Store, project state.Project, worktree st
 					addDependencyError(info, e, manifestErrorCode(err), "cannot read effective dependency manifest: "+err.Error())
 				} else if targetManifest.InstanceID != effectiveTarget {
 					addDependencyError(info, e, "STATE_CORRUPT", "dependency manifest instance does not match "+effectiveTarget)
-				} else if dependencyAddressesChanged(dependency, manifest.StopContract.Env, targetManifest.Addresses) {
-					info.RestartRequired = true
+				} else {
+					addresses := copyBindings(targetManifest.Addresses)
+					if targetInstance.RouteURL != "" {
+						addresses["url"] = targetInstance.RouteURL
+					} else {
+						addresses["url"] = addresses["direct_url"]
+					}
+					if dependencyAddressesChanged(dependency, manifest.StopContract.Env, addresses) {
+						info.RestartRequired = true
+					}
 				}
 			}
 		}
@@ -1436,13 +1908,17 @@ func failError(e *envelope, err error) {
 	code := "IO_ERROR"
 	var configErr *config.Error
 	var runErr *runner.Error
+	var routeErr *routing.Error
+	var proxyErr *proxy.Error
 	switch {
-	case errors.Is(err, context.Canceled):
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		code = "CANCELLED"
 	case errors.Is(err, state.ErrCorrupt):
 		code = "STATE_CORRUPT"
 	case errors.Is(err, state.ErrBusy):
 		code = "BUSY"
+	case errors.Is(err, state.ErrOwnershipUnknown):
+		code = "OWNERSHIP_UNKNOWN"
 	case errors.Is(err, discovery.ErrAmbiguous):
 		code = "AMBIGUOUS"
 	case errors.Is(err, discovery.ErrNotFound), errors.Is(err, os.ErrNotExist):
@@ -1453,6 +1929,10 @@ func failError(e *envelope, err error) {
 		code = configErr.Code
 	case errors.As(err, &runErr):
 		code = runErr.Code
+	case errors.As(err, &routeErr):
+		code = routeErr.Code
+	case errors.As(err, &proxyErr):
+		code = proxyErr.Code
 	}
 	e.fail(code, err.Error())
 	if errors.As(err, &configErr) {

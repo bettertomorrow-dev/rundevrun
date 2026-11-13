@@ -35,9 +35,12 @@ func contextOrBusy(ctx context.Context, message string) error {
 }
 
 type Info struct {
-	State      string     `json:"state"`
-	Identity   procid.Ref `json:"identity"`
-	ConfigPath string     `json:"config_path"`
+	State       string     `json:"state"`
+	Identity    procid.Ref `json:"identity"`
+	ConfigPath  string     `json:"config_path"`
+	HTTPListen  string     `json:"http_listen,omitempty"`
+	HTTPSListen string     `json:"https_listen,omitempty"`
+	TLSMode     string     `json:"tls_mode,omitempty"`
 }
 type reply struct {
 	Info    Info   `json:"info"`
@@ -114,7 +117,7 @@ func Reload(ctx context.Context, store *state.Store) error {
 		return err
 	}
 	if info.State != "ready" {
-		return errors.New("proxy is not running")
+		return &Error{Code: "NOT_FOUND", Message: "proxy is not running"}
 	}
 	return nil
 }
@@ -240,7 +243,7 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 		return err
 	}
 	pid := cmd.Process.Pid
-	_ = cmd.Process.Release()
+	go func() { _ = cmd.Wait() }()
 	for {
 		current, e := store.ReadProxy()
 		if e == nil && current.Identity.PID == pid {
