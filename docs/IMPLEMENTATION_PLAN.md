@@ -223,14 +223,14 @@ Sol обновляет этот раздел после интеграции э�
 ```text
 Текущий этап: 3
 Статус: in_progress
-Активные задания: Terra 3A граф экземпляров/bind/адреса; Luna 3B пример и публичный CLI-сценарий, адаптер после фиксации API
+Активные задания: Terra 3A2 исполнение графа; 3A1 planner/Bind и 3B пример приняты как подэтапы; CLI adapter после фиксации execution API
 Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa; 2 done на 301afb9 по Linux-проверкам. Darwin реализация есть, runtime приёмка pending и не считается подтверждённой.
-Последняя интегрированная ревизия: 301afb9b18d54753a80c46835296112e36c2b914
+Последняя интегрированная ревизия: bb5e56db26e84157a9a870cb7f387e2890cce692, подэтап3A1/3B; весьэтап3 ещёнепринят
 Проверки: go test ./...; go vet ./...; go test -race ./...; git diff --check. Darwin arm64 и amd64 go build ./... прошли, реальные syscall/lifecycle там НЕ запускались. На Linux проверены actual binary discovery, single-service lifecycle, repeat/restart/fixed ports, HTTP/process readiness, logs/rotation, stop без конфигурации, SIGSTOP supervisor, build failures/timeouts, реальный SIGKILL frontend во время build и восстановление через down/up/restart, сохранение old app, EOF before ACK, поздний потомок после stop snapshot, foreign identity safety, семь restart с current + пятью historical runs.
 Публичный binary /tmp/rundevrun-stage2-rdr также проверен на config drift: up не заменяет running run, показывает config_changed/restart_required; status с explicit selectors показывает actual state и config_error после invalid TOML; down работает без valid config. Все временные процессы остановлены.
 Замечания Astra: A0 закрыта для контрактов на 0478d52. Следующая критическая проверка A1 после этапа4. Для A1 отдельно проверить fail-closed отсутствие anchor, cleanup kernel snapshots, native Darwin proc_info ABI и retention безопасности.
 Внешние условия: второй проект /home/alex/dev/twikko выбран пользователем; macOS runtime на обеих архитектурах; готовый домен/сертификат; реальный Cloudflare share; OAuth preview при миграции. Кросс-компиляция не закрывает критерий12, релиз не готов.
-Следующий шаг: реализовать граф и bind, интегрировать CLI, проверить несколько worktree с общей и независимыми зависимостями. Не открывать switch/proxy до приёмки stage3 API/behavior.
+Следующий шаг: Terra3A2 подключает общий executor к PlanGraph, затем CLI lists/cascade/default down. Не открывать switch/proxy до полной приёмки этапа3.
 
 История этапа2:
 2A core и 2B CLI интегрированы в a840226 как промежуточный результат, ещё с двумя открытыми crash-safety пунктами.
@@ -241,6 +241,10 @@ Retention: пять последних подтверждённых completed un
 Darwin code использует native proc_info и структуру socket_fdinfo по Apple XNU headers; parser fixtures проверены на Linux. ABI/private syscall и OS permissions нуждаются в реальной macOS проверке до релиза.
 
 Назначение этапа3:
+3A1 done на bb5e56d: readonly PlanGraph для up/down, PlanBind/Bind с consumer lock и revision CAS, desired/effective binding separation, tentative numeric port plan и env validation. Sol review исправил fixed-port collisions, binding availability, active config drift и отсутствие operation lock; concurrent bind cycle/BUSY и readonly tests прошли. Public CLI bind/--to-worktree, dry-run graph, selectors изподкаталога и fresh branch labels интегрированы Sol. Все test/vet/race прошли перед последней малой нормализацией plan states; targeted graph/bind tests после неё прошли.
+3B example done на bb5e56d: catalog/reports/indexer в examples/mini, four temp worktrees, Pythonstdlib, publicJSON scenario. Конфиги проходят discovery/check. Реальныйbinary прошёл всеbind иup catalog, сценарий остановился ожидаемым INCOMPLETE на up reports indexer, потомуbatch executorещёнет. Cleanup подтверждается publicstatus; еслинеподтверждён, fixture/runtime сохраняются и выводитсяошибка, не удаляются управляющие записи. PASS не выдавался.
+3A2 owner Terra: runner/**, state/** при необходимости; общийexecutor для single/batch up/down/restart, всеадресадоbuild, effectivebindings snapshots, graphlocks и safe down/cascade. Не менятьCLI/config/discovery/docs/module/main/platforminspection. ИмеющиесяPlanGraph/Bind API сохранить. Предложить UpGraph/DownGraph/RestartGraph concrete GraphResult и прислать API Sol.
+Sol сейчас владеет internal/cli/** и selection resolver; Luna остаётся наexamplesдо отдельногоCLIзадания. Одновременно максимумдваbuilders, никто не создаёт дочерних агентов.
 Terra 3A: internal/runner/** и необходимые internal/state/**; graph planner, effective/desired bindings, единый preallocated address plan, operations/ports/build-env, protected down/cascade. Не менять CLI/config/discovery/docs/module/main без Sol. Сначала зафиксировать public API и owner boundaries.
 Luna 3B: examples/mini/**, пример с произвольными catalog/reports/indexer и публичный CLI-сценарий. Не менять core/state/module. После API согласования Sol назначает ей internal/cli/** adapter; до этого только пример и scenario, без ложного passed.
 Sol: docs/module, при необходимости config/discovery integration, общая проверка. Одновременно не более двух builders. Builders не коммитят и не создают агентов.

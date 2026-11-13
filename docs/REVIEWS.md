@@ -91,3 +91,16 @@ syscall/ABI or macOS lifecycle. It remains mandatory before release.
 For A1: review the conservative OWNERSHIP_UNKNOWN outcome when no verified anchor
 remains, snapshot/signal races and run retention. Unknown artifacts deliberately
 remain protected until an explicit safe recovery is possible.
+
+## Stage 3A1 integration, bb5e56d
+
+Sol reviewed graph planner/binding source and required consumer operation locks,
+revision validation for concurrent cross-worktree binds, collision checks for
+fixed/reserved ports, target placeholder availability before metadata writes and
+immutable active addresses despite changed config. Regression suites cover these
+cases, including competing bindings that would form a cycle. CLI exposes Bind
+and readonly graph/binding plans. This does not yet implement graph execution.
+
+Examples use public JSON commands and isolated Git worktrees. The scenario now
+reaches multi-service up and reports INCOMPLETE, then confirms cleanup via public
+status. It cannot count as the second real project or as passed stage 3.
