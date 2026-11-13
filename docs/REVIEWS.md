@@ -36,3 +36,15 @@ contracts are accepted. Second project selected by user: /home/alex/dev/twikko.
 Astra found no blockers to 1A/1B on the corrected contract revision. Sol accepts
 stage 0. Runtime guarantees remain unimplemented and require the specified later
 checks. No source repositories or application processes were changed by reviews.
+
+## Stage 1 integration, 2f8cefa
+
+Sol reviewed builder source and requested concrete corrections before acceptance:
+real dependency URL placeholders and routes, all-service defaults before edge
+validation, immutable stop fields, error propagation for uncertain identities,
+nested state consistency, empty optional config fields, command validation for
+hooks, path selector priority and Git environment isolation. Builders added
+regression checks. Sol completed DNS domain label validation and integrated CLI
+registration/listings and typed JSON errors. Stage 1 accepted on Linux after
+vet/test/race and real-binary discovery checks. macOS cross-build is not runtime
+acceptance. Orphan temp-file test simulates interruption, not injected disk faults.

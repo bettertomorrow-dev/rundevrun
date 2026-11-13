@@ -1,6 +1,6 @@
 # План реализации rundevrun
 
-Основа: [PRD 0.4](PRD.md). Статус: этап 0 принят; этап 1 в работе.
+Основа: [PRD 0.4](PRD.md). Статус: этапы 0 и 1 приняты; этап 2 в работе.
 
 Цель первой версии: заменить текущий launcher MillDrum универсальным CLI для агента и подтвердить работу на втором проекте. Промежуточные этапы пригодны для проверки, но не считаются готовым релизом.
 
@@ -221,15 +221,15 @@ Sol исправляет мелкие замечания сам. Существ�
 Sol обновляет этот раздел после интеграции этапа. Допустимые состояния: pending, in_progress, blocked, done. Для blocked обязательно указать условие разблокировки, для done указать проверенную ревизию и доказательство приёмки.
 
 ```text
-Текущий этап: 1
+Текущий этап: 2
 Статус: in_progress
-Активные задания: Luna 1A config/discovery; Terra 1B state/procid; Sol интеграция CLI после их результатов
-Принятые этапы: 0 done на 0478d52; контракты, карта переноса, компилируемый CLI; A0 re-check без блокеров
-Последняя интегрированная ревизия: 0478d52
-Проверки: Linux Go 1.27.4; go vet ./...; go test ./...; go run ./cmd/rdr --help; git diff --check. Lifecycle ещё отсутствует, тестов поведения нет.
+Активные задания: Terra 2A lifecycle одного сервиса; CLI-адаптер Luna запускается после фиксации API executor
+Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa
+Последняя интегрированная ревизия: 2f8cefad23ade30dcc77f73bff7b00fb3e40bce9
+Проверки этапа 1: Linux Go 1.27.4; go vet ./...; go test ./...; go test -race ./...; git diff --check; GOOS=darwin GOARCH=arm64 go build ./... только сборка. Реальный binary /tmp/rundevrun-stage1-rdr во временном проекте: config check, register dry-run без runtime directory, register, services/status stopped; marker проектных команд не создан. Полный TOML example TECH_SPEC проходит config check с тремя сервисами. Parser, symlink/detached/ambiguous selectors, независимые Git roots, concurrent registry subprocesses, повреждённые записи и PID identity mismatch покрыты тестами. Interrupted-write тест моделирует оставленный частичный temp file; реальный сбой fsync/rename и macOS lifecycle не проверены.
 Замечания Astra: A0 на 75f90a3 выявила 10 дефектов контрактов; исправления и соответствия в docs/REVIEWS.md; re-check 0478d52: блокеров этапа 1 нет, lifecycle ещё не принят
 Внешние условия: второй проект /home/alex/dev/twikko выбран пользователем, HEAD 631e4b2, status чистый, инструкции прочитаны; macOS; готовый домен/сертификат; OAuth preview при миграции
-Следующий шаг: принять результаты 1A/1B по коду и тестам; подключить CLI-регистрацию и listing незапущенных сервисов
+Следующий шаг: Terra 2A реализует executor/supervisor; затем Luna подключает публичные CLI команды и Sol проверяет настоящий binary. Не открывать этап 3 до полной приёмки этапа 2.
 
 Назначение этапа 0:
 Sol: docs/TECH_SPEC.md, docs/MIGRATION_MAP.md, go.mod, cmd/rdr/main.go.
@@ -239,8 +239,14 @@ Astra: read-only A0 над закреплённой ревизией контр�
 Назначение этапа 1:
 Luna 1A: только internal/config/** и internal/discovery/**; strict config, placeholders validation, Git/non-Git discovery и selectors; тесты invalid TOML/version, collisions, symlink/detached/ambiguity, no project execution.
 Terra 1B: только internal/state/** и internal/procid/**; private atomic store/locks/run records/stale identity; тесты concurrent updates, interrupted write, stale/foreign PID, recovery BUSY, per-project corruption.
-Sol: go.mod/go.sum, cmd/rdr/** и internal/cli/**, docs; после согласованных API интеграция registration, services/status и JSON envelope. Не выполнять lifecycle до принятия этапа 1.
+Sol: go.mod/go.sum, cmd/rdr/** и internal/cli/**, docs; registration, services/status и JSON envelope интегрированы в 2f8cefa.
 Builders не меняют общие файлы и не коммитят чужие изменения. При противоречии контракта сообщают Sol.
+
+Назначение этапа 2A:
+Terra: internal/runner/** новый executor/supervisor/logs/ownership, необходимые расширения internal/state/** и internal/procid/**, cmd/rdr/main.go только internal supervisor/bootstrap dispatch. Не менять config/discovery/cli/docs/module.
+Результат: один сервис без/с портом, plan/dry-run и исполнение, отдельная сборка, detached supervisor с durable intent/claim/bootstrap ACK, readiness+loopback/listener ownership, status/logs/stop/restart и cleanup. Экспортировать простой API для CLI. Hooks и граф зависимостей остаются этапами 4 и 3; до их появления явный отказ, никакого молчаливого игнорирования.
+Luna: CLI-оболочка будет назначена отдельным узким заданием после готовности API; пока не запущена, чтобы не изобретать несовместимые контракты.
+Sol: принимает 2A по коду и tests, фиксирует API, затем интегрирует CLI и binary acceptance, только после этого отмечает этап 2 done.
 
 Исходные PRD и план взяты из незакоммиченных docs/ основного checkout /home/alex/dev/rundevrun, скопированы в рабочую ветку и сохранены commit 014a96e. Оригиналы и изменённый README основного checkout не трогались.
 Go отсутствовал в PATH. Установлен отдельный Go 1.27.4 из официального go.dev/dl с проверкой SHA-256, без системных изменений. Для проверок: PATH=/home/alex/.cache/rundevrun-toolchain/go/bin:$PATH.
