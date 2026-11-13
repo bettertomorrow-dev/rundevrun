@@ -91,7 +91,11 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	defer locks.Close()
 	for _, p := range initial.Instances {
 		parts := strings.Split(p.InstanceID, "/")
-		if err = r.recoverHook(ctx, parts[0], p.InstanceID, action, operationID); err != nil {
+		newWorktree := ""
+		if p.routeSelection.Worktree != nil {
+			newWorktree = p.routeSelection.Worktree.Root
+		}
+		if err = r.recoverHook(ctx, parts[0], p.InstanceID, action, newWorktree, operationID); err != nil {
 			return out, err
 		}
 		if err = r.recoverPreparation(ctx, parts[0], p.InstanceID); err != nil {
@@ -225,6 +229,9 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		if reg.Revision != plan.Revision {
 			return &Error{"STATE_CONFLICT", errors.New("registry changed")}
 		}
+		if e := r.ReservePlannedRoutes(reg, plan); e != nil {
+			return e
+		}
 		used := map[int]bool{}
 		for id := range reg.Projects {
 			p, e := reg.Project(id)
@@ -350,6 +357,9 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 				if x.worktree.Config.Services[strings.Split(x.plan.InstanceID, "/")[2]].Protocol == "http" {
 					a["direct_url"] = "http://127.0.0.1:" + a["port"]
 					a["url"] = a["direct_url"]
+					if x.plan.route.url != "" {
+						a["url"] = x.plan.route.url
+					}
 				}
 			}
 		}
@@ -389,7 +399,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 				deps[name] = addresses[id]
 			}
 			service := strings.Split(p.InstanceID, "/")[2]
-			legacy := Plan{InstanceID: p.InstanceID, State: p.State, RunID: p.RunID, Digest: p.Digest}
+			legacy := Plan{InstanceID: p.InstanceID, State: p.State, RunID: p.RunID, Digest: p.Digest, Addresses: addresses[p.InstanceID]}
 			var built preparedRun
 			built, e = r.prepareLocked(ctx, x.project.ID, x.project, x.worktree, service, x.worktree.Config.Services[service], legacy, x.runID, x.operationID, x.port, deps, p.Bindings)
 			if e == nil {

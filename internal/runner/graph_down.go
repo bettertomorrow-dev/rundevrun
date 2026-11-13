@@ -171,7 +171,7 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 		if err = ctx.Err(); err != nil {
 			failure = &Error{"CANCELLED", err}
 		} else {
-			failure = r.recoverHook(ctx, parts[0], id, "down", operationID)
+			failure = r.recoverHook(ctx, parts[0], id, "down", "", operationID)
 			if failure == nil {
 				failure = r.recoverPreparation(ctx, parts[0], id)
 			}

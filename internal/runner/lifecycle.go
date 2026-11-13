@@ -52,14 +52,16 @@ func (r *Runner) Stop(ctx context.Context, p *discovery.Project, w *discovery.Wo
 }
 
 type preparedRun struct {
-	projectID string
-	plan      Plan
-	runID     string
-	manifest  state.Manifest
-	timeout   time.Duration
-	reason    string
-	reserved  bool
-	active    bool
+	projectID   string
+	plan        Plan
+	runID       string
+	manifest    state.Manifest
+	timeout     time.Duration
+	reason      string
+	oldWorktree string
+	newWorktree string
+	reserved    bool
+	active      bool
 }
 
 // prepareLocked requires the instance lock and an existing preparation reservation.
@@ -74,8 +76,11 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 	if svc.Protocol == "http" {
 		values["url"] = "http://127.0.0.1:" + values["port"]
 		values["direct_url"] = values["url"]
+		if plan.Addresses["url"] != "" {
+			values["url"] = plan.Addresses["url"]
+		}
 		addresses["url"] = values["url"]
-		addresses["direct_url"] = values["url"]
+		addresses["direct_url"] = values["direct_url"]
 	}
 	for dep, addresses := range dependencies {
 		for k, v := range addresses {
@@ -110,6 +115,9 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 		return preparedRun{}, err
 	}
 	manifest := state.Manifest{RunID: runID, InstanceID: plan.InstanceID, OperationID: operationID, Digest: current.Config.Digest, Addresses: addresses, EffectiveBindings: bindings, StopContract: state.StopContract{Cwd: cwd, Command: svc.Command, RunDir: runDir, Env: env}, Launch: state.LaunchContract{Command: command, Cwd: cwd, Env: launchEnv, Protocol: svc.Protocol, Port: port, StopTimeout: svc.StopTimeout}}
+	for _, route := range svc.Routes {
+		manifest.Routes = append(manifest.Routes, state.Route{Path: route.Path, Dependency: route.Dependency, StripPrefix: route.StripPrefix})
+	}
 	manifest.StopContract.Worktree = current.Root
 	manifest.StopContract.HookTimeout = svc.HookTimeout
 	manifest.StopContract.Hooks = map[string]string{}
@@ -198,7 +206,11 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 	if plan.RunID != "" && plan.State != "stopped" {
 		oldWorktree = prepared.manifest.StopContract.Worktree
 	}
-	if err = r.runHook(ctx, projectID, prepared.manifest, "before_start", reason, oldWorktree, prepared.manifest.StopContract.Worktree, operationID); err != nil {
+	newWorktree := prepared.manifest.StopContract.Worktree
+	if reason == "switch" {
+		oldWorktree, newWorktree = prepared.oldWorktree, prepared.newWorktree
+	}
+	if err = r.runHook(ctx, projectID, prepared.manifest, "before_start", reason, oldWorktree, newWorktree, operationID); err != nil {
 		return Result{}, err
 	}
 	if port != 0 {
@@ -285,7 +297,7 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 			}
 			prepared.reserved = false
 			prepared.active = false
-			if err = r.runHook(ctx, projectID, prepared.manifest, "after_start", reason, oldWorktree, prepared.manifest.StopContract.Worktree, operationID); err != nil {
+			if err = r.runHook(ctx, projectID, prepared.manifest, "after_start", reason, oldWorktree, newWorktree, operationID); err != nil {
 				return Result{}, err
 			}
 			result, err := r.result(plan.InstanceID, runID, "completed")
@@ -491,5 +503,29 @@ func (r *Runner) result(id, runID, status string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{InstanceID: id, RunID: runID, State: record.State, Status: status, URLs: m.Addresses, LogPaths: map[string]string{"build": filepath.Join(r.Store.Root, "runs", runID, "build.log"), "application": filepath.Join(r.Store.Root, "runs", runID, "application.log"), "supervisor": filepath.Join(r.Store.Root, "runs", runID, "supervisor.log")}}, nil
+	urls := make(map[string]string, len(m.Addresses))
+	for k, v := range m.Addresses {
+		urls[k] = v
+	}
+	if urls["direct_url"] != "" {
+		urls["url"] = urls["direct_url"]
+		if r.Routing != nil && r.Routing.Routing.Enabled {
+			parts := strings.Split(id, "/")
+			if len(parts) != 3 {
+				return Result{}, errors.New("invalid instance id")
+			}
+			reg, e := r.Store.Read()
+			if e != nil {
+				return Result{}, e
+			}
+			project, e := reg.Project(parts[0])
+			if e != nil {
+				return Result{}, e
+			}
+			if u := project.Instances[id].RouteURL; u != "" {
+				urls["url"] = u
+			}
+		}
+	}
+	return Result{InstanceID: id, RunID: runID, State: record.State, Status: status, URLs: urls, LogPaths: map[string]string{"build": filepath.Join(r.Store.Root, "runs", runID, "build.log"), "application": filepath.Join(r.Store.Root, "runs", runID, "application.log"), "supervisor": filepath.Join(r.Store.Root, "runs", runID, "supervisor.log")}}, nil
 }

@@ -125,7 +125,7 @@ func (r *Runner) runHook(ctx context.Context, projectID string, manifest state.M
 }
 
 // recoverHook never replays an interrupted or failed hook.
-func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, operationID string) error {
+func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, newWorktree, operationID string) error {
 	reg, e := r.Store.Read()
 	if e != nil {
 		return e
@@ -198,7 +198,7 @@ func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, operati
 	if e = gate.Close(); e != nil {
 		return e
 	}
-	return r.resolveHook(ctx, projectID, id, h, reason, operationID)
+	return r.resolveHook(ctx, projectID, id, h, reason, newWorktree, operationID)
 }
 
 func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason, newWorktree, operationID string) error {
@@ -229,7 +229,7 @@ func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason
 	return r.runHook(ctx, projectID, manifest, "after_stop", reason, manifest.StopContract.Worktree, newWorktree, operationID)
 }
 
-func (r *Runner) resolveHook(ctx context.Context, projectID, id string, h *state.HookIntent, reason, operationID string) error {
+func (r *Runner) resolveHook(ctx context.Context, projectID, id string, h *state.HookIntent, reason, newWorktree, operationID string) error {
 	if strings.HasSuffix(h.Name, "_start") {
 		return nil
 	}
@@ -242,10 +242,6 @@ func (r *Runner) resolveHook(ctx context.Context, projectID, id string, h *state
 	}
 	if manifest.InstanceID != id {
 		return fmt.Errorf("%w: hook manifest mismatch", state.ErrCorrupt)
-	}
-	newWorktree := ""
-	if reason == "restart" {
-		newWorktree = manifest.StopContract.Worktree
 	}
 	return r.runHook(ctx, projectID, manifest, h.Name, reason, manifest.StopContract.Worktree, newWorktree, operationID)
 }

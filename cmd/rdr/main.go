@@ -8,10 +8,17 @@ import (
 	"syscall"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/cli"
+	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 )
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "__rdr_proxy" {
+		if err := proxy.Serve(os.Args[2], os.Args[3]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) == 4 && os.Args[1] == "__rdr_supervisor" {
 		if err := runner.Supervise(os.Args[2], os.Args[3]); err != nil {
 			os.Exit(1)

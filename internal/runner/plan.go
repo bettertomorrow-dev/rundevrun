@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
+	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
@@ -13,6 +14,7 @@ type Runner struct {
 	Store      *state.Store
 	Executable string
 	RetryHooks bool
+	Routing    *routing.Config
 }
 
 func New(store *state.Store, executable string) *Runner {

@@ -43,6 +43,7 @@ type Project struct {
 	Instances    map[string]Instance `json:"instances,omitempty"`
 }
 type Instance struct {
+	RouteURL          string            `json:"route_url,omitempty"`
 	Hostname          string            `json:"hostname,omitempty"`
 	ID                string            `json:"id"`
 	Service           string            `json:"service"`

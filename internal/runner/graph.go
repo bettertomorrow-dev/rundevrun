@@ -19,15 +19,19 @@ type Selection struct {
 	Service  string
 }
 type PlannedInstance struct {
-	InstanceID string            `json:"instance_id"`
-	State      string            `json:"state"`
-	RunID      string            `json:"run_id,omitempty"`
-	Digest     string            `json:"digest,omitempty"`
-	Addresses  map[string]string `json:"addresses,omitempty"`
-	Bindings   map[string]string `json:"bindings,omitempty"`
-	Steps      []string          `json:"steps"`
-	Hook       *HookStatus       `json:"hook,omitempty"`
-	env        map[string]string
+	InstanceID     string            `json:"instance_id"`
+	Hostname       string            `json:"hostname,omitempty"`
+	RouteURL       string            `json:"route_url,omitempty"`
+	State          string            `json:"state"`
+	RunID          string            `json:"run_id,omitempty"`
+	Digest         string            `json:"digest,omitempty"`
+	Addresses      map[string]string `json:"addresses,omitempty"`
+	Bindings       map[string]string `json:"bindings,omitempty"`
+	Steps          []string          `json:"steps"`
+	Hook           *HookStatus       `json:"hook,omitempty"`
+	env            map[string]string
+	routeSelection Selection
+	route          routeAssignment
 }
 type HookStatus struct {
 	RunID string `json:"run_id"`
@@ -340,6 +344,55 @@ func (g *graphPlanner) finalize() error {
 		}
 		if n.saved.Preparation != nil {
 			n.plan.Steps = append([]string{"recover_preparation"}, n.plan.Steps...)
+		}
+	}
+	selections := map[string]Selection{}
+	for _, id := range g.order {
+		n := g.nodes[id]
+		sel := n.selection
+		enabled := g.r.Routing != nil && g.r.Routing.Routing.Enabled
+		knownLiveRoute := n.live && !g.replace[id] && n.saved.Hostname != "" && n.plan.Addresses["direct_url"] != ""
+		if enabled && knownLiveRoute {
+			worktree := *sel.Worktree
+			worktree.Config = nil
+			sel.Worktree = &worktree
+		} else if enabled {
+			project, err := g.project(sel)
+			if err != nil {
+				return err
+			}
+			w, err := discovery.Resolve(project, sel.Worktree.ID)
+			if err != nil {
+				return err
+			}
+			sel.Project, sel.Worktree = project, w
+		}
+		n.plan.routeSelection = sel
+		selections[id] = sel
+	}
+	routes, err := g.r.assignRoutes(&g.reg, selections)
+	if err != nil {
+		return err
+	}
+	for _, id := range g.order {
+		n := g.nodes[id]
+		n.plan.route = routes[id]
+		n.plan.Hostname = n.plan.route.host
+		n.plan.RouteURL = n.plan.route.url
+		if n.plan.Addresses == nil {
+			continue
+		}
+		copyAddresses := make(map[string]string, len(n.plan.Addresses))
+		for k, v := range n.plan.Addresses {
+			copyAddresses[k] = v
+		}
+		n.plan.Addresses = copyAddresses
+		if n.plan.Addresses["direct_url"] != "" {
+			if n.plan.route.url != "" {
+				n.plan.Addresses["url"] = n.plan.route.url
+			} else {
+				n.plan.Addresses["url"] = n.plan.Addresses["direct_url"]
+			}
 		}
 	}
 	for _, id := range g.order {

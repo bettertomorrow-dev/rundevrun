@@ -403,6 +403,9 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			out.Graph = append(out.Graph, n.plan)
 		}
 		if needed[id] && (!n.live || replacementsContains(replacements, id)) {
+			if !affected[id] && n.plan.RunID != "" && n.plan.State != "stopped" {
+				return SwitchPlan{}, &Error{"OWNERSHIP_UNKNOWN", fmt.Errorf("target %s requires explicit down/recovery", id)}
+			}
 			out.NewStarts = append(out.NewStarts, n.plan)
 			out.Preparations = append(out.Preparations, id)
 		}

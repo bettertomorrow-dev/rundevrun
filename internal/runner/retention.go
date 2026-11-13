@@ -27,7 +27,7 @@ func (r *Runner) pruneRuns(instanceID string) error {
 	if err != nil {
 		return err
 	}
-	refs, err := runReferences(reg)
+	refs, err := r.runReferences(reg)
 	if err != nil {
 		return err
 	}
@@ -124,8 +124,11 @@ func (r *Runner) pruneRuns(instanceID string) error {
 	return nil
 }
 
-func runReferences(reg state.Registry) (map[string]bool, error) {
-	refs := map[string]bool{}
+func (r *Runner) runReferences(reg state.Registry) (map[string]bool, error) {
+	refs, err := r.Store.OperationRunReferences()
+	if err != nil {
+		return nil, err
+	}
 	for id := range reg.Projects {
 		p, err := reg.Project(id)
 		if err != nil {
@@ -156,7 +159,7 @@ func (r *Runner) removeCompleted(runs *os.Root, instanceID string, candidate ret
 	if err != nil {
 		return err
 	}
-	refs, err := runReferences(reg)
+	refs, err := r.runReferences(reg)
 	if err != nil {
 		return err
 	}
