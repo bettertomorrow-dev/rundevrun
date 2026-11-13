@@ -7,18 +7,20 @@ import (
 )
 
 type options struct {
-	project    string
-	worktree   string
-	toWorktree string
-	all        bool
-	cascade    bool
-	retryHooks bool
-	json       bool
-	dryRun     bool
-	help       bool
-	follow     bool
-	tail       int
-	tailSet    bool
+	project     string
+	worktree    string
+	toWorktree  string
+	file        string
+	all         bool
+	allServices bool
+	cascade     bool
+	retryHooks  bool
+	json        bool
+	dryRun      bool
+	help        bool
+	follow      bool
+	tail        int
+	tailSet     bool
 }
 
 // Common flags may precede or follow the command and selectors.
@@ -42,7 +44,7 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks":
+		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
@@ -59,10 +61,12 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.cascade = true
 			case "--retry-hooks":
 				opts.retryHooks = true
+			case "--all-services":
+				opts.allServices = true
 			default:
 				opts.help = true
 			}
-		case "--project", "--worktree", "--to-worktree", "--tail":
+		case "--project", "--worktree", "--to-worktree", "--tail", "--file":
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 					return opts, positional, fmt.Errorf("%s requires a value", name)
@@ -81,6 +85,8 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.tail, opts.tailSet = n, true
 			} else if name == "--to-worktree" {
 				opts.toWorktree = value
+			} else if name == "--file" {
+				opts.file = value
 			} else if name == "--project" {
 				opts.project = value
 			} else {

@@ -21,14 +21,18 @@ type commandError struct {
 }
 
 type envelope struct {
-	Version int            `json:"version"`
-	Command string         `json:"command"`
-	Scope   scope          `json:"scope"`
-	Status  string         `json:"status"`
-	DryRun  bool           `json:"dry_run"`
-	Results []any          `json:"results"`
-	Errors  []commandError `json:"errors"`
-	Plan    any            `json:"plan,omitempty"`
+	Version     int            `json:"version"`
+	Command     string         `json:"command"`
+	Scope       scope          `json:"scope"`
+	Status      string         `json:"status"`
+	DryRun      bool           `json:"dry_run"`
+	Results     []any          `json:"results"`
+	Errors      []commandError `json:"errors"`
+	Plan        any            `json:"plan,omitempty"`
+	OperationID string         `json:"operation_id,omitempty"`
+	JournalPath string         `json:"journal_path,omitempty"`
+	Steps       []any          `json:"steps,omitempty"`
+	Operations  []any          `json:"operations,omitempty"`
 }
 
 func result(command string, opts options) envelope {

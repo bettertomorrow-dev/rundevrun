@@ -131,6 +131,19 @@ depends_on = ['api']
 	if e == nil {
 		t.Fatalf("expected failed build: %+v", result)
 	}
+	failedConsumer := p.ID + "/" + b.ID + "/worker"
+	found := false
+	for _, item := range result.Results {
+		if item.InstanceID == failedConsumer {
+			found = true
+			if item.Status != "failed" || item.State != "running" {
+				t.Fatalf("failed preparation lost actual consumer state: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("failed consumer missing from results: %+v", result)
+	}
 	journal, err := store.ReadOperation(result.OperationID)
 	if err != nil || journal.Status != "failed" {
 		t.Fatalf("journal: %+v %v", journal, err)

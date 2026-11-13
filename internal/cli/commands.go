@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
+	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -91,12 +93,16 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--cascade is only valid with down")
 		return
 	}
-	if opts.retryHooks && e.Command != "up" && e.Command != "down" && e.Command != "restart" {
-		e.fail("USAGE", "--retry-hooks is only valid with up, down, or restart")
+	if opts.retryHooks && e.Command != "up" && e.Command != "down" && e.Command != "restart" && e.Command != "switch" {
+		e.fail("USAGE", "--retry-hooks is only valid with up, down, restart, or switch")
 		return
 	}
-	if opts.toWorktree != "" && e.Command != "bind" {
-		e.fail("USAGE", "--to-worktree is only supported by bind at this stage")
+	if opts.toWorktree != "" && e.Command != "bind" && e.Command != "switch" {
+		e.fail("USAGE", "--to-worktree is only supported by bind or switch")
+		return
+	}
+	if (opts.file != "" || opts.allServices) && e.Command != "switch" {
+		e.fail("USAGE", "--file and --all-services are only valid with switch")
 		return
 	}
 	if (opts.follow || opts.tailSet) && e.Command != "logs" {
@@ -114,6 +120,8 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	store := &state.Store{Root: root}
 	switch e.Command {
+	case "switch":
+		switchCommand(ctx, store, args[1:], opts, e)
 	case "bind":
 		if !validArity(args, 3, 3, e) {
 			return
@@ -215,6 +223,208 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	if err := ctx.Err(); err != nil && len(e.Errors) == 0 {
 		e.fail("CANCELLED", err.Error())
 	}
+}
+
+type switchFile struct {
+	Version  int                 `json:"version"`
+	Mappings []switchFileMapping `json:"mappings"`
+}
+type switchFileMapping struct {
+	From switchFileSelection `json:"from"`
+	To   switchFileSelection `json:"to"`
+}
+type switchFileSelection struct {
+	Project  string `json:"project"`
+	Worktree string `json:"worktree"`
+	Service  string `json:"service"`
+}
+
+func switchCommand(ctx context.Context, store *state.Store, services []string, opts options, e *envelope) {
+	if (opts.file != "") == (opts.toWorktree != "") || (opts.file != "" && (opts.project != "" || opts.worktree != "" || opts.allServices || len(services) > 0)) {
+		e.fail("USAGE", "switch requires either selectors with --to-worktree or --file; file mode cannot mix selectors")
+		return
+	}
+	if opts.file == "" && len(services) == 0 && !opts.allServices {
+		e.fail("USAGE", "switch requires service selectors or --all-services")
+		return
+	}
+	if opts.allServices && len(services) != 0 {
+		e.fail("USAGE", "--all-services cannot be combined with service names")
+		return
+	}
+	var mappings []runner.SwitchMapping
+	var f switchFile
+	if opts.file != "" {
+		var err error
+		f, err = readSwitchFile(opts.file)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+	}
+	reg, err := store.Read()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	resolve := func(s switchFileSelection) (runner.Selection, error) {
+		p := selectProject(reg, s.Project, e)
+		if p == nil {
+			return runner.Selection{}, errors.New("invalid project")
+		}
+		d, wt := resolveCommandSelection(store, options{project: p.ID, worktree: s.Worktree}, true, e)
+		if d == nil {
+			return runner.Selection{}, errors.New("invalid worktree selection")
+		}
+		if _, ok := wt.Config.Services[s.Service]; !ok {
+			return runner.Selection{}, &runner.Error{Code: "NOT_FOUND", Err: fmt.Errorf("service not found: %s", s.Service)}
+		}
+		return runner.Selection{Project: d, Worktree: wt, Service: s.Service}, nil
+	}
+	if opts.file != "" {
+		for _, m := range f.Mappings {
+			from, er := resolve(m.From)
+			if er != nil {
+				if len(e.Errors) == 0 {
+					failError(e, er)
+				}
+				return
+			}
+			to, er := resolve(m.To)
+			if er != nil {
+				if len(e.Errors) == 0 {
+					failError(e, er)
+				}
+				return
+			}
+			mappings = append(mappings, runner.SwitchMapping{From: from, To: to})
+		}
+		e.Scope = scope{}
+	} else {
+		d, w := resolveCommandSelection(store, opts, true, e)
+		if d == nil {
+			return
+		}
+		target, err := discovery.Resolve(d, opts.toWorktree)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		if opts.allServices {
+			instances := mustProjectInstances(store, d.ID, e)
+			for _, id := range sortedKeys(instances) {
+				inst := instances[id]
+				if inst.WorktreeID == w.ID {
+					obs, unknown := inspectState(store, inst, e)
+					if !unknown && liveState(obs) {
+						mappings = append(mappings, runner.SwitchMapping{From: runner.Selection{Project: d, Worktree: w, Service: inst.Service}, To: runner.Selection{Project: d, Worktree: target, Service: inst.Service}})
+					}
+				}
+			}
+		} else {
+			for _, service := range services {
+				if _, ok := w.Config.Services[service]; !ok {
+					e.fail("NOT_FOUND", "service not found: "+service)
+					return
+				}
+				mappings = append(mappings, runner.SwitchMapping{From: runner.Selection{Project: d, Worktree: w, Service: service}, To: runner.Selection{Project: d, Worktree: target, Service: service}})
+			}
+		}
+	}
+	if len(e.Errors) > 0 {
+		return
+	}
+	r := runner.New(store, executablePath())
+	r.RetryHooks = opts.retryHooks
+	if opts.dryRun {
+		plan, err := r.PlanSwitch(ctx, mappings)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Plan = plan
+		return
+	}
+	out, err := r.SwitchGraph(ctx, mappings)
+	if err != nil && len(out.Errors) == 0 {
+		failError(e, err)
+	}
+	if out.Status != "" {
+		e.Status = out.Status
+	}
+	for _, item := range out.Results {
+		e.Results = append(e.Results, item)
+	}
+	e.OperationID = out.OperationID
+	e.JournalPath = out.JournalPath
+	for _, step := range out.Steps {
+		e.Steps = append(e.Steps, operationStepView{ID: step.ID, Phase: step.Status, Status: terminalStepStatus(step.Status), Code: step.Code, Message: step.Message})
+	}
+	for _, ge := range out.Errors {
+		e.Errors = append(e.Errors, commandError{Code: ge.Code, Message: ge.Message, InstanceID: ge.InstanceID, Actions: []string{}})
+	}
+	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		for _, failure := range e.Errors {
+			if failure.Code == "CANCELLED" {
+				return
+			}
+		}
+		e.Errors = append(e.Errors, commandError{Code: "CANCELLED", Message: "switch cancelled", Actions: []string{}})
+	}
+}
+
+func readSwitchFile(path string) (switchFile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return switchFile{}, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return switchFile{}, err
+	}
+	if len(data) > 1<<20 {
+		return switchFile{}, &runner.Error{Code: "USAGE", Err: errors.New("switch file exceeds 1 MiB")}
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var f switchFile
+	if err := dec.Decode(&f); err != nil {
+		return f, &runner.Error{Code: "USAGE", Err: fmt.Errorf("invalid switch file: %w", err)}
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return f, &runner.Error{Code: "USAGE", Err: errors.New("switch file must contain one JSON value")}
+	}
+	if f.Version != 1 {
+		return f, &runner.Error{Code: "VERSION_UNSUPPORTED", Err: errors.New("switch file requires version 1")}
+	}
+	if len(f.Mappings) == 0 {
+		return f, &runner.Error{Code: "USAGE", Err: errors.New("switch file requires nonempty mappings")}
+	}
+	for _, m := range f.Mappings {
+		if m.From.Project == "" || m.From.Worktree == "" || m.From.Service == "" || m.To.Project == "" || m.To.Worktree == "" || m.To.Service == "" {
+			return f, &runner.Error{Code: "USAGE", Err: errors.New("each mapping requires complete from and to selections")}
+		}
+	}
+	return f, nil
+}
+
+func liveState(s string) bool {
+	return s == "starting" || s == "running" || s == "ready" || s == "unhealthy"
+}
+func mustProjectInstances(store *state.Store, id string, e *envelope) map[string]state.Instance {
+	r, err := store.Read()
+	if err != nil {
+		failError(e, err)
+		return nil
+	}
+	p, err := r.Project(id)
+	if err != nil {
+		failError(e, err)
+		return nil
+	}
+	return p.Instances
 }
 
 func validLifecycleArity(args []string, command string, e *envelope) bool {
@@ -799,6 +1009,80 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 	}
 }
 
+type operationView struct {
+	ID           string              `json:"id"`
+	Kind         string              `json:"kind"`
+	Status       string              `json:"status"`
+	OwnerLive    *bool               `json:"owner_live,omitempty"`
+	StateUnknown bool                `json:"operation_state_unknown,omitempty"`
+	Interrupted  *bool               `json:"operation_interrupted,omitempty"`
+	Steps        []operationStepView `json:"steps"`
+}
+
+type operationStepView struct {
+	ID      string `json:"id"`
+	Phase   string `json:"phase"`
+	Status  string `json:"status,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func terminalStepStatus(s string) string {
+	if s == "completed" || s == "failed" || s == "not_run" || s == "interrupted" {
+		return s
+	}
+	return ""
+}
+
+func addOperationViews(store *state.Store, projects []string, e *envelope) {
+	ops, err := store.ListOperations()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	wanted := map[string]bool{}
+	for _, id := range projects {
+		wanted[id] = true
+	}
+	for _, op := range ops {
+		var p struct {
+			Mappings []struct {
+				From string `json:"from"`
+				To   string `json:"to"`
+			} `json:"mappings"`
+		}
+		if err := json.Unmarshal(op.Plan, &p); err != nil {
+			e.fail("STATE_CORRUPT", "invalid switch operation plan: "+op.ID)
+			continue
+		}
+		relevant := len(projects) == 0
+		for _, m := range p.Mappings {
+			if wanted[strings.SplitN(m.From, "/", 2)[0]] || wanted[strings.SplitN(m.To, "/", 2)[0]] {
+				relevant = true
+			}
+		}
+		if !relevant {
+			continue
+		}
+		view := operationView{ID: op.ID, Kind: op.Kind, Status: op.Status}
+		for _, step := range op.Steps {
+			view.Steps = append(view.Steps, operationStepView{ID: step.ID, Phase: step.Status, Status: terminalStepStatus(step.Status), Code: step.Code, Message: step.Message})
+		}
+		live, checkErr := procid.Check(op.Owner)
+		if checkErr == nil {
+			view.OwnerLive = &live
+			if !live {
+				interrupted := op.Status != "completed" && op.Status != "failed"
+				view.Interrupted = &interrupted
+			}
+		} else {
+			view.StateUnknown = true
+			e.Errors = append(e.Errors, commandError{Code: "OWNERSHIP_UNKNOWN", Message: "cannot verify switch operation owner: " + op.ID, Actions: []string{}})
+		}
+		e.Operations = append(e.Operations, view)
+	}
+}
+
 func listRegistry(store *state.Store, opts options, e *envelope) {
 	r, err := store.Read()
 	if err != nil {
@@ -870,6 +1154,9 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 	}
 	if len(e.Errors) > 0 && len(e.Results) > 0 {
 		e.Status = "partial"
+	}
+	if e.Command == "status" || e.Command == "ls" {
+		addOperationViews(store, ids, e)
 	}
 }
 

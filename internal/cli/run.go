@@ -22,6 +22,11 @@ Discovery and registration:
   rdr down [service...]   Stop services; without names, select this worktree.
   rdr down --all          Select services across all registered projects.
   rdr restart <service...> Restart selected services; start missing dependencies.
+  rdr switch <service...> --project ID --worktree SOURCE --to-worktree TARGET
+                          Move live services and their consumers to another worktree.
+  rdr switch --all-services --project ID --worktree SOURCE --to-worktree TARGET
+                          Switch live services in one source worktree.
+  rdr switch --file path  Read version 1 mappings from a JSON file.
   rdr bind <service> <dependency> --to-worktree ID|PATH|NAME
                           Set a desired dependency binding; live services need restart.
   rdr logs <service>      Show recent application output.
@@ -31,7 +36,9 @@ Discovery and registration:
 Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
   --worktree ID|PATH|NAME Select an existing worktree.
-  --to-worktree ID|PATH|NAME Select the dependency worktree for bind.
+  --to-worktree ID|PATH|NAME Select bind target or switch destination.
+  --file PATH              Read switch mappings from a JSON file.
+  --all-services           Select live source services for switch.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
   --cascade               Include live consumers in a down plan.
@@ -53,6 +60,9 @@ Examples:
 Graph dry-runs support service lists, default down, and global down. Retry uses
 the original stopped run's hook record; a new consumer does not retry a failed
 after_start hook. Proxy and sharing are not implemented.
+Switch journals are shown by status and ls without replay. Interrupted switches
+are not rolled back or retried automatically. Inspect the steps, then use up or
+down to recover explicitly. A failed after_start hook remains attached to its run.
 Runtime state: RDR_HOME, else XDG_STATE_HOME/rundevrun,
 else ~/.local/state/rundevrun. Registration runs no project commands.`
 

@@ -128,6 +128,9 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		for _, p := range reportPlan.NewStarts {
 			resultIDs[p.InstanceID] = true
 		}
+		for _, rewrite := range reportPlan.BindingRewrites {
+			resultIDs[rewrite.ConsumerID] = true
+		}
 		ids := make([]string, 0, len(resultIDs))
 		for id := range resultIDs {
 			ids = append(ids, id)
@@ -139,10 +142,29 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		}
 		for _, id := range ids {
 			result := Result{InstanceID: id, Status: "not_run"}
-			for _, action := range []string{"stop:", "start:"} {
+			lifecycle := false
+			for _, action := range []string{"prepare:", "stop:", "start:"} {
 				if status, ok := statuses[action+id]; ok && result.Status != "failed" {
+					lifecycle = true
 					result.Status = status
+					if status == "started" {
+						result.Status = "failed"
+					}
 				}
+			}
+			bindingOnlyComplete := !lifecycle
+			for _, rewrite := range reportPlan.BindingRewrites {
+				if rewrite.ConsumerID != id {
+					continue
+				}
+				status := statuses["bind:"+id+":"+rewrite.Dependency]
+				if status == "failed" || status == "started" {
+					result.Status = "failed"
+				}
+				bindingOnlyComplete = bindingOnlyComplete && status == "completed"
+			}
+			if bindingOnlyComplete {
+				result.Status = "completed"
 			}
 			observed, run, err := r.graphState(id)
 			if err != nil {

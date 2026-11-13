@@ -763,6 +763,54 @@ func TestRetryHooksFlagScopeAndDryRun(t *testing.T) {
 	}
 }
 
+func TestSwitchFileStrictGrammar(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "switch.json")
+	valid := `{"version":1,"mappings":[{"from":{"project":"p","worktree":"a","service":"api"},"to":{"project":"p","worktree":"b","service":"api"}}]}`
+	if err := os.WriteFile(path, []byte(valid), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := readSwitchFile(path); err != nil || len(f.Mappings) != 1 {
+		t.Fatalf("valid file: %+v %v", f, err)
+	}
+	for _, input := range []string{valid + ` {}`, `{"version":1,"extra":true,"mappings":[]}`, `{"version":2,"mappings":[]}`, `{"version":1,"mappings":[{"from":{"project":"p"}}]}`} {
+		if err := os.WriteFile(path, []byte(input), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readSwitchFile(path); err == nil {
+			t.Fatalf("accepted invalid file: %s", input)
+		}
+	}
+}
+
+func TestSwitchJournalStatusIsReadOnlyAndWhitelisted(t *testing.T) {
+	runtime := filepath.Join(t.TempDir(), "state")
+	t.Setenv("RDR_HOME", runtime)
+	store := &state.Store{Root: runtime}
+	op := state.Operation{ID: "op-test", Kind: "switch", Status: "running", Plan: json.RawMessage(`{"mappings":[{"from":"p/w/api","to":"p/other/api"}]}`), Runs: map[string]string{"p/w/api": "private-run-secret"}, Steps: []state.OperationStep{{ID: "start:p/other/api", Status: "started"}}}
+	if err := store.WriteOperation(op); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "operations", "op-test.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "ls", "--json")
+	if code != 4 || len(e.Operations) != 1 || len(e.Errors) != 1 || e.Errors[0].Code != "OWNERSHIP_UNKNOWN" {
+		t.Fatalf("status: %d %+v", code, e)
+	}
+	encoded, _ := json.Marshal(e)
+	if bytes.Contains(encoded, []byte("private-run-secret")) || bytes.Contains(encoded, []byte(`"runs"`)) || bytes.Contains(encoded, []byte(`"plan"`)) {
+		t.Fatalf("journal leaked private fields: %s", encoded)
+	}
+	if e.Operations[0].(map[string]any)["operation_state_unknown"] != true || e.Operations[0].(map[string]any)["operation_interrupted"] != nil {
+		t.Fatalf("unknown owner must stay distinct from interrupted: %+v", e.Operations[0])
+	}
+	after, err := os.ReadFile(filepath.Join(runtime, "operations", "op-test.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("status changed journal: %v", err)
+	}
+}
+
 func TestHookStatusIsWhitelistedAndReadOnly(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")
