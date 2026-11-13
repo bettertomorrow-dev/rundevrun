@@ -202,6 +202,30 @@ func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, newWork
 }
 
 func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason, newWorktree, operationID string) error {
+	gate, e := r.lockSpawnGate(ctx, runID)
+	if e != nil {
+		return e
+	}
+	record, readErr := r.Store.ReadRun(runID)
+	if errors.Is(readErr, os.ErrNotExist) {
+		err := r.stopUnderGate(ctx, projectID, id, runID)
+		return errors.Join(err, gate.Close())
+	}
+	if readErr != nil {
+		gate.Close()
+		return readErr
+	}
+	if record.Claim == "accepted" && (record.Supervisor.PID <= 0 || record.Supervisor.Identity == "" || record.Supervisor.BootID == "") {
+		gate.Close()
+		return &Error{"OWNERSHIP_UNKNOWN", errors.New("claimed supervisor has no verified identity")}
+	}
+	if record.Child.PID <= 0 || record.Child.Identity == "" || record.Child.BootID == "" {
+		gate.Close()
+		return &Error{"OWNERSHIP_UNKNOWN", errors.New("supervisor has no verified child identity")}
+	}
+	if e = gate.Close(); e != nil {
+		return e
+	}
 	manifest, e := r.Store.ReadManifest(runID)
 	if e != nil {
 		return e

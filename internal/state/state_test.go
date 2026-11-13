@@ -201,3 +201,28 @@ func TestNestedCorruptionAndUncertainRun(t *testing.T) {
 		t.Fatalf("%+v %v", p, err)
 	}
 }
+
+func TestInspectMissingSupervisorPhase(t *testing.T) {
+	s, e := New(filepath.Join(t.TempDir(), "state"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	id := "p/w/s"
+	if e = s.WriteManifest("run", Manifest{RunID: "run", InstanceID: id}); e != nil {
+		t.Fatal(e)
+	}
+	if _, err := s.Inspect(Instance{ID: id, RunID: "run", State: "running"}); !errors.Is(err, ErrOwnershipUnknown) {
+		t.Fatalf("missing intent should be uncertain: %v", err)
+	}
+	for _, tc := range []struct {
+		name, state, phase, want string
+		unknown                  bool
+	}{{"unclaimed", "starting", "spawning", "starting", false}, {"revoked", "stopped", "stopped", "stopped", false}, {"started", "running", "started", "", true}, {"interrupted", "failed", "interrupted", "", true}, {"inconsistent", "starting", "stopped", "", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.Inspect(Instance{ID: id, RunID: "run", State: tc.state, Intent: &Intent{RunID: "run", OperationID: "op", Phase: tc.phase}})
+			if got != tc.want || errors.Is(err, ErrOwnershipUnknown) != tc.unknown || (!tc.unknown && err != nil) {
+				t.Fatalf("got %q err %v", got, err)
+			}
+		})
+	}
+}

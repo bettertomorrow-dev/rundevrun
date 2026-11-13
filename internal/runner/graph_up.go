@@ -95,7 +95,14 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		if p.routeSelection.Worktree != nil {
 			newWorktree = p.routeSelection.Worktree.Root
 		}
-		if err = r.recoverHook(ctx, parts[0], p.InstanceID, action, newWorktree, operationID); err != nil {
+		hookRunner := r
+		transition := !liveState(p.State) || (action == "restart" && selected[p.InstanceID])
+		if r.RetryHooks && !transition {
+			copyRunner := *r
+			copyRunner.RetryHooks = false
+			hookRunner = &copyRunner
+		}
+		if err = hookRunner.recoverHook(ctx, parts[0], p.InstanceID, action, newWorktree, operationID); err != nil {
 			return out, err
 		}
 		if err = r.recoverPreparation(ctx, parts[0], p.InstanceID); err != nil {
@@ -513,6 +520,8 @@ func graphErrorCode(err error) string {
 		return runnerErr.Code
 	case errors.Is(err, context.DeadlineExceeded):
 		return "CANCELLED"
+	case errors.Is(err, state.ErrOwnershipUnknown):
+		return "OWNERSHIP_UNKNOWN"
 	case errors.Is(err, state.ErrCorrupt):
 		return "STATE_CORRUPT"
 	case errors.Is(err, state.ErrBusy):

@@ -363,7 +363,7 @@ func mergeEnv(base, extra map[string]string) []string {
 	return out
 }
 
-func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) error {
+func (r *Runner) lockSpawnGate(ctx context.Context, runID string) (*state.Locks, error) {
 	var gate *state.Locks
 	for {
 		var err error
@@ -372,15 +372,27 @@ func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) er
 			break
 		}
 		if !errors.Is(err, state.ErrBusy) {
-			return err
+			return nil, err
 		}
 		select {
 		case <-ctx.Done():
-			return errors.Join(state.ErrBusy, ctx.Err())
+			return nil, errors.Join(state.ErrBusy, ctx.Err())
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+	return gate, nil
+}
+func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) error {
+	gate, err := r.lockSpawnGate(ctx, runID)
+	if err != nil {
+		return err
+	}
 	defer gate.Close()
+	return r.stopUnderGate(ctx, projectID, id, runID)
+}
+
+// stopUnderGate requires the instance operation lock and the run spawn gate.
+func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string) error {
 	reg, err := r.Store.Read()
 	if err != nil {
 		return err
@@ -397,10 +409,13 @@ func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) er
 	if err != nil {
 		return err
 	}
+	if manifest.InstanceID != id {
+		return &Error{"STATE_CORRUPT", errors.New("manifest instance mismatch")}
+	}
 	record, err := r.Store.ReadRun(runID)
 	if errors.Is(err, os.ErrNotExist) {
-		if i.Intent == nil || i.Intent.RunID != runID {
-			return err
+		if i.Intent == nil || i.Intent.RunID != runID || i.Intent.OperationID != manifest.OperationID || !((i.State == "starting" && i.Intent.Phase == "spawning") || (i.State == "stopped" && i.Intent.Phase == "stopped")) {
+			return &Error{"OWNERSHIP_UNKNOWN", errors.New("missing supervisor record for an uncertain run")}
 		}
 	} else if err != nil {
 		return err

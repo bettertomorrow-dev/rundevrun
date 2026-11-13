@@ -457,8 +457,30 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		if retErr != nil {
 			journal.Status = "failed"
 		}
-		if err := r.Store.WriteOperation(journal); err != nil {
-			retErr = errors.Join(retErr, err)
+		journalErr := r.Store.WriteOperation(journal)
+		if journalErr != nil {
+			retErr = errors.Join(retErr, journalErr)
+		}
+		if retErr == nil && journalErr == nil {
+			ids := map[string]bool{}
+			for _, node := range plan.OldStops {
+				ids[node.InstanceID] = true
+			}
+			for _, node := range plan.NewStarts {
+				ids[node.InstanceID] = true
+			}
+			ordered := make([]string, 0, len(ids))
+			for id := range ids {
+				ordered = append(ordered, id)
+			}
+			sort.Strings(ordered)
+			for _, id := range ordered {
+				if e := r.pruneRuns(id); e != nil {
+					wrapped := &Error{"IO_ERROR", e}
+					out.Errors = append(out.Errors, GraphError{id, "IO_ERROR", e.Error()})
+					retErr = errors.Join(retErr, wrapped)
+				}
+			}
 		}
 	}()
 	addresses := map[string]map[string]string{}

@@ -20,6 +20,7 @@ import (
 
 var ErrBusy = errors.New("state busy")
 var ErrCorrupt = errors.New("state corrupt")
+var ErrOwnershipUnknown = errors.New("ownership unknown")
 
 type Store struct{ Root string }
 type Registry struct {
@@ -537,8 +538,16 @@ func (s *Store) Inspect(i Instance) (string, error) {
 	}
 	r, err := s.ReadRun(i.RunID)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && i.Intent != nil {
-			return "starting", nil
+		if errors.Is(err, os.ErrNotExist) {
+			if i.Intent != nil && i.Intent.RunID == i.RunID {
+				if i.State == "stopped" && i.Intent.Phase == "stopped" {
+					return "stopped", nil
+				}
+				if i.State == "starting" && i.Intent.Phase == "spawning" {
+					return "starting", nil
+				}
+			}
+			return "", fmt.Errorf("%w: missing supervisor record for run %s", ErrOwnershipUnknown, i.RunID)
 		}
 		return "", err
 	}
@@ -608,8 +617,14 @@ func (s *Store) Recover(projectID, instanceID string) error {
 		}
 		r, err := s.ReadRun(i.RunID)
 		if errors.Is(err, os.ErrNotExist) {
-			if i.Intent == nil {
-				return err
+			if i.Intent == nil || i.Intent.RunID != i.RunID {
+				return fmt.Errorf("%w: missing supervisor intent", ErrOwnershipUnknown)
+			}
+			if i.State == "stopped" && i.Intent.Phase == "stopped" {
+				return nil
+			}
+			if i.State != "starting" || i.Intent.Phase != "spawning" {
+				return fmt.Errorf("%w: missing supervisor record for phase %s", ErrOwnershipUnknown, i.Intent.Phase)
 			}
 			i.State = "failed"
 			i.Intent.Phase = "interrupted"
