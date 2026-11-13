@@ -69,7 +69,13 @@ func checkListeners(refs []procid.Ref, port int) error {
 				f.Close()
 				return errors.New("malformed proc socket table")
 			}
-			if !inodes[fields[9]] || (strings.HasPrefix(table, "tcp") && fields[3] != "0A") || (strings.HasPrefix(table, "udp") && fields[3] != "07") {
+			tcp := strings.HasPrefix(table, "tcp")
+			if (tcp && fields[3] != "0A") || (!tcp && fields[3] != "07") {
+				continue
+			}
+			// Check every TCP listener on the requested endpoint, including
+			// sockets outside the tracked group sharing it with SO_REUSEPORT.
+			if !inodes[fields[9]] && (!tcp || port == 0) {
 				continue
 			}
 			parts := strings.Split(fields[1], ":")
@@ -87,11 +93,18 @@ func checkListeners(refs []procid.Ref, port int) error {
 				f.Close()
 				return err
 			}
+			if !inodes[fields[9]] {
+				if int(p) == port && (ip.Equal(net.ParseIP("127.0.0.1")) || ip.IsUnspecified()) {
+					f.Close()
+					return &Error{Code: "OWNERSHIP_UNKNOWN", Err: errors.New("listener endpoint is shared with an untracked process; disable port sharing")}
+				}
+				continue
+			}
 			if !ip.IsLoopback() {
 				f.Close()
 				return fmt.Errorf("tracked process has non-loopback %s socket on port %d", table, p)
 			}
-			if strings.HasPrefix(table, "tcp") && int(p) == port {
+			if strings.HasPrefix(table, "tcp") && int(p) == port && ip.Equal(net.ParseIP("127.0.0.1")) {
 				found = true
 			}
 		}

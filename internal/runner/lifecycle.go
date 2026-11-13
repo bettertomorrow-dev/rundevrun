@@ -57,6 +57,7 @@ type preparedRun struct {
 	runID     string
 	manifest  state.Manifest
 	timeout   time.Duration
+	reason    string
 	reserved  bool
 	active    bool
 }
@@ -109,6 +110,18 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 		return preparedRun{}, err
 	}
 	manifest := state.Manifest{RunID: runID, InstanceID: plan.InstanceID, OperationID: operationID, Digest: current.Config.Digest, Addresses: addresses, EffectiveBindings: bindings, StopContract: state.StopContract{Cwd: cwd, Command: svc.Command, RunDir: runDir, Env: env}, Launch: state.LaunchContract{Command: command, Cwd: cwd, Env: launchEnv, Protocol: svc.Protocol, Port: port, StopTimeout: svc.StopTimeout}}
+	manifest.StopContract.Worktree = current.Root
+	manifest.StopContract.HookTimeout = svc.HookTimeout
+	manifest.StopContract.Hooks = map[string]string{}
+	manifest.StopContract.HookEnv = map[string]map[string]string{}
+	for name, hook := range svc.Hooks {
+		command, subs, e := substitute(hook, values, true)
+		if e != nil {
+			return preparedRun{}, e
+		}
+		manifest.StopContract.Hooks[name] = command
+		manifest.StopContract.HookEnv[name] = subs
+	}
 	if v, ok := svc.Health["http"].(string); ok {
 		manifest.Launch.HealthPath = v
 	}
@@ -173,9 +186,20 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 	projectID := prepared.projectID
 	var err error
 	if plan.RunID != "" && plan.State != "stopped" {
-		if err = r.stopLocked(ctx, projectID, plan.InstanceID, plan.RunID); err != nil {
+		if err = r.stopWithHooks(ctx, projectID, plan.InstanceID, plan.RunID, "restart", prepared.manifest.StopContract.Worktree, operationID); err != nil {
 			return Result{}, err
 		}
+	}
+	reason := prepared.reason
+	if reason == "" {
+		reason = "up"
+	}
+	oldWorktree := ""
+	if plan.RunID != "" && plan.State != "stopped" {
+		oldWorktree = prepared.manifest.StopContract.Worktree
+	}
+	if err = r.runHook(ctx, projectID, prepared.manifest, "before_start", reason, oldWorktree, prepared.manifest.StopContract.Worktree, operationID); err != nil {
+		return Result{}, err
 	}
 	if port != 0 {
 		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
@@ -261,6 +285,9 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 			}
 			prepared.reserved = false
 			prepared.active = false
+			if err = r.runHook(ctx, projectID, prepared.manifest, "after_start", reason, oldWorktree, prepared.manifest.StopContract.Worktree, operationID); err != nil {
+				return Result{}, err
+			}
 			result, err := r.result(plan.InstanceID, runID, "completed")
 			if err != nil {
 				return result, err

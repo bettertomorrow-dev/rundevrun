@@ -28,6 +28,7 @@ type Registry struct {
 	Projects map[string]json.RawMessage `json:"projects"`
 }
 type Worktree struct {
+	Alias    string `json:"alias,omitempty"`
 	ID       string `json:"id"`
 	Root     string `json:"root"`
 	Branch   string `json:"branch,omitempty"`
@@ -42,6 +43,7 @@ type Project struct {
 	Instances    map[string]Instance `json:"instances,omitempty"`
 }
 type Instance struct {
+	Hostname          string            `json:"hostname,omitempty"`
 	ID                string            `json:"id"`
 	Service           string            `json:"service"`
 	WorktreeID        string            `json:"worktree_id"`
@@ -52,18 +54,33 @@ type Instance struct {
 	Reservations      map[string]int    `json:"reservations,omitempty"`
 	Intent            *Intent           `json:"intent,omitempty"`
 	Preparation       *Intent           `json:"preparation,omitempty"`
+	Hook              *HookIntent       `json:"hook,omitempty"`
 }
 type Intent struct {
 	OperationID string `json:"operation_id"`
 	RunID       string `json:"run_id"`
 	Phase       string `json:"phase"`
 }
+type HookIntent struct {
+	RunID       string       `json:"run_id"`
+	OperationID string       `json:"operation_id"`
+	Name        string       `json:"name"`
+	Phase       string       `json:"phase"`
+	Reason      string       `json:"reason,omitempty"`
+	OldWorktree string       `json:"old_worktree,omitempty"`
+	NewWorktree string       `json:"new_worktree,omitempty"`
+	Child       procid.Ref   `json:"child,omitempty"`
+	Members     []procid.Ref `json:"members,omitempty"`
+}
 type StopContract struct {
-	Env     map[string]string `json:"env,omitempty"`
-	Cwd     string            `json:"cwd"`
-	Command string            `json:"command,omitempty"`
-	Hooks   map[string]string `json:"hooks,omitempty"`
-	RunDir  string            `json:"run_dir"`
+	Env         map[string]string            `json:"env,omitempty"`
+	Cwd         string                       `json:"cwd"`
+	Command     string                       `json:"command,omitempty"`
+	Hooks       map[string]string            `json:"hooks,omitempty"`
+	RunDir      string                       `json:"run_dir"`
+	Worktree    string                       `json:"worktree,omitempty"`
+	HookTimeout string                       `json:"hook_timeout,omitempty"`
+	HookEnv     map[string]map[string]string `json:"hook_env,omitempty"`
 }
 type LaunchContract struct {
 	Command     string   `json:"command"`
@@ -75,7 +92,13 @@ type LaunchContract struct {
 	HealthTCP   bool     `json:"health_tcp,omitempty"`
 	StopTimeout string   `json:"stop_timeout"`
 }
+type Route struct {
+	Path        string `json:"path"`
+	Dependency  string `json:"dependency"`
+	StripPrefix bool   `json:"strip_prefix"`
+}
 type Manifest struct {
+	Routes            []Route           `json:"routes,omitempty"`
 	RunID             string            `json:"run_id"`
 	InstanceID        string            `json:"instance_id"`
 	OperationID       string            `json:"operation_id"`
@@ -204,6 +227,9 @@ func (r Registry) Project(id string) (Project, error) {
 		}
 		if i.RunID != "" && !safeName(i.RunID) {
 			return Project{}, fmt.Errorf("%w: invalid run id", ErrCorrupt)
+		}
+		if i.Hook != nil && (!safeName(i.Hook.RunID) || i.Hook.OperationID == "" || !oneOf(i.Hook.Name, "before_start", "after_start", "before_stop", "after_stop") || !oneOf(i.Hook.Phase, "started", "completed", "failed", "interrupted")) {
+			return Project{}, fmt.Errorf("%w: invalid hook journal for %s", ErrCorrupt, key)
 		}
 		if i.Preparation != nil && (i.Preparation.OperationID == "" || !safeName(i.Preparation.RunID) || i.Preparation.RunID == i.RunID || i.Preparation.Phase != "preparing") {
 			return Project{}, fmt.Errorf("%w: invalid preparation for %s", ErrCorrupt, key)

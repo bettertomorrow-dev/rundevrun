@@ -30,7 +30,14 @@ func TestDarwinSocketInfo(t *testing.T) {
 		found, failure bool
 	}{
 		{"tcp IPv4", makeSocket(2, 6, 2), true, false},
-		{"tcp IPv6", makeSocket(30, 6, 2), true, false},
+		{"shared port", func() []byte { b := makeSocket(2, 6, 2); binary.LittleEndian.PutUint16(b[188:], 0x200); return b }(), false, true},
+		{"other IPv4", func() []byte { b := makeSocket(2, 6, 2); b[327] = 2; return b }(), false, false},
+		{"tcp IPv6", makeSocket(30, 6, 2), false, false},
+		{"IPv4 mapped IPv6", func() []byte {
+			b := makeSocket(30, 6, 2)
+			copy(b[312:328], []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1})
+			return b
+		}(), true, false},
 		{"wildcard IPv4", func() []byte { b := makeSocket(2, 6, 2); clear(b[324:328]); return b }(), false, true},
 		{"wildcard IPv6", func() []byte { b := makeSocket(30, 6, 2); clear(b[312:328]); return b }(), false, true},
 		{"connected tcp", func() []byte {

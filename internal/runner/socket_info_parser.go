@@ -56,8 +56,13 @@ func darwinSocketListener(b []byte, wanted int) (bool, error) {
 		}
 		ip = net.IP(b[312:328])
 	}
-	if !ip.IsLoopback() || (family == 30 && !ip.Equal(net.IPv6loopback)) {
+	if !ip.IsLoopback() {
 		return false, fmt.Errorf("tracked process has non-loopback socket on port %d", port)
 	}
-	return protocol == 6 && port == wanted, nil
+	match := protocol == 6 && port == wanted && ip.Equal(net.ParseIP("127.0.0.1"))
+	// XNU socket.h SO_REUSEPORT permits other sockets to share the endpoint.
+	if match && binary.LittleEndian.Uint16(b[188:])&0x0200 != 0 {
+		return false, &Error{Code: "OWNERSHIP_UNKNOWN", Err: errors.New("listener uses SO_REUSEPORT; disable port sharing")}
+	}
+	return match, nil
 }

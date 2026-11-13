@@ -12,6 +12,7 @@ import (
 type Runner struct {
 	Store      *state.Store
 	Executable string
+	RetryHooks bool
 }
 
 func New(store *state.Store, executable string) *Runner {

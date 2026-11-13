@@ -141,6 +141,9 @@ func runReferences(reg state.Registry) (map[string]bool, error) {
 			if i.Preparation != nil {
 				refs[i.Preparation.RunID] = true
 			}
+			if i.Hook != nil {
+				refs[i.Hook.RunID] = true
+			}
 			for runID := range i.Reservations {
 				refs[runID] = true
 			}

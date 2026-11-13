@@ -73,6 +73,10 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	if err != nil {
 		return out, err
 	}
+	operationID, err := randomID()
+	if err != nil {
+		return out, err
+	}
 	ids := make([]string, len(initial.Instances))
 	for i, p := range initial.Instances {
 		ids[i] = p.InstanceID
@@ -87,6 +91,9 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	defer locks.Close()
 	for _, p := range initial.Instances {
 		parts := strings.Split(p.InstanceID, "/")
+		if err = r.recoverHook(ctx, parts[0], p.InstanceID, action, operationID); err != nil {
+			return out, err
+		}
 		if err = r.recoverPreparation(ctx, parts[0], p.InstanceID); err != nil {
 			return out, err
 		}
@@ -212,10 +219,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		if e != nil {
 			return out, e
 		}
-		work[i].operationID, e = randomID()
-		if e != nil {
-			return out, e
-		}
+		work[i].operationID = operationID
 	}
 	err = r.Store.Update(func(reg *state.Registry) error {
 		if reg.Revision != plan.Revision {
@@ -389,6 +393,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			var built preparedRun
 			built, e = r.prepareLocked(ctx, x.project.ID, x.project, x.worktree, service, x.worktree.Config.Services[service], legacy, x.runID, x.operationID, x.port, deps, p.Bindings)
 			if e == nil {
+				built.reason = action
 				x.prepared = &built
 			}
 		}
@@ -413,6 +418,25 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 }
 
 func (r *Runner) dependencyReady(id string) error {
+	parts := strings.Split(id, "/")
+	if len(parts) != 3 {
+		return &Error{"STATE_CORRUPT", errors.New("invalid dependency id")}
+	}
+	reg, e := r.Store.Read()
+	if e != nil {
+		return e
+	}
+	project, e := reg.Project(parts[0])
+	if e != nil {
+		return e
+	}
+	instance, ok := project.Instances[id]
+	if !ok {
+		return os.ErrNotExist
+	}
+	if instance.Hook != nil && instance.Hook.RunID == instance.RunID && instance.Hook.Name == "after_start" && instance.Hook.Phase != "completed" {
+		return &Error{"HOOK_FAILED", fmt.Errorf("dependency %s has failed after_start hook", id)}
+	}
 	state, _, err := r.graphState(id)
 	if err != nil {
 		return &Error{"OWNERSHIP_UNKNOWN", err}

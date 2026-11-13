@@ -26,7 +26,13 @@ type PlannedInstance struct {
 	Addresses  map[string]string `json:"addresses,omitempty"`
 	Bindings   map[string]string `json:"bindings,omitempty"`
 	Steps      []string          `json:"steps"`
+	Hook       *HookStatus       `json:"hook,omitempty"`
 	env        map[string]string
+}
+type HookStatus struct {
+	RunID string `json:"run_id"`
+	Name  string `json:"name"`
+	Phase string `json:"phase"`
 }
 type GraphPlan struct {
 	Action    string            `json:"action"`
@@ -115,6 +121,9 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 		observed = "failed"
 	}
 	n := &graphNode{selection: s, saved: saved, live: liveState(observed), plan: PlannedInstance{InstanceID: id, State: observed, RunID: saved.RunID, Steps: []string{}}}
+	if saved.Hook != nil {
+		n.plan.Hook = &HookStatus{RunID: saved.Hook.RunID, Name: saved.Hook.Name, Phase: saved.Hook.Phase}
+	}
 	if saved.Preparation != nil {
 		n.plan.Steps = append(n.plan.Steps, "recover_preparation")
 	}
@@ -128,9 +137,6 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 		}
 		if m.InstanceID != id {
 			return nil, fmt.Errorf("%w: manifest instance mismatch", state.ErrCorrupt)
-		}
-		if len(m.StopContract.Hooks) > 0 {
-			return nil, &Error{"CONFIG_INVALID", errors.New("stop hooks are not supported by this stage")}
 		}
 		n.plan.Digest = m.Digest
 		n.plan.Addresses = m.Addresses
@@ -154,9 +160,6 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 		}
 		n.selection.Project = project
 		n.selection.Worktree = w
-		if len(svc.Hooks) != 0 {
-			return nil, &Error{"CONFIG_INVALID", errors.New("hooks are not supported by this stage")}
-		}
 		n.service = svc
 		if !n.live || g.replace[id] {
 			n.plan.Digest = w.Config.Digest
@@ -282,7 +285,10 @@ func (g *graphPlanner) finalize() error {
 			return err
 		}
 		for _, i := range p.Instances {
-			for _, v := range i.Reservations {
+			for runID, v := range i.Reservations {
+				if g.nodes[i.ID] != nil && i.Preparation != nil && i.Preparation.RunID == runID {
+					continue
+				}
 				g.used[v] = true
 			}
 		}

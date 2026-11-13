@@ -33,6 +33,10 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 	if err != nil {
 		return out, err
 	}
+	operationID, err := randomID()
+	if err != nil {
+		return out, err
+	}
 	ids := make([]string, len(initial.Instances))
 	expected := map[string]bool{}
 	for i, p := range initial.Instances {
@@ -167,9 +171,16 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 		if err = ctx.Err(); err != nil {
 			failure = &Error{"CANCELLED", err}
 		} else {
-			failure = r.recoverPreparation(ctx, parts[0], id)
+			failure = r.recoverHook(ctx, parts[0], id, "down", operationID)
+			if failure == nil {
+				failure = r.recoverPreparation(ctx, parts[0], id)
+			}
 			if failure == nil && p.RunID != "" {
-				failure = r.stopLocked(ctx, parts[0], id, p.RunID)
+				if p.State == "stopped" {
+					failure = r.stopLocked(ctx, parts[0], id, p.RunID)
+				} else {
+					failure = r.stopWithHooks(ctx, parts[0], id, p.RunID, "down", "", operationID)
+				}
 			}
 		}
 		if failure != nil {
