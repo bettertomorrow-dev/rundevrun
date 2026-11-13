@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
@@ -29,7 +30,7 @@ func checkListeners(refs []procid.Ref, port int) error {
 			continue
 		}
 		fds, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", ref.PID))
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
 			continue
 		}
 		if err != nil {
@@ -37,7 +38,7 @@ func checkListeners(refs []procid.Ref, port int) error {
 		}
 		for _, fd := range fds {
 			target, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/%s", ref.PID, fd.Name()))
-			if errors.Is(err, os.ErrNotExist) {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
 				continue
 			}
 			if err != nil {

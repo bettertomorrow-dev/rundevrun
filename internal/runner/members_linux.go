@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
@@ -44,7 +45,7 @@ func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error)
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
 			continue
 		}
 		if err != nil {

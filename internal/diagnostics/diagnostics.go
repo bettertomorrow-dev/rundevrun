@@ -242,7 +242,9 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 			} else {
 				rr.Application = pass(actual)
 			}
-			if i.Hostname != "" {
+			if cfgErr == nil && !cfg.Routing.Enabled {
+				rr.DNS, rr.TLSSystem, rr.TLSConfigured, rr.Ownership = skip("routing is disabled"), skip("routing is disabled"), skip("routing is disabled"), skip("routing is disabled")
+			} else if i.Hostname != "" {
 				if corrupt {
 					rr.Ownership = fail("hostname uniqueness cannot be verified because a project registry is corrupt")
 				} else if counts[i.Hostname] != 1 {

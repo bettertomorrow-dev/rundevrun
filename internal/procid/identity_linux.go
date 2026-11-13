@@ -1,9 +1,11 @@
 package procid
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 )
 
 // Identity is field 22 of /proc/<pid>/stat (start time in clock ticks since
@@ -11,7 +13,8 @@ import (
 func Identity(pid int) (string, error) {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
-		if os.IsNotExist(err) {
+		// A process can exit after procfs opens stat but before it reads it.
+		if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 			return "", ErrGone
 		}
 		return "", err

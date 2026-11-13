@@ -92,7 +92,7 @@ func TestGlobalReadOnlyAndInvalidTLS(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	raw["projects"] = json.RawMessage(`{"good":{"id":"good","name":"Good","root":"/tmp","worktrees":[{"id":"w","root":"/tmp"}],"instances":{"good/w/web":{"id":"good/w/web","service":"web","worktree_id":"w","state":"stopped"}}}}`)
+	raw["projects"] = json.RawMessage(`{"good":{"id":"good","name":"Good","root":"/tmp","worktrees":[{"id":"w","root":"/tmp"}],"instances":{"good/w/web":{"id":"good/w/web","service":"web","worktree_id":"w","state":"stopped","hostname":"pinned.example.invalid"}}}}`)
 	data, _ = json.Marshal(raw)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestGlobalReadOnlyAndInvalidTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Configuration.Status != "skip" || report.Proxy.Status.Status != "skip" || report.Proxy.HTTP.Status != "skip" || len(report.Projects) != 1 || report.Projects[0].Registry.Status != "pass" || len(report.Routes) != 1 || report.Routes[0].Application.Status != "pass" || report.Routes[0].Application.Message != "stopped" {
+	if report.Configuration.Status != "skip" || report.Proxy.Status.Status != "skip" || report.Proxy.HTTP.Status != "skip" || len(report.Projects) != 1 || report.Projects[0].Registry.Status != "pass" || len(report.Routes) != 1 || report.Routes[0].Application.Status != "pass" || report.Routes[0].Application.Message != "stopped" || report.Routes[0].DNS.Status != "skip" || report.Routes[0].Ownership.Status != "skip" {
 		t.Fatalf("disabled routing report: %+v", report)
 	}
 	server := httptest.NewTLSServer(nil)
