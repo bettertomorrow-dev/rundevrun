@@ -137,6 +137,10 @@ must be unique. routes require HTTP and a declared HTTP dependency. Prefix paths
 start with '/', reject query/fragment and duplicate prefixes; longest path match
 on a segment boundary wins. No arbitrary upstream URL is accepted.
 
+Snapshot build URLs require one unambiguous declared route prefix per dependency;
+multiple prefixes for the same dependency are rejected before snapshot build.
+Local and live routing still support multiple prefixes.
+
 cwd must remain inside the canonical worktree after symlink resolution. Snapshot
 dir resolves relative to cwd and must remain there after symlink resolution.
 Build outputs belong in run_dir; project builds that write source directories

@@ -260,3 +260,32 @@ readiness from the URL announcement, hidden preparing records after frontend
 crash, internal timeout classification and loss of unclaimed proof during close.
 Corrections and offline process tests are in progress. No real public tunnel has
 been launched. A2 remains required after live/snapshot and CLI integration.
+
+## Live publication integration, b8a3313 and 23a5a93
+
+Offline tests exercise tracked supervisor/bootstrap/tunnel, URL-before-connection
+readiness, idempotence, all-path password protection, failed recreate preservation,
+cancellation, tunnel death, routed dependency restart and real frontend SIGKILL
+between readiness and activation. Preparing records remain visible after frontend
+death; unshare closes every candidate. Unclaimed closure reads the runtime before
+revocation so a crash cannot erase proof that no supervisor claimed the intent.
+
+Sol changed recreate to commit new active and old closing together before old
+shutdown. A cleanup failure returns the new actual publication without its secret
+and does not roll it back. Readback preserves an observed active candidate after
+a possible rename/directory-sync failure. A controlled old-shutdown barrier with
+the publication registry lock verifies the partial result and explicit recovery.
+The first lock-contention test exposed blocking flock without cancellation; the
+publication registry lock now returns BUSY. The deadlocked owned test was stopped
+using a verified pidfd and its isolated runtime was confirmed stopped through
+public down/status. That diagnostic fixture remains under /tmp.
+
+After correction, the targeted recreate race test passed, 7.854 s. Combined race
+checks passed for publication, 17.103 s, CLI, state, shareauth and snapshot; full
+vet passed. The final CLI serialization check passed under race after its test
+was corrected to inspect the credentials JSON field rather than a word in action
+text. All 47 CLI tests pass. CLI retains actual metadata and partial exit 5 on
+post-activation cleanup failure, with no credentials in that response.
+
+This accepts the offline live slice only. Snapshot build/serving, public CLI
+provider simulation, real Cloudflare and integrated Astra A2 remain pending.
