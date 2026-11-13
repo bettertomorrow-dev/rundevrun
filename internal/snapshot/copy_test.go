@@ -23,6 +23,14 @@ func TestCopyAndBoundaries(t *testing.T) {
 	if err := Copy(context.Background(), root, "src", dest); err != nil {
 		t.Fatal(err)
 	}
+	// The configured root may resolve inside cwd; links within that tree are forbidden.
+	if err := os.Symlink("src", filepath.Join(root, "artifact-root")); err != nil {
+		t.Fatal(err)
+	}
+	aliased := filepath.Join(root, "aliased-copy")
+	if err := Copy(context.Background(), root, "artifact-root", aliased); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(file, []byte("changed"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +40,10 @@ func TestCopyAndBoundaries(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dest, "index.html"))
 	if err != nil || string(data) != "original" {
 		t.Fatalf("copy changed: %q %v", data, err)
+	}
+	data, err = os.ReadFile(filepath.Join(aliased, "index.html"))
+	if err != nil || string(data) != "original" {
+		t.Fatalf("aliased artifact root was not copied independently: %q %v", data, err)
 	}
 	info, _ := os.Stat(filepath.Join(dest, "index.html"))
 	if info.Mode().Perm() != 0600 {

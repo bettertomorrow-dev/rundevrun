@@ -479,8 +479,10 @@ session key each publication; no old cookie acceptance. Login POST has same-orig
 checks, bounded body, constant-time verification and throttling. No Cookie/Origin
 rewrite, OAuth bypass, injected login script or CSP override. Snapshot copies
 artifacts to a private staging directory. Artifact trees must contain only regular
-files and directories; all symlinks, including internal links, and special files
-are rejected before activation. Builds must materialize files rather than links.
+files and directories; all symlinks within the artifact tree, including internal
+links, and special files are rejected before activation. The configured artifact
+root itself may resolve through a symlink only when its canonical target stays
+inside cwd, as required during configuration validation. Builds must materialize files rather than links.
 The copy uses confined descriptor-relative access and never serves the source
 build directory. Snapshot activates
 only after build/copy/gateway/tunnel readiness. Preparation and activation failures
