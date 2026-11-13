@@ -56,6 +56,7 @@ type graphPlanner struct {
 	marks    map[string]int
 	override map[string]map[string]string
 	desired  bool
+	replace  map[string]bool
 }
 
 func liveState(s string) bool {
@@ -135,7 +136,7 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 		n.plan.Addresses = m.Addresses
 		n.plan.Bindings = m.EffectiveBindings
 	}
-	if configured && (!n.live || g.desired) {
+	if configured && (!n.live || g.desired || g.replace[id]) {
 		project, err := g.project(s)
 		if err != nil {
 			return nil, err
@@ -157,7 +158,7 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 			return nil, &Error{"CONFIG_INVALID", errors.New("hooks are not supported by this stage")}
 		}
 		n.service = svc
-		if !n.live {
+		if !n.live || g.replace[id] {
 			n.plan.Digest = w.Config.Digest
 		}
 	}
@@ -197,7 +198,7 @@ func (g *graphPlanner) walk(s Selection) error {
 		return e
 	}
 	bindings := map[string]string{}
-	if n.live && !g.desired {
+	if n.live && !g.desired && !g.replace[id] {
 		for k, v := range n.plan.Bindings {
 			bindings[k] = v
 		}
@@ -239,7 +240,7 @@ func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Sele
 	if err := ctx.Err(); err != nil {
 		return GraphPlan{}, &Error{"CANCELLED", err}
 	}
-	if r == nil || r.Store == nil || len(selections) == 0 || (action != "up" && action != "down") {
+	if r == nil || r.Store == nil || len(selections) == 0 || (action != "up" && action != "down" && action != "restart") {
 		return GraphPlan{}, &Error{"USAGE", errors.New("invalid graph request")}
 	}
 	reg, e := r.Store.Read()
@@ -250,6 +251,16 @@ func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Sele
 	result := GraphPlan{Action: action, Revision: reg.Revision, Instances: []PlannedInstance{}}
 	if action == "down" {
 		return g.down(ctx, selections, cascade)
+	}
+	if action == "restart" {
+		g.replace = map[string]bool{}
+		for _, s := range selections {
+			id, err := selectionID(s)
+			if err != nil {
+				return GraphPlan{}, err
+			}
+			g.replace[id] = true
+		}
 	}
 	for _, s := range selections {
 		if e = g.walk(s); e != nil {
@@ -278,9 +289,9 @@ func (g *graphPlanner) finalize() error {
 	}
 	for _, id := range g.order {
 		n := g.nodes[id]
-		if !n.live {
+		if !n.live || g.replace[id] {
 			if p, ok := n.service.Port.(int64); ok {
-				if g.used[int(p)] {
+				if g.used[int(p)] && !(g.replace[id] && n.saved.Reservations[n.saved.RunID] == int(p)) {
 					return &Error{"PORT_CONFLICT", fmt.Errorf("port %d is already reserved", p)}
 				}
 				g.used[int(p)] = true
@@ -289,7 +300,7 @@ func (g *graphPlanner) finalize() error {
 	}
 	for _, id := range g.order {
 		n := g.nodes[id]
-		if n.live {
+		if n.live && !g.replace[id] {
 			continue
 		}
 		n.plan.Addresses = map[string]string{"host": "127.0.0.1"}
@@ -297,6 +308,10 @@ func (g *graphPlanner) finalize() error {
 			port := fmt.Sprint(n.service.Port)
 			if port == "auto" {
 				candidate := 20000
+				if g.replace[id] && n.saved.Reservations[n.saved.RunID] != 0 {
+					candidate = n.saved.Reservations[n.saved.RunID]
+					delete(g.used, candidate)
+				}
 				for candidate <= 65535 && g.used[candidate] {
 					candidate++
 				}
@@ -314,13 +329,16 @@ func (g *graphPlanner) finalize() error {
 			}
 		}
 		n.plan.Steps = []string{"prepare", "build", "start", "readiness"}
+		if n.live && g.replace[id] {
+			n.plan.Steps = []string{"prepare", "build", "stop", "start", "readiness"}
+		}
 		if n.saved.Preparation != nil {
 			n.plan.Steps = append([]string{"recover_preparation"}, n.plan.Steps...)
 		}
 	}
 	for _, id := range g.order {
 		n := g.nodes[id]
-		if !n.live || g.desired {
+		if !n.live || g.desired || g.replace[id] {
 			if e := g.environment(n); e != nil {
 				return e
 			}
@@ -411,10 +429,34 @@ func (g *graphPlanner) down(ctx context.Context, selections []Selection, cascade
 		ids := sortedNodes(g.nodes)
 		for _, id := range ids {
 			n := g.nodes[id]
-			if !n.live || selected[id] {
+			if selected[id] {
 				continue
 			}
-			for _, target := range n.plan.Bindings {
+			bindings := n.plan.Bindings
+			if n.saved.Preparation != nil {
+				m, err := g.r.Store.ReadManifest(n.saved.Preparation.RunID)
+				if err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						return GraphPlan{}, &Error{"BUSY", fmt.Errorf("consumer %s has an unverified preparation", id)}
+					}
+					return GraphPlan{}, err
+				}
+				if m.InstanceID != id {
+					return GraphPlan{}, fmt.Errorf("%w: preparation manifest mismatch", state.ErrCorrupt)
+				}
+				bindings = make(map[string]string, len(n.plan.Bindings)+len(m.EffectiveBindings))
+				for k, v := range n.plan.Bindings {
+					bindings[k] = v
+				}
+				for k, v := range m.EffectiveBindings {
+					bindings["preparation:"+k] = v
+				}
+				n.plan.Bindings = bindings
+			}
+			if !n.live && n.saved.Preparation == nil {
+				continue
+			}
+			for _, target := range bindings {
 				if selected[target] {
 					if !cascade {
 						return GraphPlan{}, &Error{"STATE_CONFLICT", fmt.Errorf("live consumer %s depends on selected instance %s", id, target)}

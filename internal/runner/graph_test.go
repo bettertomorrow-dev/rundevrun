@@ -249,12 +249,52 @@ depends_on = ['api']
 	if err != nil || !bound.RestartRequired {
 		t.Fatalf("pending bind: %+v %v", bound, err)
 	}
+	restart, err := r.PlanGraph(context.Background(), "restart", []Selection{consumer}, false)
+	if err != nil || len(restart.Instances) != 2 || restart.Instances[1].Bindings["api"] != bound.TargetID {
+		t.Fatalf("restart must use desired binding: %+v %v", restart, err)
+	}
+
 	if _, err = r.PlanGraph(context.Background(), "down", []Selection{{p, a, "api"}}, false); err == nil {
 		t.Fatal("down ignored effective live consumer")
 	}
 	down, err := r.PlanGraph(context.Background(), "down", []Selection{{p, a, "api"}}, true)
 	if err != nil || len(down.Instances) != 2 || down.Instances[0].InstanceID != consumerID {
 		t.Fatalf("cascade: %+v %v", down, err)
+	}
+	// A preparation is an effective consumer even before its replacement starts.
+	if err = store.WriteManifest("preparing", state.Manifest{RunID: "preparing", InstanceID: consumerID, EffectiveBindings: map[string]string{"api": bound.TargetID}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Update(func(reg *state.Registry) error {
+		project, e := reg.Project(p.ID)
+		if e != nil {
+			return e
+		}
+		i := project.Instances[consumerID]
+		i.Preparation = &state.Intent{RunID: "preparing", OperationID: "test", Phase: "preparing"}
+		project.Instances[consumerID] = i
+		return reg.SetProject(p.ID, project)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.PlanGraph(context.Background(), "down", []Selection{{p, b, "api"}}, false); err == nil {
+		t.Fatal("down ignored preparing consumer")
+	}
+	pending, err := r.PlanGraph(context.Background(), "down", []Selection{{p, b, "api"}}, true)
+	if err != nil || len(pending.Instances) != 2 || pending.Instances[0].InstanceID != consumerID {
+		t.Fatalf("preparation cascade: %+v %v", pending, err)
+	}
+	if err = store.Update(func(reg *state.Registry) error {
+		project, e := reg.Project(p.ID)
+		if e != nil {
+			return e
+		}
+		i := project.Instances[consumerID]
+		i.Preparation = nil
+		project.Instances[consumerID] = i
+		return reg.SetProject(p.ID, project)
+	}); err != nil {
+		t.Fatal(err)
 	}
 	// The selected target's actual protocol must satisfy consumer placeholders.
 	withURL := strings.Replace(cfg, "depends_on = ['api']", "depends_on = ['api']\nenv = { API = '{dependencies.api.url}' }", 1)
