@@ -111,11 +111,12 @@ type Manifest struct {
 	Launch            LaunchContract    `json:"launch"`
 }
 type RunRecord struct {
-	Claim      string       `json:"claim,omitempty"`
-	Supervisor procid.Ref   `json:"supervisor"`
-	Child      procid.Ref   `json:"child"`
-	Members    []procid.Ref `json:"members,omitempty"`
-	State      string       `json:"state"`
+	ErrorMessage string       `json:"error_message,omitempty"`
+	Claim        string       `json:"claim,omitempty"`
+	Supervisor   procid.Ref   `json:"supervisor"`
+	Child        procid.Ref   `json:"child"`
+	Members      []procid.Ref `json:"members,omitempty"`
+	State        string       `json:"state"`
 }
 
 func empty() Registry { return Registry{Schema: 1, Projects: map[string]json.RawMessage{}} }
@@ -539,7 +540,7 @@ func (s *Store) Inspect(i Instance) (string, error) {
 	r, err := s.ReadRun(i.RunID)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if i.Intent != nil && i.Intent.RunID == i.RunID {
+			if i.Intent != nil && i.Intent.RunID == i.RunID && i.Intent.OperationID == m.OperationID {
 				if i.State == "stopped" && i.Intent.Phase == "stopped" {
 					return "stopped", nil
 				}
@@ -557,6 +558,9 @@ func (s *Store) Inspect(i Instance) (string, error) {
 	}
 	if live {
 		return r.State, nil
+	}
+	if i.State == "stopped" && i.Intent != nil && i.Intent.RunID == i.RunID && i.Intent.OperationID == m.OperationID && i.Intent.Phase == "stopped" && r.Claim == "accepted" && r.Supervisor.PID > 0 {
+		return "stopped", nil
 	}
 	if r.State == "stopped" || r.State == "failed" {
 		return r.State, nil
@@ -655,7 +659,7 @@ func (s *Store) Recover(projectID, instanceID string) error {
 
 func runLive(r RunRecord) (bool, error) {
 	if r.Claim == "accepted" && r.Supervisor.PID == 0 {
-		return false, errors.New("uncertain claimed run ownership")
+		return false, fmt.Errorf("%w: uncertain claimed run ownership", ErrOwnershipUnknown)
 	}
 	refs := append([]procid.Ref{r.Supervisor, r.Child}, r.Members...)
 	anyLive := false
@@ -665,7 +669,7 @@ func runLive(r RunRecord) (bool, error) {
 		}
 		live, err := procid.Check(ref)
 		if err != nil {
-			return false, fmt.Errorf("uncertain process ownership: %w", err)
+			return false, fmt.Errorf("%w: uncertain process identity: %v", ErrOwnershipUnknown, err)
 		}
 		if live {
 			anyLive = true

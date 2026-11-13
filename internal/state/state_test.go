@@ -208,7 +208,7 @@ func TestInspectMissingSupervisorPhase(t *testing.T) {
 		t.Fatal(e)
 	}
 	id := "p/w/s"
-	if e = s.WriteManifest("run", Manifest{RunID: "run", InstanceID: id}); e != nil {
+	if e = s.WriteManifest("run", Manifest{RunID: "run", InstanceID: id, OperationID: "op"}); e != nil {
 		t.Fatal(e)
 	}
 	if _, err := s.Inspect(Instance{ID: id, RunID: "run", State: "running"}); !errors.Is(err, ErrOwnershipUnknown) {

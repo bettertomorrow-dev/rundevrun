@@ -60,6 +60,23 @@ func Supervise(root, runID string) (result error) {
 	if err = write(); err != nil {
 		return err
 	}
+	// A claimed supervisor must leave a durable terminal record when startup fails.
+	startup := true
+	defer func() {
+		if startup && result != nil {
+			record.State = "failed"
+			if record.ErrorMessage == "" {
+				record.ErrorMessage = "supervisor startup failed"
+				var pathErr *os.PathError
+				if errors.As(result, &pathErr) {
+					record.ErrorMessage = pathErr.Error()
+				}
+			}
+			if e := write(); e != nil {
+				result = errors.Join(result, e)
+			}
+		}
+	}()
 	log, err := openLog(filepath.Join(root, "runs", runID, "application.log"))
 	if err != nil {
 		return err
@@ -89,6 +106,9 @@ func Supervise(root, runID string) (result error) {
 	cmd.Stdout = sink
 	cmd.Stderr = sink
 	if err = cmd.Start(); err != nil {
+		if _, cwdErr := os.Stat(manifest.Launch.Cwd); cwdErr != nil {
+			record.ErrorMessage = "startup cwd: " + cwdErr.Error()
+		}
 		read.Close()
 		return err
 	}
@@ -123,6 +143,7 @@ func Supervise(root, runID string) (result error) {
 		<-done
 		return err
 	}
+	startup = false
 	return superviseLoop(manifest, &record, write, done, sink.errors)
 }
 

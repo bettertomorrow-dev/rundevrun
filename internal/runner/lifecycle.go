@@ -269,7 +269,9 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 		log.Close()
 		return Result{}, err
 	}
-	supervisor.Process.Release()
+	// Reap detached supervisors while this frontend remains alive. The supervisor
+	// keeps running independently when the frontend itself exits.
+	go func() { _ = supervisor.Wait() }()
 	if err = log.Close(); err != nil {
 		return Result{}, err
 	}
@@ -310,7 +312,11 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 			return Result{}, readErr
 		}
 		if readErr == nil && record.State == "failed" {
-			return Result{}, &Error{"PROCESS_FAILED", errors.New("supervisor failed")}
+			message := record.ErrorMessage
+			if message == "" {
+				message = "supervisor failed"
+			}
+			return Result{}, &Error{"PROCESS_FAILED", errors.New(message)}
 		}
 		select {
 		case <-waitCtx.Done():
@@ -420,6 +426,44 @@ func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string)
 	} else if err != nil {
 		return err
 	} else {
+		if record.Claim == "accepted" && record.Child == (procid.Ref{}) {
+			sup := record.Supervisor
+			validIntent := i.Intent != nil && i.Intent.RunID == runID && i.Intent.OperationID == manifest.OperationID && ((i.State == "starting" && i.Intent.Phase == "spawning") || (i.State == "stopped" && i.Intent.Phase == "stopped"))
+			if !validIntent || (record.State != "starting" && record.State != "failed" && record.State != "stopped") || len(record.Members) != 0 || sup.PID <= 1 || sup.PGID != sup.PID || sup.SID != sup.PID || sup.Identity == "" || sup.BootID == "" {
+				return &Error{"OWNERSHIP_UNKNOWN", errors.New("incomplete unspawned claim")}
+			}
+			self, e := procid.Observe(os.Getpid())
+			if e != nil {
+				return &Error{"OWNERSHIP_UNKNOWN", e}
+			}
+			if sup.BootID != self.BootID {
+				return &Error{"OWNERSHIP_UNKNOWN", errors.New("unspawned supervisor boot mismatch")}
+			}
+			live, e := procid.Check(sup)
+			if e != nil {
+				return &Error{"OWNERSHIP_UNKNOWN", e}
+			}
+			if live {
+				return &Error{"OWNERSHIP_UNKNOWN", errors.New("unspawned supervisor is still alive")}
+			}
+			// A detached supervisor can remain a zombie briefly after exit.
+			// Keep the gate until the kernel confirms the complete session is gone.
+			deadline := time.NewTimer(2 * time.Second)
+			defer deadline.Stop()
+			for {
+				if e = verifySessionGone(sup); e == nil {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					return &Error{"OWNERSHIP_UNKNOWN", errors.Join(e, ctx.Err())}
+				case <-deadline.C:
+					return &Error{"OWNERSHIP_UNKNOWN", e}
+				case <-time.After(25 * time.Millisecond):
+				}
+			}
+			goto stopped
+		}
 		if record.Claim == "accepted" && record.Supervisor.PID == 0 {
 			return &Error{"OWNERSHIP_UNKNOWN", errors.New("claimed run missing supervisor identity")}
 		}
@@ -491,6 +535,7 @@ func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string)
 			}
 		}
 	}
+stopped:
 	return r.Store.Update(func(reg *state.Registry) error {
 		p, err := reg.Project(projectID)
 		if err != nil {

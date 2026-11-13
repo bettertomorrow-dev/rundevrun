@@ -215,6 +215,10 @@ func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason
 		gate.Close()
 		return readErr
 	}
+	if record.Claim == "accepted" && record.Child == (procid.Ref{}) {
+		err := r.stopUnderGate(ctx, projectID, id, runID)
+		return errors.Join(err, gate.Close())
+	}
 	if record.Claim == "accepted" && (record.Supervisor.PID <= 0 || record.Supervisor.Identity == "" || record.Supervisor.BootID == "") {
 		gate.Close()
 		return &Error{"OWNERSHIP_UNKNOWN", errors.New("claimed supervisor has no verified identity")}
