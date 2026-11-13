@@ -51,6 +51,7 @@ type Instance struct {
 	EffectiveBindings map[string]string `json:"effective_bindings,omitempty"`
 	Reservations      map[string]int    `json:"reservations,omitempty"`
 	Intent            *Intent           `json:"intent,omitempty"`
+	Preparation       *Intent           `json:"preparation,omitempty"`
 }
 type Intent struct {
 	OperationID string `json:"operation_id"`
@@ -203,6 +204,9 @@ func (r Registry) Project(id string) (Project, error) {
 		}
 		if i.RunID != "" && !safeName(i.RunID) {
 			return Project{}, fmt.Errorf("%w: invalid run id", ErrCorrupt)
+		}
+		if i.Preparation != nil && (i.Preparation.OperationID == "" || !safeName(i.Preparation.RunID) || i.Preparation.RunID == i.RunID || i.Preparation.Phase != "preparing") {
+			return Project{}, fmt.Errorf("%w: invalid preparation for %s", ErrCorrupt, key)
 		}
 		if i.Intent != nil && (i.Intent.OperationID == "" || i.Intent.RunID == "" || i.Intent.RunID != i.RunID || !oneOf(i.Intent.Phase, "preparing", "prepared", "spawning", "started", "stopping", "stopped", "hook_failed", "complete", "interrupted")) {
 			return Project{}, fmt.Errorf("%w: project %s: invalid intent for %s", ErrCorrupt, id, key)
@@ -450,6 +454,26 @@ func (s *Store) WriteRun(id string, r RunRecord) error {
 		return err
 	}
 	return s.write(filepath.Join(dir, "supervisor.json"), r)
+}
+
+// PreparationRecord is written before build bootstrap receives permission to exec.
+type PreparationRecord struct {
+	Child    procid.Ref   `json:"child"`
+	Members  []procid.Ref `json:"members,omitempty"`
+	Complete bool         `json:"complete"`
+}
+
+func (s *Store) WritePreparation(id string, record PreparationRecord) error {
+	dir, err := s.runDir(id, true)
+	if err != nil {
+		return err
+	}
+	return s.write(filepath.Join(dir, "preparation.json"), record)
+}
+func (s *Store) ReadPreparation(id string) (PreparationRecord, error) {
+	var record PreparationRecord
+	err := s.readRun(id, "preparation.json", &record)
+	return record, err
 }
 func (s *Store) ReadRun(id string) (RunRecord, error) {
 	var r RunRecord

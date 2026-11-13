@@ -12,8 +12,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// build executes in a separate group and retains identities of group members.
-func build(ctx context.Context, command, cwd string, env []string, log *rotatingLog, timeout time.Duration) error {
+func runBuildCommand(ctx context.Context, command, cwd string, env []string, log *rotatingLog, timeout time.Duration, binary string, persist func(procid.Ref) error, releaseGate func() error, persistMembers func([]procid.Ref) error) error {
 	if command == "" {
 		return nil
 	}
@@ -22,24 +21,47 @@ func build(ctx context.Context, command, cwd string, env []string, log *rotating
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	cmd := exec.Command("/bin/sh", "-c", command)
+	read, ack, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer read.Close()
+	defer ack.Close()
+	cmd := exec.Command(binary, "__rdr_bootstrap")
+	cmd.ExtraFiles = []*os.File{read}
+	env = append(append([]string(nil), env...), "__RDR_COMMAND="+command)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Dir = cwd
 	cmd.Env = env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	sink := newLogSink(log)
 	cmd.Stdout = sink
 	cmd.Stderr = sink
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	anchor, err := procid.Observe(os.Getpid())
+	leader, err := procid.Observe(cmd.Process.Pid)
 	if err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
 		return err
 	}
-	leader, err := procid.Observe(cmd.Process.Pid)
-	if err != nil {
+	read.Close()
+	if err := persist(leader); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return err
+	}
+	if _, err := ack.Write([]byte{1}); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return err
+	}
+	if err := ack.Close(); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return err
+	}
+	if err := releaseGate(); err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
 		return err
@@ -50,7 +72,14 @@ func build(ctx context.Context, command, cwd string, env []string, log *rotating
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 	cleanup := func() error {
-		found, err := groupMembers(leader, []procid.Ref{anchor})
+		found, err := groupMembers(leader, members)
+		if err != nil {
+			if ok, e := procid.Check(leader); e != nil {
+				err = e
+			} else if !ok {
+				err = verifySessionGone(leader)
+			}
+		}
 		members = mergeMembers(members, found)
 		if remaining := procid.Terminate(members, time.Second); len(remaining) > 0 {
 			err = errors.Join(err, fmt.Errorf("build cleanup unresolved: %v", remaining))
@@ -58,14 +87,7 @@ func build(ctx context.Context, command, cwd string, env []string, log *rotating
 		if err != nil {
 			return err
 		}
-		found, err = groupMembers(leader, []procid.Ref{anchor})
-		if err != nil {
-			return err
-		}
-		if len(found) > 0 {
-			return errors.New("build group still has processes")
-		}
-		return nil
+		return verifySessionGone(leader)
 	}
 	for {
 		select {
@@ -92,7 +114,7 @@ func build(ctx context.Context, command, cwd string, env []string, log *rotating
 			}
 			return errors.Join(ctx.Err(), cleanupErr)
 		case <-tick.C:
-			found, err := groupMembers(leader, []procid.Ref{anchor})
+			found, err := groupMembers(leader, members)
 			if err != nil {
 				cleanupErr := cleanup()
 				select {
@@ -102,7 +124,19 @@ func build(ctx context.Context, command, cwd string, env []string, log *rotating
 				}
 				return errors.Join(err, cleanupErr)
 			}
+			before := len(members)
 			members = mergeMembers(members, found)
+			if len(members) != before {
+				if err := persistMembers(members); err != nil {
+					cleanupErr := cleanup()
+					select {
+					case <-done:
+					case <-time.After(time.Second):
+						cleanupErr = errors.Join(cleanupErr, errors.New("build wait did not complete"))
+					}
+					return errors.Join(err, cleanupErr)
+				}
+			}
 		}
 	}
 }

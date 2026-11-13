@@ -44,14 +44,24 @@ func (w worktreeInfo) String() string {
 }
 
 type instanceInfo struct {
-	ID           string `json:"instance_id"`
-	ProjectID    string `json:"project_id"`
-	WorktreeID   string `json:"worktree_id"`
-	Service      string `json:"service"`
-	State        string `json:"state,omitempty"`
-	StateUnknown bool   `json:"state_unknown,omitempty"`
-	Protocol     string `json:"protocol,omitempty"`
-	RunID        string `json:"run_id,omitempty"`
+	ID              string           `json:"instance_id"`
+	ProjectID       string           `json:"project_id"`
+	WorktreeID      string           `json:"worktree_id"`
+	Service         string           `json:"service"`
+	State           string           `json:"state,omitempty"`
+	StateUnknown    bool             `json:"state_unknown,omitempty"`
+	Protocol        string           `json:"protocol,omitempty"`
+	RunID           string           `json:"run_id,omitempty"`
+	ConfigChanged   bool             `json:"config_changed"`
+	RestartRequired bool             `json:"restart_required"`
+	ConfigError     string           `json:"config_error,omitempty"`
+	Preparation     *preparationInfo `json:"preparation,omitempty"`
+}
+
+type preparationInfo struct {
+	RunID        string `json:"run_id"`
+	Phase        string `json:"phase"`
+	BuildLogPath string `json:"build_log_path"`
 }
 
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
@@ -249,6 +259,14 @@ func lifecycle(ctx context.Context, store *state.Store, service string, opts opt
 		} else {
 			failError(e, err)
 		}
+		if result.InstanceID != "" {
+			fields := map[string]any{"instance_id": result.InstanceID, "state": result.State, "run_id": result.RunID, "status": result.Status, "urls": result.URLs, "log_paths": result.LogPaths}
+			if instance := instanceByID(store, p.ID, result.InstanceID); instance.Preparation != nil {
+				fields["preparation"] = preparationView(store, instance)
+			}
+			e.Results = append(e.Results, fields)
+			return
+		}
 		id := p.ID + "/" + w.ID + "/" + service
 		stateName := ""
 		if reg, readErr := store.Read(); readErr == nil {
@@ -264,13 +282,22 @@ func lifecycle(ctx context.Context, store *state.Store, service string, opts opt
 			}
 		}
 		if stateName == "" {
-			e.Results = append(e.Results, map[string]any{"instance_id": id, "status": "failed", "state_unknown": true})
+			e.Results = append(e.Results, map[string]any{"instance_id": id, "status": "failed", "state_unknown": true, "preparation": preparationView(store, instanceByID(store, p.ID, id))})
 		} else {
-			e.Results = append(e.Results, runner.Result{InstanceID: id, State: stateName, Status: "failed"})
+			e.Results = append(e.Results, map[string]any{"instance_id": id, "state": stateName, "status": "failed", "preparation": preparationView(store, instanceByID(store, p.ID, id))})
 		}
 		return
 	}
-	e.Results = append(e.Results, result)
+	if action == "up" {
+		changed, restartRequired := false, false
+		if result.State == "running" || result.State == "ready" || result.State == "unhealthy" {
+			instance := state.Instance{ID: result.InstanceID, RunID: result.RunID, State: result.State}
+			changed, restartRequired = configDrift(store, instance, w.Config.Digest, e)
+		}
+		e.Results = append(e.Results, map[string]any{"instance_id": result.InstanceID, "state": result.State, "run_id": result.RunID, "status": result.Status, "urls": result.URLs, "log_paths": result.LogPaths, "config_changed": changed, "restart_required": restartRequired})
+	} else {
+		e.Results = append(e.Results, result)
+	}
 }
 
 type cappedWriter struct {
@@ -468,6 +495,9 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 			if instance, ok := saved.Instances[id]; ok {
 				info.State, info.RunID = instance.State, instance.RunID
 				info.State, info.StateUnknown = inspectState(store, instance, e)
+				instance.State = info.State
+				info.ConfigChanged, info.RestartRequired = configDrift(store, instance, w.Config.Digest, e)
+				info.Preparation = preparationView(store, instance)
 			}
 			e.Results = append(e.Results, info)
 		}
@@ -504,12 +534,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 		}
 		selectedWorktree := ""
 		if opts.worktree != "" {
-			d, err := discovery.Discover(p.Root)
-			if err != nil {
-				failError(e, err)
-				continue
-			}
-			w, err := discovery.Resolve(d, opts.worktree)
+			w, err := discovery.ResolveDescriptor(descriptor(p), opts.worktree)
 			if err != nil {
 				failError(e, err)
 				continue
@@ -522,12 +547,74 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 				continue
 			}
 			observed, unknown := inspectState(store, i, e)
-			e.Results = append(e.Results, instanceInfo{ID: i.ID, ProjectID: p.ID, WorktreeID: i.WorktreeID, Service: i.Service, State: observed, StateUnknown: unknown, RunID: i.RunID})
+			info := instanceInfo{ID: i.ID, ProjectID: p.ID, WorktreeID: i.WorktreeID, Service: i.Service, State: observed, StateUnknown: unknown, RunID: i.RunID}
+			info.Preparation = preparationView(store, i)
+			i.State = observed
+			if worktree, ok := findWorktree(p, i.WorktreeID); ok {
+				cfg, configErr := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+				if configErr != nil {
+					info.ConfigError = configErr.Error()
+				} else {
+					service, exists := cfg.Services[i.Service]
+					if exists {
+						info.Protocol = service.Protocol
+						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
+					} else {
+						info.ConfigError = "service is absent from current dev.toml"
+						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
+					}
+				}
+			} else {
+				info.ConfigError = "registered worktree metadata is missing"
+			}
+			e.Results = append(e.Results, info)
 		}
 	}
 	if len(e.Errors) > 0 && len(e.Results) > 0 {
 		e.Status = "partial"
 	}
+}
+
+func preparationView(store *state.Store, i state.Instance) *preparationInfo {
+	if i.Preparation == nil {
+		return nil
+	}
+	return &preparationInfo{RunID: i.Preparation.RunID, Phase: i.Preparation.Phase, BuildLogPath: filepath.Join(store.Root, "runs", i.Preparation.RunID, "build.log")}
+}
+
+func instanceByID(store *state.Store, projectID, instanceID string) state.Instance {
+	r, err := store.Read()
+	if err != nil {
+		return state.Instance{}
+	}
+	p, err := r.Project(projectID)
+	if err != nil {
+		return state.Instance{}
+	}
+	return p.Instances[instanceID]
+}
+
+func findWorktree(p state.Project, id string) (state.Worktree, bool) {
+	for _, w := range p.Worktrees {
+		if w.ID == id {
+			return w, true
+		}
+	}
+	return state.Worktree{}, false
+}
+
+func configDrift(store *state.Store, instance state.Instance, currentDigest string, e *envelope) (bool, bool) {
+	if instance.RunID == "" || (instance.State != "running" && instance.State != "ready" && instance.State != "unhealthy") {
+		return false, false
+	}
+	manifest, err := store.ReadManifest(instance.RunID)
+	if err != nil {
+		e.fail("OWNERSHIP_UNKNOWN", "cannot compare active run configuration: "+err.Error(), "inspect the run state before retrying a mutation")
+		e.Errors[len(e.Errors)-1].InstanceID = instance.ID
+		return false, false
+	}
+	changed := manifest.Digest != currentDigest
+	return changed, changed
 }
 
 func inspectState(store *state.Store, instance state.Instance, e *envelope) (string, bool) {

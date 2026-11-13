@@ -146,6 +146,77 @@ func TestDownUsesRegisteredDescriptorWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestConfigDriftAgainstRunManifest(t *testing.T) {
+	store, err := state.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := state.Manifest{RunID: "run-1", InstanceID: "p/w/worker", Digest: "old-digest"}
+	if err := store.WriteManifest("run-1", manifest); err != nil {
+		t.Fatal(err)
+	}
+	instance := state.Instance{ID: manifest.InstanceID, RunID: manifest.RunID, State: "running"}
+	changed, restart := configDrift(store, instance, "new-digest", &envelope{})
+	if !changed || !restart {
+		t.Fatalf("changed config: changed=%t restart=%t", changed, restart)
+	}
+	changed, restart = configDrift(store, instance, "old-digest", &envelope{})
+	if changed || restart {
+		t.Fatalf("unchanged config: changed=%t restart=%t", changed, restart)
+	}
+	instance.State = "unhealthy"
+	changed, restart = configDrift(store, instance, "new-digest", &envelope{})
+	if !changed || !restart {
+		t.Fatal("unhealthy live run lost configuration drift")
+	}
+}
+
+func TestStatusKeepsProcessStateWhenConfigIsInvalid(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	store := &state.Store{Root: filepath.Join(base, "state")}
+	if err := store.Update(func(r *state.Registry) error {
+		for id := range r.Projects {
+			p, err := r.Project(id)
+			if err != nil {
+				return err
+			}
+			for key, i := range p.Instances {
+				i.Preparation = &state.Intent{RunID: "pending-run", OperationID: "op", Phase: "preparing"}
+				p.Instances[key] = i
+			}
+			return r.SetProject(id, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte("invalid = ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "status", "--project", "example", "--json")
+	if code != 0 || len(e.Results) != 1 {
+		t.Fatalf("status exit=%d result=%+v", code, e)
+	}
+	item := e.Results[0].(map[string]any)
+	if item["state"] != "stopped" || item["config_error"] == nil {
+		t.Fatalf("status lost process state/config error: %#v", item)
+	}
+	prep := item["preparation"].(map[string]any)
+	if prep["run_id"] != "pending-run" || prep["phase"] != "preparing" || prep["build_log_path"] == nil || item["env"] != nil {
+		t.Fatalf("invalid preparation display: %#v", item)
+	}
+	if e, code := invoke(t, "status", "--project", "example", "--worktree", root, "--json"); code != 0 || len(e.Results) != 1 {
+		t.Fatalf("scoped status required valid config: %d %+v", code, e)
+	}
+}
+
 func TestStatusReportsUnreadableRunAsError(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")

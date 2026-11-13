@@ -36,17 +36,28 @@ func (r *Runner) Stop(ctx context.Context, p *discovery.Project, w *discovery.Wo
 		return Result{}, err
 	}
 	defer lock.Close()
+	if err = r.recoverPreparation(ctx, p.ID, plan.InstanceID); err != nil {
+		return Result{}, err
+	}
 	plan, err = r.Plan(ctx, "down", p, w, service)
 	if err != nil {
 		return Result{}, err
 	}
 	if plan.RunID == "" {
-		return Result{InstanceID: plan.InstanceID, State: "stopped", Status: "unchanged"}, nil
+		result := Result{InstanceID: plan.InstanceID, State: "stopped", Status: "unchanged"}
+		if err := r.pruneRuns(plan.InstanceID); err != nil {
+			return result, &Error{"IO_ERROR", err}
+		}
+		return result, nil
 	}
 	if err = r.stopLocked(ctx, p.ID, plan.InstanceID, plan.RunID); err != nil {
 		return Result{}, err
 	}
-	return Result{InstanceID: plan.InstanceID, State: "stopped", RunID: plan.RunID, Status: "completed"}, nil
+	result := Result{InstanceID: plan.InstanceID, State: "stopped", RunID: plan.RunID, Status: "completed"}
+	if err := r.pruneRuns(plan.InstanceID); err != nil {
+		return result, &Error{"IO_ERROR", err}
+	}
+	return result, nil
 }
 
 func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string, restart bool) (result Result, retErr error) {
@@ -63,12 +74,22 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 		return Result{}, err
 	}
 	defer lock.Close()
+	if err = r.recoverPreparation(ctx, p.ID, plan.InstanceID); err != nil {
+		return Result{}, err
+	}
 	plan, err = r.Plan(ctx, action, p, w, service)
 	if err != nil {
 		return Result{}, err
 	}
 	if !restart && (plan.State == "running" || plan.State == "ready" || plan.State == "unhealthy") {
-		return r.result(plan.InstanceID, plan.RunID, "unchanged")
+		result, err := r.result(plan.InstanceID, plan.RunID, "unchanged")
+		if err != nil {
+			return result, err
+		}
+		if err = r.pruneRuns(plan.InstanceID); err != nil {
+			return result, &Error{"IO_ERROR", err}
+		}
+		return result, nil
 	}
 	fresh, err := discovery.Discover(w.Root)
 	if err != nil {
@@ -93,7 +114,7 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 	if err != nil {
 		return Result{}, err
 	}
-	port, err := r.reserve(p.ID, plan.InstanceID, runID, svc.Port)
+	port, err := r.reserve(p.ID, plan.InstanceID, runID, operationID, svc.Port)
 	if err != nil {
 		return Result{}, err
 	}
@@ -110,7 +131,15 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 			}
 		}
 		if reserved && !activeRun {
-			retErr = errors.Join(retErr, r.release(p.ID, plan.InstanceID, runID))
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cleanupErr := r.recoverPreparation(cleanupCtx, p.ID, plan.InstanceID)
+			retErr = errors.Join(retErr, cleanupErr)
+			if cleanupErr == nil {
+				if err := r.pruneRuns(plan.InstanceID); err != nil {
+					retErr = errors.Join(retErr, &Error{"IO_ERROR", err})
+				}
+			}
 		}
 	}()
 	runDir := filepath.Join(r.Store.Root, "runs", runID)
@@ -158,7 +187,34 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 		return Result{}, err
 	}
 	timeout, _ := time.ParseDuration(svc.BuildTimeout)
-	buildErr := build(ctx, buildCommand, cwd, mergeEnv(env, buildSubs), buildLog, timeout)
+	var buildErr error
+	var buildRef procid.Ref
+	if buildCommand != "" {
+		gate, err := r.Store.LockSpawnGates(runID)
+		if err != nil {
+			buildLog.Close()
+			return Result{}, err
+		}
+		binary := r.Executable
+		if binary == "" {
+			binary, err = os.Executable()
+		}
+		if err != nil {
+			gate.Close()
+			buildLog.Close()
+			return Result{}, err
+		}
+		buildErr = runBuildCommand(ctx, buildCommand, cwd, mergeEnv(env, buildSubs), buildLog, timeout, binary, func(ref procid.Ref) error {
+			buildRef = ref
+			return r.Store.WritePreparation(runID, state.PreparationRecord{Child: ref})
+		}, gate.Close, func(members []procid.Ref) error {
+			return r.Store.WritePreparation(runID, state.PreparationRecord{Child: buildRef, Members: members})
+		})
+		gate.Close()
+		if buildErr == nil {
+			buildErr = r.Store.WritePreparation(runID, state.PreparationRecord{Child: buildRef, Complete: true})
+		}
+	}
 	closeErr := buildLog.Close()
 	if err = errors.Join(buildErr, closeErr); err != nil {
 		return Result{}, &Error{"BUILD_FAILED", err}
@@ -187,6 +243,10 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 			return err
 		}
 		instance := project.Instances[plan.InstanceID]
+		if instance.Preparation == nil || instance.Preparation.RunID != runID {
+			return errors.New("preparation changed")
+		}
+		instance.Preparation = nil
 		instance.RunID = runID
 		instance.State = "starting"
 		instance.Intent = &state.Intent{OperationID: operationID, RunID: runID, Phase: "spawning"}
@@ -250,7 +310,14 @@ func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.W
 			}
 			reserved = false
 			activeRun = false
-			return r.result(plan.InstanceID, runID, "completed")
+			result, err := r.result(plan.InstanceID, runID, "completed")
+			if err != nil {
+				return result, err
+			}
+			if err = r.pruneRuns(plan.InstanceID); err != nil {
+				return result, &Error{"IO_ERROR", err}
+			}
+			return result, nil
 		}
 		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return Result{}, readErr
@@ -309,10 +376,7 @@ func mergeEnv(base, extra map[string]string) []string {
 	return out
 }
 
-func (r *Runner) reserve(projectID, id, runID string, requested any) (int, error) {
-	if requested == nil {
-		return 0, nil
-	}
+func (r *Runner) reserve(projectID, id, runID, operationID string, requested any) (int, error) {
 	var assigned int
 	err := r.Store.Update(func(reg *state.Registry) error {
 		used := map[int]string{}
@@ -329,6 +393,22 @@ func (r *Runner) reserve(projectID, id, runID string, requested any) (int, error
 					used[port] = key
 				}
 			}
+		}
+		if requested == nil {
+			project, err := reg.Project(projectID)
+			if err != nil {
+				return err
+			}
+			i, ok := project.Instances[id]
+			if !ok {
+				return os.ErrNotExist
+			}
+			if i.Preparation != nil {
+				return state.ErrBusy
+			}
+			i.Preparation = &state.Intent{RunID: runID, OperationID: operationID, Phase: "preparing"}
+			project.Instances[id] = i
+			return reg.SetProject(projectID, project)
 		}
 		start, end := 20000, 65535
 		if requested == "auto" {
@@ -376,28 +456,16 @@ func (r *Runner) reserve(projectID, id, runID string, requested any) (int, error
 		if i.Reservations == nil {
 			i.Reservations = map[string]int{}
 		}
+		if i.Preparation != nil {
+			return state.ErrBusy
+		}
 		i.Reservations[runID] = assigned
+		i.Preparation = &state.Intent{RunID: runID, OperationID: operationID, Phase: "preparing"}
 		project.Instances[id] = i
 		return reg.SetProject(projectID, project)
 	})
 	return assigned, err
 }
-func (r *Runner) release(projectID, id, runID string) error {
-	return r.Store.Update(func(reg *state.Registry) error {
-		p, err := reg.Project(projectID)
-		if err != nil {
-			return err
-		}
-		i, ok := p.Instances[id]
-		if !ok {
-			return os.ErrNotExist
-		}
-		delete(i.Reservations, runID)
-		p.Instances[id] = i
-		return reg.SetProject(projectID, p)
-	})
-}
-
 func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) error {
 	var gate *state.Locks
 	for {
@@ -496,6 +564,19 @@ func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) er
 		}
 		if remaining := procid.Terminate(refs, timeout); len(remaining) > 0 {
 			return &Error{"OWNERSHIP_UNKNOWN", errors.New("child cleanup unresolved")}
+		}
+		checked := map[int]bool{}
+		if len(refs) == 0 && record.Supervisor != (procid.Ref{}) {
+			refs = append(refs, record.Supervisor)
+		}
+		for _, ref := range refs {
+			if ref == (procid.Ref{}) || checked[ref.PGID] {
+				continue
+			}
+			checked[ref.PGID] = true
+			if err := verifySessionGone(ref); err != nil {
+				return err
+			}
 		}
 	}
 	return r.Store.Update(func(reg *state.Registry) error {
