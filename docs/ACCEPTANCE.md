@@ -27,7 +27,7 @@
 | 18 | Discovery, IDs, dry-run, bind и graph lifecycle через публичный JSON без интерактива | Linux / `12a2457` | passed для этапов 1–3; switch/share войдут в итоговый сценарий этапа 8 |
 | 19 | Switch single/list/file/all-services, независимая ветвь и partial JSON | Не запускалось | pending, этап 4 |
 | 20 | TCP/UDP wildcard ownership, proxy loopback, share-only exposure, отсутствие DNS API | Linux / `301afb9` частично | partial, Linux listener checks прошли; Darwin runtime, proxy/share впереди |
-| 21 | Все ежедневные сценарии MillDrum через новую обёртку | Не запускалось | pending, этап 7 |
+| 21 | Все ежедневные сценарии MillDrum через новую обёртку | Не запускалось | pending, этап 7; пользователь разрешил отключить OAuth только в защищённом preview, см. MIGRATION_MAP |
 
 Для окончательной приёмки каждая строка получает точный commit, выполненную
 команду или путь к воспроизводимому сценарию и фактический результат.

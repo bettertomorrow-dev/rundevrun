@@ -35,20 +35,20 @@ switch uses explicit hooks with old/new paths and shared data lock.
 The old gateway allows unauthenticated GET /v1/mcp/oauth/client/{id} and discards
 all app cookies. Those rules conflict with the new all-path password contract.
 Project adaptation will use a same-origin preview server in MillDrum for API
-routes and sign-in, with app host-only cookies and explicit public callback URL.
+routes and sign-in, with app host-only cookies.
 It is placed behind rdr's complete password gate and receives publication URL
 through the wrapper's project setup. No generic gateway OAuth exception.
-An OAuth provider that requires fetching metadata without a password cannot use
-this password-gated URL. Such OAuth callbacks must use a separately configured
-project endpoint or be reported unavailable in protected preview; do not silently
-bypass the gate. Stage 7 must reproduce the current daily preview scenarios and
-surface any unresolved product conflict to the user before acceptance.
+On 2026-11-13 the user explicitly chose to disable OAuth in protected preview.
+Metadata-dependent OAuth flows must be visibly unavailable in that mode. No
+separate public metadata endpoint is needed, and every preview path remains
+behind the password gate. This decision is limited to protected preview;
+normal MillDrum sign-in and project commands remain migration checks.
 
 ## Migration checks still required
 
 Use isolated runtime and copied disposable data first. Compare old/new commands
 for start, down, status, logs, worktree discovery, restart/build failure, watcher,
 agent termination, backup order/failure, seed snapshot/apply, sign-in/exec and
-snapshot preview with cookies and OAuth. Only then explicitly stop old launcher
+snapshot preview with cookies and explicitly disabled OAuth. Only then explicitly stop old launcher
 before new daily processes. Keep rollback instructions and old launcher; do not
 roll back schema/data automatically. No live data is a fixture.
