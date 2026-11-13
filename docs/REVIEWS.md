@@ -65,3 +65,29 @@ when an untracked group could remain after supervisor death during shutdown.
 Current fail-closed refusal for an already-dead supervisor is partial protection.
 Darwin inspection currently refuses operations; cross-build passed, runtime did
 not. No real MillDrum/twikko processes or data were used.
+
+## Stage 2 closure, 301afb9
+
+Sol accepted implementation after all-package Linux test/vet/race and public CLI
+checks. Native Terra implemented gated preparation before build execution,
+separate preparation intent preserving the old active run, identity/member
+persistence and recovery after actual frontend SIGKILL. Sol added read-only
+session/group absence checks and a late-fork regression: unknown survivors never
+produce successful stopped state or release reservations. No blind group kill.
+
+Retention keeps five confirmed unreferenced completed runs plus protected records;
+seven real restarts and symlink/foreign/unknown/corrupt cases are tested. Luna CLI
+exposes digest drift and preparation and retains nonempty results on cleanup IO
+errors. Sol removed the obsolete untracked build path and made its timeout test
+exercise the production bootstrap path.
+
+Darwin now uses native process and socket inspection, including descriptor and
+fileport snapshots, instead of the incomplete lsof approach. Header source:
+https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h
+Group/session logic and parser fixtures were inspected; Linux parser tests and
+arm64/amd64 cross-builds pass. This is not runtime acceptance of Apple's private
+syscall/ABI or macOS lifecycle. It remains mandatory before release.
+
+For A1: review the conservative OWNERSHIP_UNKNOWN outcome when no verified anchor
+remains, snapshot/signal races and run retention. Unknown artifacts deliberately
+remain protected until an explicit safe recovery is possible.

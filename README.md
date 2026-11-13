@@ -46,9 +46,10 @@ the IDs in JSON output. Discovery and status do not create runtime state;
 registration stores private state under `$RDR_HOME`, `$XDG_STATE_HOME/rundevrun`,
 or `~/.local/state/rundevrun`.
 
-Single-service lifecycle is implemented and tested on Linux. Crash recovery is
-still incomplete for builds interrupted by SIGKILL and supervisor/group cleanup;
-stage 2 is not accepted. macOS listener/process inspection currently fails closed.
+Single-service lifecycle and interrupted-build recovery are implemented and tested
+on Linux. Unknown process ownership gives an explicit refusal and preserves state
+for inspection. Darwin process/socket inspection is implemented and cross-built
+for arm64 and amd64; execution on real macOS remains unverified.
 Services with dependencies or hooks are rejected until graph/hook support lands.
 Switching, proxy and publication remain in progress. The first release requires
 migration of MillDrum and acceptance on twikko, Linux and macOS.

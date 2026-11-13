@@ -237,6 +237,17 @@ States are stopped, starting, running, ready, unhealthy, failed. Intent phase is
 separate: preparing, prepared, spawning, started, stopping, stopped, hook_failed,
 complete, interrupted. Write intent with run ID and manifest BEFORE spawn.
 Manifest includes addresses, effective bindings, digest, operation ID and immutable stop contract.
+Before build, Instance.Preparation stores a separate run/operation intent atomically
+with its reservation; the active RunID remains unchanged through preparation.
+The private preparation record stores bootstrap identity and observed descendants
+before project execution is acknowledged. Preparation has its own session.
+A following mutating command under the instance lock and spawn gate recovers an
+interrupted build, while status only exposes preparation run_id/phase/log path.
+No record before ACK means no project code was authorized. Cleanup clears pending
+intent/reservation only after verified identities and absence of the session/group.
+Unknown survivors without a verified anchor are OWNERSHIP_UNKNOWN and retain state;
+never signal a process solely from a reused group/session number.
+
 Spawn detached rdr internal supervisor with run ID and root, not shell code in
 argv. Supervisor acquires spawn gate, reads authorization under registry lock,
 releases registry lock but RETAINS gate, then durably writes its identity and
@@ -296,8 +307,12 @@ retain artifacts/history, never promise automatic restoration.
 Restart preserves its port when possible; switch targets have their own address.
 
 Logs per run/stage: build, hook name, application, supervisor. Rotate at 10 MiB,
-keep 3 segments per stream and 5 completed runs per instance; never remove active
-artifacts or app data. Log write failure fails operation or marks runtime failed
+keep 3 segments per stream and 5 verified completed unreferenced runs per instance.
+All registry-referenced, live, corrupt or unverifiable runs are additionally
+protected. Retention uses immutable manifest mtime and run-ID tie-break; it never
+follows directory symlinks or removes application data. A prune IO error after
+successful lifecycle returns the actual successful Result plus an error, with no
+process rollback. Log write failure fails operation or marks runtime failed
 and cleans owned child processes. Status points to logs but excludes raw env.
 
 ## One operation planner and executor
