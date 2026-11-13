@@ -35,7 +35,7 @@ rdr down catalog --cascade --project mini --worktree /path/to/mini --json
 
 The first `down catalog` should refuse while the indexer still consumes it. `--cascade` explicitly stops that consumer first. Stopping a consumer on its own leaves its catalog running.
 
-Use `direct_url` for service-to-service requests. `url` is the address intended for a browser. While the local reverse proxy is not implemented, `url` equals `direct_url`.
+Use `direct_url` for service-to-service requests. `url` is the address intended for a browser; when routing is disabled, it falls back to `direct_url`.
 
 ## Public CLI scenario
 
@@ -46,3 +46,7 @@ The fixture and config checks work before graph support. The scenario reports `I
 ## Public switch scenario
 
 Run `python3 switch_scenario.py /path/to/rdr` or set `RDR_BIN`. This separate script checks single-service, service-list, mixed-target file, and `--all-services` switches. It also checks that an unknown final selector or invalid final file mapping leaves public run IDs unchanged, and that a target build failure preserves the source catalog run. Cleanup uses `down --all` only inside the script's isolated `RDR_HOME`; it prints `PASS` only after public status confirms every instance stopped with no unknown state or pending preparation. On cleanup failure, it retains and prints the fixture and runtime paths.
+
+## Public TLS and proxy scenario
+
+Run `python3 tls_scenario.py /path/to/rdr` (or set `RDR_BIN`) on a machine with `openssl`. It creates a disposable Git project, two worktrees, isolated state and a short lived test CA. The client trusts only that CA and dials the local HTTPS listener while sending each route hostname as SNI; it does not edit DNS or system trust. The scenario checks HTTPS dependency routing, a Secure cookie roundtrip, streamed SSE, a WebSocket/HMR frame, alias collision behavior, stopped-route isolation, and proxy restart/reload behavior with unchanged app run IDs. An invalid certificate reload must leave the existing proxy and apps available. It uses public JSON CLI state and retains the fixture/runtime if cleanup cannot confirm every instance stopped.
