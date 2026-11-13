@@ -214,3 +214,27 @@ passed on this revision, so the targeted result does not replace that check.
 Read-only diagnostics passed race tests. Disabled routing skips unused proxy and
 pinned-host probes while keeping actual application observations. CLI open/doctor
 and the public TLS scenario remain separate integration tasks.
+
+## Diagnostics CLI integration, 1c46f79
+
+Open and doctor adapters are integrated. The 42 CLI tests and CLI vet/build passed;
+root then ran `go vet ./...` and `go test -race ./... -count=1` successfully on
+1c46f79, including runner, 146.100 s. This closes the full race follow-up after the
+procfs correction. New CLI and diagnostics targeted race checks also passed.
+
+A public binary at /tmp/rdr-stage5-diagnostics verified doctor with disabled
+routing returns the observation without creating runtime files, and open against
+a missing project returns NOT_FOUND without creating files. JSON open never
+launches a browser; its direct-URL fallback requires verified target ownership.
+Doctor returns exit 4 for failed diagnostics and renders individual checks in
+text and JSON. No application commands run during these reads.
+
+The fixture is integrated in 31bb721. Luna's first attempt found a fixture-only
+path-versus-ID comparison error and confirmed cleanup. After correction the
+scenario passed, then Sol independently ran
+`python3 examples/mini/tls_scenario.py /tmp/rdr-stage5-diagnostics` with PASS and
+confirmed cleanup. It checks HTTPS dependency routing, Secure cookie roundtrip,
+SSE flush before a delayed second event, valid WebSocket handshake and HMR text
+frame, alias collision preservation, stopped-route 503 isolation, proxy restart
+and failed certificate reload with unchanged application RunIDs. Real user-domain
+ingress and macOS runtime remain outside this automated evidence.

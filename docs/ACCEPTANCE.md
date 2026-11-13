@@ -19,14 +19,14 @@
 | 10 | Snapshot immutable files и failure новой сборки | Не запускалось | pending, этап 6 |
 | 11 | MillDrum backup/seed/sign-in/agent shutdown/watcher, SQLite isolation | Не запускалось | pending, этап 7 |
 | 12 | Lifecycle на Linux и macOS, инструкция twikko | Linux / `301afb9` частично | partial, Darwin arm64/amd64 cross-build прошёл, runtime не проверен |
-| 13 | Routing/alias tests и proxy/alias CLI | Linux / `6bc734f` | partial, адресная книга и коллизии проверены; публичный TLS-сценарий в работе |
+| 13 | Routing/alias tests, `examples/mini/tls_scenario.py` | Linux / `31bb721`, code `1c46f79` | passed на Linux fixtures, hostname collision сохраняет старую адресную книгу, proxy restart сохраняет app RunIDs |
 | 14 | Реальный wildcard, DNS и отрицательные cert/key/date проверки | [LOCAL_HTTPS.md](LOCAL_HTTPS.md) | partial, внешний TLS handshake и runner TLS fixtures проверены; пользовательский ingress ещё не подготовлен |
-| 15 | TLS runner, Secure cookies, WebSocket/HMR, SSE и bindings | Не запускалось | pending, этап 5 |
-| 16 | Proxy handler/daemon tests, ownership recheck, reload rejection | Linux / `6bc734f` | partial, transport и daemon checks прошли; doctor/open в работе |
+| 15 | `examples/mini/tls_scenario.py`: Secure cookie, WS handshake/HMR frame, SSE first-flush, A→main route | Linux / `31bb721`, code `1c46f79` | passed на Linux synthetic fixtures, CA доверен только тестовому клиенту; реальный домен/браузер отдельно |
+| 16 | Public TLS scenario, proxy tests, doctor/open public smoke | Linux / `31bb721`, code `1c46f79` | passed на Linux fixtures, stopped503, foreign listener refusal, reload preservation, read-only diagnostics |
 | 17 | Build/start получают одинаковые заранее назначенные dependency addresses | Linux / `12a2457` | passed на Linux, real graph tests проверяют build/start addresses и отсутствие переназначения после build |
 | 18 | Discovery, IDs, dry-run, bind и graph lifecycle через публичный JSON без интерактива | Linux / `12a2457` | passed для этапов 1–3; switch/share войдут в итоговый сценарий этапа 8 |
 | 19 | `examples/mini/switch_scenario.py`, switch graph/CLI tests | Linux / `bacc5c9`, A1 fixes `a825cb3` | passed на Linux, public JSON и подтверждённый cleanup |
-| 20 | TCP/UDP wildcard ownership, proxy loopback, share-only exposure, отсутствие DNS API | Linux / `301afb9` частично | partial, Linux listener checks прошли; Darwin runtime, proxy/share впереди |
+| 20 | TCP/UDP wildcard ownership, proxy loopback, share-only exposure, отсутствие DNS API | Linux / `301afb9` частично | partial, Linux listener checks прошли; Darwin runtime и share впереди, loopback proxy проверен Linux fixtures |
 | 21 | Все ежедневные сценарии MillDrum через новую обёртку | Не запускалось | pending, этап 7; пользователь разрешил отключить OAuth только в защищённом preview, см. MIGRATION_MAP |
 
 Для окончательной приёмки каждая строка получает точный commit, выполненную

@@ -36,6 +36,9 @@ rdr status --project example --json
 rdr up api --dry-run --json
 rdr up api --json
 rdr logs api --tail 50
+rdr open api --json
+rdr doctor --json
+rdr proxy status --json
 rdr restart api --json
 rdr down api --json
 ```
@@ -50,8 +53,9 @@ Graph lifecycle, hooks, batch switch and interrupted-build recovery are implemen
 on Linux. Unknown process ownership gives an explicit refusal and preserves state
 for inspection. Darwin process/socket inspection is implemented and cross-built
 for arm64 and amd64; execution on real macOS remains unverified.
-Local HTTPS proxy and aliases are integrated; diagnostics and transport acceptance
-are in progress. Publication and project migration remain pending. The first release requires
+Local HTTPS proxy, aliases and read-only diagnostics passed the Linux test fixtures. `open --json` returns the browser URL without opening
+a browser. `doctor --json` separates DNS, TLS trust, listeners, route ownership
+and application state. Publication and project migration remain pending. The first release requires
 migration of MillDrum and acceptance on twikko, Linux and macOS.
 See [local HTTPS setup](docs/LOCAL_HTTPS.md), [acceptance evidence](docs/ACCEPTANCE.md),
 [technical contracts](docs/TECH_SPEC.md) and [review status](docs/REVIEWS.md).
