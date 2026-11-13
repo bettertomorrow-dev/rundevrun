@@ -100,6 +100,7 @@ func TestSharePasswordIsOneTimeCredentialOnlyInJSON(t *testing.T) {
 
 func TestShareCleanupErrorPreservesActivePublicationWithoutCredentials(t *testing.T) {
 	e := result("share", options{json: true})
+	e.Credentials = &shareCredentials{Password: "previous-value-must-be-cleared"}
 	failShare(&e, publication.Result{
 		Status:   publication.Status{ID: "new-share", State: "ready", URL: "https://fixture.trycloudflare.com"},
 		Password: "must-not-escape-on-error",
@@ -108,7 +109,12 @@ func TestShareCleanupErrorPreservesActivePublicationWithoutCredentials(t *testin
 	if code := writeResult(&out, &errOut, e, true); code != 5 || e.Status != "partial" || len(e.Results) != 1 || e.Credentials != nil {
 		t.Fatalf("share partial result: code=%d envelope=%+v", code, e)
 	}
-	if bytes.Contains(out.Bytes(), []byte("must-not-escape-on-error")) || bytes.Contains(out.Bytes(), []byte("credentials")) {
+	var encoded map[string]json.RawMessage
+	if err := json.Unmarshal(out.Bytes(), &encoded); err != nil {
+		t.Fatal(err)
+	}
+	_, exposesCredentials := encoded["credentials"]
+	if bytes.Contains(out.Bytes(), []byte("must-not-escape-on-error")) || exposesCredentials {
 		t.Fatalf("share error exposed credentials: %s", out.String())
 	}
 }
