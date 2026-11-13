@@ -12,6 +12,7 @@ type options struct {
 	toWorktree string
 	all        bool
 	cascade    bool
+	retryHooks bool
 	json       bool
 	dryRun     bool
 	help       bool
@@ -41,7 +42,7 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade":
+		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
@@ -56,6 +57,8 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.all = true
 			case "--cascade":
 				opts.cascade = true
+			case "--retry-hooks":
+				opts.retryHooks = true
 			default:
 				opts.help = true
 			}

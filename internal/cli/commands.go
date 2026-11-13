@@ -59,6 +59,7 @@ type instanceInfo struct {
 	DependencyError   string            `json:"dependency_error,omitempty"`
 	ConfigError       string            `json:"config_error,omitempty"`
 	Preparation       *preparationInfo  `json:"preparation,omitempty"`
+	Hook              *hookInfo         `json:"hook,omitempty"`
 	PID               int               `json:"pid,omitempty"`
 	DirectURL         string            `json:"direct_url,omitempty"`
 	URL               string            `json:"url,omitempty"`
@@ -71,6 +72,14 @@ type preparationInfo struct {
 	BuildLogPath string `json:"build_log_path"`
 }
 
+type hookInfo struct {
+	RunID       string `json:"run_id"`
+	OperationID string `json:"operation_id"`
+	Name        string `json:"name"`
+	Phase       string `json:"phase"`
+	LogPath     string `json:"log_path"`
+}
+
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
 func execute(ctx context.Context, args []string, opts options, e *envelope, out io.Writer) {
@@ -80,6 +89,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	if opts.cascade && e.Command != "down" {
 		e.fail("USAGE", "--cascade is only valid with down")
+		return
+	}
+	if opts.retryHooks && e.Command != "up" && e.Command != "down" && e.Command != "restart" {
+		e.fail("USAGE", "--retry-hooks is only valid with up, down, or restart")
 		return
 	}
 	if opts.toWorktree != "" && e.Command != "bind" {
@@ -239,7 +252,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
 			return
 		}
-		runGraph(ctx, store, "down", selections, opts.cascade, e)
+		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, e)
 		return
 	}
 	if e.Command == "down" && len(services) == 0 {
@@ -262,7 +275,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
 			return
 		}
-		runGraph(ctx, store, "down", selections, opts.cascade, e)
+		runGraph(ctx, store, "down", selections, opts.cascade, opts.retryHooks, e)
 		return
 	}
 
@@ -310,7 +323,7 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 		setGraphPlan(ctx, store, e.Command, selections, opts.cascade, reg.Revision, e)
 		return
 	}
-	runGraph(ctx, store, e.Command, selections, opts.cascade, e)
+	runGraph(ctx, store, e.Command, selections, opts.cascade, opts.retryHooks, e)
 }
 
 func setGraphPlan(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, revision uint64, e *envelope) {
@@ -326,8 +339,11 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 	e.Plan = plan
 }
 
-func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, e *envelope) {
+func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks bool, e *envelope) {
 	r := runner.New(store, executablePath())
+	if retryHooks {
+		r.RetryHooks = true
+	}
 	var result runner.GraphResult
 	var err error
 	switch action {
@@ -419,7 +435,7 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 	} else {
 		fields["state"] = result.State
 	}
-	if result.InstanceID == "" || result.StateUnknown {
+	if result.InstanceID == "" {
 		return fields
 	}
 	parts := strings.Split(result.InstanceID, "/")
@@ -440,6 +456,12 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 	instance, ok := project.Instances[result.InstanceID]
 	if !ok {
 		addGraphInstanceError(e, result.InstanceID, "NOT_FOUND", "instance metadata disappeared after up")
+		return fields
+	}
+	if hook := hookView(store, instance.Hook); hook != nil {
+		fields["hook"] = hook
+	}
+	if result.StateUnknown {
 		return fields
 	}
 	instance.State = result.State
@@ -765,6 +787,7 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 				instance.State = info.State
 				info.ConfigChanged, info.RestartRequired = configDrift(store, instance, w.Config.Digest, e)
 				info.Preparation = preparationView(store, instance)
+				info.Hook = hookView(store, instance.Hook)
 				addRunDetails(store, instance, &info)
 			}
 			addDependencyDetails(store, viewProject, state.Worktree{ID: w.ID, Root: w.Root}, &service, instance, registered, &info, e)
@@ -818,6 +841,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 			observed, unknown := inspectState(store, i, e)
 			info := instanceInfo{ID: i.ID, ProjectID: p.ID, WorktreeID: i.WorktreeID, Service: i.Service, State: observed, StateUnknown: unknown, RunID: i.RunID}
 			info.Preparation = preparationView(store, i)
+			info.Hook = hookView(store, i.Hook)
 			addRunDetails(store, i, &info)
 			i.State = observed
 			if worktree, ok := findWorktree(p, i.WorktreeID); ok {
@@ -854,6 +878,19 @@ func preparationView(store *state.Store, i state.Instance) *preparationInfo {
 		return nil
 	}
 	return &preparationInfo{RunID: i.Preparation.RunID, Phase: i.Preparation.Phase, BuildLogPath: filepath.Join(store.Root, "runs", i.Preparation.RunID, "build.log")}
+}
+
+func hookView(store *state.Store, hook *state.HookIntent) *hookInfo {
+	if hook == nil {
+		return nil
+	}
+	return &hookInfo{
+		RunID:       hook.RunID,
+		OperationID: hook.OperationID,
+		Name:        hook.Name,
+		Phase:       hook.Phase,
+		LogPath:     filepath.Join(store.Root, "runs", hook.RunID, "hook-"+hook.Name+".log"),
+	}
 }
 
 func addRunDetails(store *state.Store, instance state.Instance, info *instanceInfo) {

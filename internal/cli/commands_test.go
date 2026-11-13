@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -718,5 +719,151 @@ func TestGraphAdapterKeepsTypedReadinessTimeout(t *testing.T) {
 	}
 	if code := graphFailureCode(context.Background(), errors.New("process failed")); code != "PROCESS_FAILED" {
 		t.Fatalf("untyped failure code = %q, want PROCESS_FAILED", code)
+	}
+}
+
+func TestRetryHooksFlagScopeAndDryRun(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range [][]string{
+		{"up", "worker", "--dry-run", "--retry-hooks", "--json"},
+		{"down", "worker", "--dry-run", "--retry-hooks", "--json"},
+		{"restart", "worker", "--dry-run", "--retry-hooks", "--json"},
+	} {
+		if e, code := invoke(t, command...); code != 0 || e.Plan == nil {
+			t.Fatalf("%v: exit=%d result=%+v", command, code, e)
+		}
+	}
+	for _, command := range [][]string{
+		{"status", "--retry-hooks", "--json"},
+		{"logs", "worker", "--retry-hooks", "--json"},
+		{"bind", "worker", "api", "--to-worktree", root, "--retry-hooks", "--json"},
+	} {
+		if e, code := invoke(t, command...); code != 2 || len(e.Errors) != 1 || e.Errors[0].Code != "USAGE" {
+			t.Fatalf("%v: exit=%d result=%+v", command, code, e)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("dry-run retry changed state: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtime, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created run directory: %v", err)
+	}
+}
+
+func TestHookStatusIsWhitelistedAndReadOnly(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	store := &state.Store{Root: runtime}
+	var instanceID string
+	if err := store.Update(func(reg *state.Registry) error {
+		for id := range reg.Projects {
+			p, err := reg.Project(id)
+			if err != nil {
+				return err
+			}
+			for key, instance := range p.Instances {
+				instanceID = key
+				instance.Hook = &state.HookIntent{
+					RunID: "saved-run", OperationID: "op-123", Name: "after_stop", Phase: "failed",
+					Reason: "PRIVATE_HOOK_REASON", Child: procid.Ref{PID: 991337}, Members: []procid.Ref{{PID: 991338}},
+				}
+				p.Instances[key] = instance
+			}
+			return reg.SetProject(id, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedLog := filepath.Join(runtime, "runs", "saved-run", "hook-after_stop.log")
+	for _, command := range [][]string{
+		{"status", "--json"},
+		{"services", "--project", "example", "--worktree", root, "--json"},
+		{"ls", "--json"},
+	} {
+		e, code := invoke(t, command...)
+		if code != 0 || len(e.Results) != 1 {
+			t.Fatalf("%v: exit=%d result=%+v", command, code, e)
+		}
+		encoded, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertPublicHook(t, encoded, expectedLog)
+	}
+	upResult := graphInstanceInfo(store, runner.Result{InstanceID: instanceID, StateUnknown: true}, &envelope{Results: []any{}, Errors: []commandError{}})
+	encoded, err := json.Marshal(upResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPublicHook(t, encoded, expectedLog)
+	after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("read-only hook status changed registry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtime, "runs", "saved-run")); !os.IsNotExist(err) {
+		t.Fatalf("read-only hook status created run directory: %v", err)
+	}
+}
+
+func assertPublicHook(t *testing.T, encoded []byte, logPath string) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(encoded, &doc); err != nil {
+		t.Fatal(err)
+	}
+	var findHook func(any) map[string]any
+	findHook = func(value any) map[string]any {
+		switch item := value.(type) {
+		case map[string]any:
+			if hook, ok := item["hook"].(map[string]any); ok {
+				return hook
+			}
+			for _, child := range item {
+				if hook := findHook(child); hook != nil {
+					return hook
+				}
+			}
+		case []any:
+			for _, child := range item {
+				if hook := findHook(child); hook != nil {
+					return hook
+				}
+			}
+		}
+		return nil
+	}
+	hook := findHook(doc)
+	if hook == nil || len(hook) != 5 || hook["run_id"] != "saved-run" || hook["operation_id"] != "op-123" || hook["name"] != "after_stop" || hook["phase"] != "failed" || hook["log_path"] != logPath {
+		t.Fatalf("invalid public hook status: %s", encoded)
+	}
+	for _, private := range []string{"child", "members", "PRIVATE_HOOK_REASON", "991337", "991338"} {
+		if bytes.Contains(encoded, []byte(private)) {
+			t.Fatalf("hook internals leaked (%s): %s", private, encoded)
+		}
 	}
 }

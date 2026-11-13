@@ -36,6 +36,7 @@ Options may appear before or after the command:
   --dry-run               Show a lifecycle plan without changing state.
   --cascade               Include live consumers in a down plan.
   --all                   Global down scope; cannot combine with selectors.
+  --retry-hooks           Retry a saved failed or interrupted stop hook.
   --tail N                Show the last N log lines, default 100, maximum 10000.
   --follow                Follow application logs; cannot combine with --json.
   --help, -h              Show this help.
@@ -49,8 +50,9 @@ Examples:
   rdr logs api --tail 50
   rdr down api --json
 
-Graph dry-runs support service lists, default down, and global down. Graph
-execution and hooks remain in progress. Proxy and sharing are not implemented.
+Graph dry-runs support service lists, default down, and global down. Retry uses
+the original stopped run's hook record; a new consumer does not retry a failed
+after_start hook. Proxy and sharing are not implemented.
 Runtime state: RDR_HOME, else XDG_STATE_HOME/rundevrun,
 else ~/.local/state/rundevrun. Registration runs no project commands.`
 
