@@ -238,3 +238,25 @@ SSE flush before a delayed second event, valid WebSocket handshake and HMR text
 frame, alias collision preservation, stopped-route 503 isolation, proxy restart
 and failed certificate reload with unchanged application RunIDs. Real user-domain
 ingress and macOS runtime remain outside this automated evidence.
+
+## Publication primitives, a8ee948 and 7139131
+
+The standalone password gate passed package tests, race tests and vet. It uses a
+192-bit generated password, salted PBKDF2 verification and a publication-specific
+HMAC cookie key. Login validates origin and host, bounds request bodies and login
+attempts, and rejects unsafe redirects. Anonymous static/API/WebSocket requests
+never reach the application. Tests include authorized upgrade and preserved
+application cookies. Sol added private/no-store response policy at the write
+boundary so an upstream cannot enable shared caching of authenticated content.
+
+The snapshot copy helper passed package tests, race tests and vet. It creates an
+independent private copy, rejects all symlinks and special files, confines source
+access and removes only its new staging directory on failure. This stricter
+artifact requirement is explicit in TECH_SPEC. It does not yet implement build
+execution or snapshot publication.
+
+Live publication lifecycle is still unaccepted WIP. Root review identified early
+readiness from the URL announcement, hidden preparing records after frontend
+crash, internal timeout classification and loss of unclaimed proof during close.
+Corrections and offline process tests are in progress. No real public tunnel has
+been launched. A2 remains required after live/snapshot and CLI integration.
