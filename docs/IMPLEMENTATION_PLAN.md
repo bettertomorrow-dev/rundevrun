@@ -221,16 +221,16 @@ Sol исправляет мелкие замечания сам. Существ�
 Sol обновляет этот раздел после интеграции этапа. Допустимые состояния: pending, in_progress, blocked, done. Для blocked обязательно указать условие разблокировки, для done указать проверенную ревизию и доказательство приёмки.
 
 ```text
-Текущий этап: 3
+Текущие этапы: 4 и 5
 Статус: in_progress
-Активные задания: Terra 3A2c DownGraph, затем 3A2d RestartGraph; Luna 3C1 scope/dry-run/status, затем 3C2 execution adapter. 3A1 planner/Bind и 3B пример приняты как подэтапы.
-Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa; 2 done на 301afb9 по Linux-проверкам. Darwin реализация есть, runtime приёмка pending и не считается подтверждённой.
-Последняя интегрированная ревизия: 507a0b012a6fb58541d7aa7155402c51110a3d98, подэтап 3A2a prepare/activate refactor; весь этап 3 ещё не принят
+Активные задания: Terra 4A hooks и durable hook recovery; отдельный Terra 5A machine routing config, hostname и TLS validation. Luna не запущена третьим builder.
+Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa; 2 done на 301afb9 по Linux-проверкам; 3 done на 12a245756c086a6247c54b529221386d06ac5731 по Linux-проверкам. Darwin реализация есть, runtime приёмка pending и не считается подтверждённой.
+Последняя интегрированная ревизия: 12a245756c086a6247c54b529221386d06ac5731. Приняты UpGraph/DownGraph/RestartGraph и batch/default/global CLI. Public mini scenario PASS с подтверждённой остановкой всех fixture processes.
 Проверки: go test ./...; go vet ./...; go test -race ./...; git diff --check. Darwin arm64 и amd64 go build ./... прошли, реальные syscall/lifecycle там НЕ запускались. На Linux проверены actual binary discovery, single-service lifecycle, repeat/restart/fixed ports, HTTP/process readiness, logs/rotation, stop без конфигурации, SIGSTOP supervisor, build failures/timeouts, реальный SIGKILL frontend во время build и восстановление через down/up/restart, сохранение old app, EOF before ACK, поздний потомок после stop snapshot, foreign identity safety, семь restart с current + пятью historical runs.
 Публичный binary /tmp/rundevrun-stage2-rdr также проверен на config drift: up не заменяет running run, показывает config_changed/restart_required; status с explicit selectors показывает actual state и config_error после invalid TOML; down работает без valid config. Все временные процессы остановлены.
 Замечания Astra: A0 закрыта для контрактов на 0478d52. Следующая критическая проверка A1 после этапа4. Для A1 отдельно проверить fail-closed отсутствие anchor, cleanup kernel snapshots, native Darwin proc_info ABI и retention безопасности.
 Внешние условия: второй проект /home/alex/dev/twikko выбран пользователем; macOS runtime на обеих архитектурах; HTTPS-вход пользователя home.litvinovich.dev через Nginx Proxy Manager, доступ к PEM и route runner ещё не подготовлены, наблюдения в docs/LOCAL_HTTPS.md; реальный Cloudflare share; OAuth preview при миграции. Кросс-компиляция не закрывает критерий12, релиз не готов.
-Следующий шаг: завершить graph up/down/restart и CLI lists/cascade/default down, затем public mini scenario. Не открывать switch/proxy до полной приёмки этапа 3.
+Следующий шаг: после hooks выполнить switch через тот же executor; параллельно принять routing/TLS package и затем handler/daemon. Astra A1 после интеграции этапа 4. Полные этапы 4/5 ещё не приняты.
 
 История этапа2:
 2A core и 2B CLI интегрированы в a840226 как промежуточный результат, ещё с двумя открытыми crash-safety пунктами.
@@ -239,6 +239,12 @@ Background задания2A/2C вернулись без кода; повтор�
 Остаточное ограничение2C: если leader исчез, неизвестный survivor остался и нет живого verified anchor, команда возвращает OWNERSHIP_UNKNOWN и оставляет intent/reservation; автоматическая очистка этого неопределённого дерева не обещается. Это осознанный fail-closed результат, а не успешная остановка.
 Retention: пять последних подтверждённых completed unreferenced runs плюс все ссылки registry/живые/сомнительные; unknown/corrupt без terminal proof не удаляются. Application data никогда не является целью cleanup.
 Darwin code использует native proc_info и структуру socket_fdinfo по Apple XNU headers; parser fixtures проверены на Linux. ABI/private syscall и OS permissions нуждаются в реальной macOS проверке до релиза.
+
+Приёмка этапа 3 на 12a2457:
+Root выполнил go test ./... -count=1, go vet ./..., go test -race ./..., gofmt -l и git diff --check. После двух малых финальных исправлений classifier/invalid-selection повторены targeted race tests. Rebuilt /tmp/rundevrun-stage3-rdr прошёл public examples/mini/scenario.py полностью, cleanup public status подтвердил stopped без unknown/preparation.
+Core single wrappers и Runner.Plan используют graph path; старые start/reserve/planDown и dead CLI mutation branches удалены. Все replacement builds завершаются до первого old stop; late build failure сохраняет old runs. Down failure блокирует dependency, independent branches могут закончиться. Existing unhealthy dependency запрещает новый consumer.
+CLI показывает desired/effective IDs, config/binding/address drift; state_unknown без фиктивного state; typed timeout не превращается в cancel, пользовательская отмена всегда exit130.
+Подробная матрица PRD ведётся в docs/ACCEPTANCE.md. MillDrum/twikko, macOS runtime, proxy/share ещё не приняты.
 
 Назначение этапа3:
 3A1 done на bb5e56d: readonly PlanGraph для up/down, PlanBind/Bind с consumer lock и revision CAS, desired/effective binding separation, tentative numeric port plan и env validation. Sol review исправил fixed-port collisions, binding availability, active config drift и отсутствие operation lock; concurrent bind cycle/BUSY и readonly tests прошли. Public CLI bind/--to-worktree, dry-run graph, selectors изподкаталога и fresh branch labels интегрированы Sol. Все test/vet/race прошли перед последней малой нормализацией plan states; targeted graph/bind tests после неё прошли.

@@ -8,10 +8,10 @@
 | PRD | Проверка или сценарий | Платформа / ревизия | Результат и ограничение |
 | --- | --- | --- | --- |
 | 1 | Одновременный запуск MillDrum и `/home/alex/dev/twikko` одним бинарником | Не запускалось | pending, этапы 7–8 |
-| 2 | `examples/mini/scenario.py`, shared catalog между worktree | Linux, интеграция этапа 3 | pending, требуется полный PASS публичного сценария |
-| 3 | Тот же сценарий, независимый catalog и остановка выбранного worktree | Linux, интеграция этапа 3 | pending |
-| 4 | `bind`, restart consumer, endpoint identity, отказ выбранной dependency | Linux, интеграция этапа 3 | pending |
-| 5 | Graph tests: cycle before execution, repeat и concurrent up | Linux, интеграция этапа 3 | pending, фиксируется после полной интеграции |
+| 2 | `examples/mini/scenario.py`, shared catalog между worktree | Linux / `12a2457` | passed на Linux, публичный сценарий завершился PASS и подтвердил cleanup |
+| 3 | Тот же сценарий, независимый catalog и остановка выбранного worktree | Linux / `12a2457` | passed на Linux |
+| 4 | `bind`, restart consumer, endpoint identity; dependency startup gate | Linux / `12a2457` | passed на Linux, explicit IDs сохраняются, unhealthy dependency блокирует consumer |
+| 5 | Graph tests: cycle before execution, repeat и concurrent up | Linux / `12a2457` | passed на Linux, core graph и config tests прошли с race |
 | 6 | Lifecycle failures, фактические state и JSON exit code; hook failures | Linux / `301afb9` частично | partial, single-service build/readiness/port проверены; hooks ещё отсутствуют |
 | 7 | Реальный binary, SIGKILL frontend во время build, bootstrap EOF, foreign PID identity | Linux / `301afb9` | partial, Linux-проверки прошли; общий crash audit A1 впереди |
 | 8 | Ошибка подготовки всего switch и отказ после stop без отката данных | Не запускалось | pending, этап 4 |
@@ -23,8 +23,8 @@
 | 14 | Реальный wildcard, DNS и отрицательные cert/key/date проверки | [LOCAL_HTTPS.md](LOCAL_HTTPS.md) | partial, внешний TLS handshake проверен; runner TLS ещё отсутствует |
 | 15 | TLS runner, Secure cookies, WebSocket/HMR, SSE и bindings | Не запускалось | pending, этап 5 |
 | 16 | 404/503, чужой процесс на старом порту, reload/restart proxy, диагностика | Не запускалось | pending, этап 5 |
-| 17 | Build/start получают одинаковые заранее назначенные dependency addresses | Linux, интеграция этапа 3 | pending, runner tests есть, требуется интегрированная ревизия |
-| 18 | Discovery, IDs, dry-run и lifecycle через публичный JSON без интерактива | Linux / `301afb9` частично | partial, single-service smoke прошёл; graph и полный агентный сценарий впереди |
+| 17 | Build/start получают одинаковые заранее назначенные dependency addresses | Linux / `12a2457` | passed на Linux, real graph tests проверяют build/start addresses и отсутствие переназначения после build |
+| 18 | Discovery, IDs, dry-run, bind и graph lifecycle через публичный JSON без интерактива | Linux / `12a2457` | passed для этапов 1–3; switch/share войдут в итоговый сценарий этапа 8 |
 | 19 | Switch single/list/file/all-services, независимая ветвь и partial JSON | Не запускалось | pending, этап 4 |
 | 20 | TCP/UDP wildcard ownership, proxy loopback, share-only exposure, отсутствие DNS API | Linux / `301afb9` частично | partial, Linux listener checks прошли; Darwin runtime, proxy/share впереди |
 | 21 | Все ежедневные сценарии MillDrum через новую обёртку | Не запускалось | pending, этап 7 |

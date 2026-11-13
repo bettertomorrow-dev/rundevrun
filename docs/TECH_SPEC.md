@@ -296,6 +296,16 @@ writes registry results only, not supervisor files. Uncertain live ownership
 is an explicit error. No generic data rollback or replay of interrupted hooks.
 After interrupted switch, expose step journal and require a new explicit command.
 Do not silently re-run a migration or after_stop hook.
+Failed or interrupted saved stop hooks require an explicit `--retry-hooks`
+on the next lifecycle command before they may execute again. The default is
+false. Retry uses the old run's immutable command, environment and timeout.
+An unresolved after_stop blocks the replacement even when the process is
+already stopped. A failed after_start leaves the process live and blocks new
+consumers; down may stop it without replaying after_start, and an explicit
+restart prepares a new run. Failed before_start on a discarded preparation
+does not prohibit a fresh explicit start with a new run ID. Status exposes hook
+name/phase and log path, never its environment. Retention protects every run
+referenced by an unresolved hook record.
 
 Port assignment occurs for the entire graph before any build, under registry
 lock, excluding all live/reserved ports across projects and checking loopback
