@@ -289,3 +289,21 @@ post-activation cleanup failure, with no credentials in that response.
 
 This accepts the offline live slice only. Snapshot build/serving, public CLI
 provider simulation, real Cloudflare and integrated Astra A2 remain pending.
+
+## Public offline live-share scenario
+
+Luna and Sol independently completed
+`python3 examples/mini/share_scenario.py /tmp/rdr-stage6-review` with PASS. The
+pinned binary contains the accepted live lifecycle. A controlled cloudflared
+stand-in opens only loopback TLS, uses a temporary client-trusted CA and records
+its own endpoint map. The driver controls runner through public JSON and never
+reads runner records. It checks one-time password output, protected root/API/WS,
+application cookies, authenticated routed dependency and WS frame, failed recreate
+preservation, successful credential/session rotation, secret-free status/logs,
+unshare retaining application RunIDs and publication closure on dependency restart.
+Cleanup confirmed all apps stopped and no publications before removing fixtures.
+
+Luna's first attempt found a fixture count assumption: status includes the stopped
+indexer as well as live catalog/reports. That was corrected and cleanup confirmed.
+The fixture uses no real public network or DNS/trust changes. It does not establish
+real Cloudflare or snapshot acceptance.

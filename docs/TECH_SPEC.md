@@ -74,6 +74,7 @@ Fields below are the complete schema; omitted optional tables are disabled.
 | share.env | optional string map | {}, snapshot-only, same reserved-name restrictions as service.env. |
 
 All tables reject unknown keys. Service fields omit `services.<name>.` here.
+Mode selection uses explicit --mode, then configured share.mode, then live.
 Absent share permits explicit live sharing of HTTP; snapshot requires configured
 build/dir. --mode live may override configured snapshot without using snapshot
 build/env/dir; --mode snapshot without snapshot config fails. Empty share, health
