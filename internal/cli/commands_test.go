@@ -425,6 +425,156 @@ func TestProxyFailureIsSeparateFromSuccessfulAppState(t *testing.T) {
 	}
 }
 
+func TestOpenPrintsOnlyRegisteredURLWithoutStartingServices(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "runtime")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register: %d", code)
+	}
+	store := &state.Store{Root: runtimeRootPath}
+	var id string
+	if err := store.Update(func(reg *state.Registry) error {
+		for projectID := range reg.Projects {
+			p, err := reg.Project(projectID)
+			if err != nil {
+				return err
+			}
+			for key, instance := range p.Instances {
+				id = key
+				instance.RouteURL = "https://worker-main.example.test"
+				p.Instances[key] = instance
+			}
+			return reg.SetProject(projectID, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtimeRootPath, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "open", "worker", "--project", "example", "--worktree", root, "--json")
+	if code != 0 || len(e.Results) != 1 || e.Results[0].(map[string]any)["url"] != "https://worker-main.example.test" {
+		t.Fatalf("open: %d %+v", code, e)
+	}
+	encoded, _ := json.Marshal(e)
+	if bytes.Contains(encoded, []byte(id)) || bytes.Contains(encoded, []byte("state")) {
+		t.Fatalf("open JSON included data beyond URL: %s", encoded)
+	}
+	after, err := os.ReadFile(filepath.Join(runtimeRootPath, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("open mutated route book: %v", err)
+	}
+	for _, name := range []string{"runs", "proxy.json"} {
+		if _, err := os.Stat(filepath.Join(runtimeRootPath, name)); !os.IsNotExist(err) {
+			t.Fatalf("open created %s: %v", name, err)
+		}
+	}
+}
+
+func TestOpenFallsBackOnlyToVerifiedActiveHTTPManifest(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "runtime")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register: %d", code)
+	}
+	store := &state.Store{Root: runtimeRootPath}
+	reg, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var project state.Project
+	for id := range reg.Projects {
+		project, err = reg.Project(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	instanceID := project.ID + "/" + project.Worktrees[0].ID + "/worker"
+	instance := project.Instances[instanceID]
+	instance.RunID = "http-run"
+	instance.State = "ready"
+	project.Instances[instanceID] = instance
+	if err := store.Update(func(reg *state.Registry) error { return reg.SetProject(project.ID, project) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteManifest("http-run", state.Manifest{RunID: "http-run", InstanceID: instanceID, Launch: state.LaunchContract{Protocol: "http"}, Addresses: map[string]string{"direct_url": "http://127.0.0.1:32100", "url": "https://stale.example.test"}}); err != nil {
+		t.Fatal(err)
+	}
+	if e, code := invoke(t, "open", "worker", "--project", project.ID, "--worktree", root, "--json"); code != 2 || e.Errors[0].Code != "NOT_FOUND" {
+		t.Fatalf("unverified direct URL was exposed: %d %+v", code, e)
+	}
+	if err := store.WriteManifest("worker-process-run", state.Manifest{RunID: "worker-process-run", InstanceID: instanceID, Launch: state.LaunchContract{Protocol: "process"}, Addresses: map[string]string{"direct_url": "http://127.0.0.1:32100"}}); err != nil {
+		t.Fatal(err)
+	}
+	instance.RunID = "worker-process-run"
+	if err := store.Update(func(reg *state.Registry) error {
+		p, err := reg.Project(project.ID)
+		if err != nil {
+			return err
+		}
+		p.Instances[instanceID] = instance
+		return reg.SetProject(project.ID, p)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if e, code := invoke(t, "open", "worker", "--project", project.ID, "--worktree", root, "--json"); code != 2 || e.Errors[0].Code != "NOT_FOUND" {
+		t.Fatalf("process service opened by fallback: %d %+v", code, e)
+	}
+}
+
+func TestDoctorReportsChecksReadOnlyAndReturnsFailureExit(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "runtime")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	writeProject(t, root)
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	project := registered.Scope.Project
+	configPath := filepath.Join(base, "config", "rundevrun", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("not = [valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtimeRootPath, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "doctor", "--project", project, "--worktree", root, "--json")
+	if code != 4 || e.Status != "error" || len(e.Errors) != 1 || e.Errors[0].Code != "DIAGNOSTICS_FAILED" || len(e.Results) != 1 {
+		t.Fatalf("doctor failure envelope: %d %+v", code, e)
+	}
+	report := e.Results[0].(map[string]any)["report"].(map[string]any)
+	if report["configuration"].(map[string]any)["status"] != "fail" || len(report["routes"].([]any)) != 1 {
+		t.Fatalf("doctor omitted individual checks: %#v", report)
+	}
+	after, err := os.ReadFile(filepath.Join(runtimeRootPath, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("doctor wrote registry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "proxy.json")); !os.IsNotExist(err) {
+		t.Fatalf("doctor wrote proxy state: %v", err)
+	}
+}
+
 func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")

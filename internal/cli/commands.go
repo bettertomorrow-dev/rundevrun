@@ -7,12 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/diagnostics"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
@@ -26,6 +31,12 @@ type projectInfo struct {
 	Name string `json:"name"`
 	Root string `json:"root"`
 }
+
+type openResult struct {
+	URL string `json:"url"`
+}
+
+func (r openResult) String() string { return r.URL }
 
 func (p projectInfo) String() string { return fmt.Sprintf("%s\t%s\t%s", p.ID, p.Name, p.Root) }
 
@@ -131,6 +142,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		proxyCommand(ctx, store, args[1:], opts, e)
 	case "alias":
 		aliasCommand(ctx, store, args[1:], opts, e)
+	case "open":
+		openCommand(ctx, store, args[1:], opts, e)
+	case "doctor":
+		doctorCommand(ctx, store, args[1:], opts, e)
 	case "switch":
 		switchCommand(ctx, store, args[1:], opts, e)
 	case "bind":
@@ -457,6 +472,190 @@ func machineRouting() (routing.Config, string, error) {
 
 func proxyView(info proxy.Info) *proxyInfoView {
 	return &proxyInfoView{State: info.State, PID: info.Identity.PID, HTTPListen: info.HTTPListen, HTTPSListen: info.HTTPSListen, TLSMode: info.TLSMode, ConfigPath: info.ConfigPath}
+}
+
+func openCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+	if opts.dryRun || opts.toWorktree != "" || opts.file != "" || opts.all || opts.cascade || opts.retryHooks || opts.allServices || opts.noProxy || opts.follow || opts.tailSet {
+		e.fail("USAGE", "open accepts a service and project/worktree selectors only")
+		return
+	}
+	if !validArity(append([]string{"open"}, args...), 2, 2, e) {
+		return
+	}
+	if ctx.Err() != nil {
+		failError(e, ctx.Err())
+		return
+	}
+	d, w := resolveCommandSelection(store, opts, false, e)
+	if d == nil {
+		return
+	}
+	reg, err := store.Read()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	p, err := reg.Project(d.ID)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	id := d.ID + "/" + w.ID + "/" + args[0]
+	instance, ok := p.Instances[id]
+	if !ok {
+		e.fail("NOT_FOUND", "registered service instance not found: "+args[0])
+		return
+	}
+	openURL := instance.RouteURL
+	if openURL == "" {
+		observed, err := store.Inspect(instance)
+		if err == nil && liveState(observed) && instance.RunID != "" {
+			manifest, readErr := store.ReadManifest(instance.RunID)
+			if readErr == nil && manifest.InstanceID == id && manifest.Launch.Protocol == "http" {
+				if port, verifyErr := runner.VerifyProxyTarget(store, d.ID, id, instance.RunID); verifyErr == nil {
+					candidate := manifest.Addresses["direct_url"]
+					if parsed, parseErr := url.Parse(candidate); parseErr == nil && parsed.Scheme == "http" && parsed.Host != "" && parsed.Port() == strconv.Itoa(port) {
+						openURL = candidate
+					}
+				}
+			}
+		}
+	}
+	if openURL == "" {
+		e.fail("NOT_FOUND", "service has no registered browser route or active HTTP URL: "+id)
+		return
+	}
+	e.Results = append(e.Results, openResult{URL: openURL})
+	if !opts.json {
+		if err := openPlatformURL(ctx, openURL); err != nil {
+			failError(e, err)
+		}
+	}
+}
+
+func openPlatformURL(ctx context.Context, url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.CommandContext(ctx, "open", url)
+	case "windows":
+		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.CommandContext(ctx, "xdg-open", url)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
+type doctorResult struct {
+	ProjectID string             `json:"project_id,omitempty"`
+	Report    diagnostics.Report `json:"report"`
+}
+
+func (r doctorResult) String() string {
+	var b strings.Builder
+	if r.ProjectID != "" {
+		fmt.Fprintf(&b, "Project %s\n", r.ProjectID)
+	}
+	for _, p := range r.Report.Projects {
+		fmt.Fprintf(&b, "Registry %s: %s %s\n", p.ID, p.Registry.Status, p.Registry.Message)
+	}
+	fmt.Fprintf(&b, "Configuration: %s %s\nProxy: %s %s\nHTTP listener: %s %s\n", r.Report.Configuration.Status, r.Report.Configuration.Message, r.Report.Proxy.Status.Status, r.Report.Proxy.Status.Message, r.Report.Proxy.HTTP.Status, r.Report.Proxy.HTTP.Message)
+	for _, route := range r.Report.Routes {
+		fmt.Fprintf(&b, "%s %s (%s)\n  DNS: %s %s\n  TLS system: %s %s\n  TLS configured: %s %s\n  Ownership: %s %s\n  Application: %s %s\n", route.Service, route.InstanceID, route.Hostname, route.DNS.Status, route.DNS.Message, route.TLSSystem.Status, route.TLSSystem.Message, route.TLSConfigured.Status, route.TLSConfigured.Message, route.Ownership.Status, route.Ownership.Message, route.Application.Status, route.Application.Message)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func doctorCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+	if len(args) != 0 || opts.dryRun || opts.toWorktree != "" || opts.file != "" || opts.all || opts.cascade || opts.retryHooks || opts.allServices || opts.noProxy || opts.follow || opts.tailSet {
+		e.fail("USAGE", "doctor accepts optional --project and --worktree selectors only")
+		return
+	}
+	if opts.worktree != "" && opts.project == "" {
+		e.fail("USAGE", "doctor --worktree requires --project")
+		return
+	}
+	path, err := routing.DefaultPath()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	projectID := ""
+	if opts.project != "" {
+		reg, err := store.Read()
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		p := selectProject(reg, opts.project, e)
+		if p == nil {
+			return
+		}
+		projectID = p.ID
+		e.Scope.Project = p.ID
+	}
+	worktreeID := ""
+	if opts.worktree != "" {
+		reg, err := store.Read()
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		p, err := reg.Project(projectID)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		w, err := discovery.ResolveDescriptor(descriptor(p), opts.worktree)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		worktreeID = w.ID
+		e.Scope.Worktree = w.ID
+	}
+	if ctx.Err() != nil {
+		failError(e, ctx.Err())
+		return
+	}
+	report, err := diagnostics.Run(ctx, store, path, projectID, worktreeID)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	e.Results = append(e.Results, doctorResult{ProjectID: projectID, Report: report})
+	if reportFailed(report) {
+		e.fail("DIAGNOSTICS_FAILED", "one or more diagnostic checks failed")
+	}
+	if ctx.Err() != nil {
+		for _, failure := range e.Errors {
+			if failure.Code == "CANCELLED" {
+				return
+			}
+		}
+		failError(e, ctx.Err())
+	}
+}
+
+func reportFailed(r diagnostics.Report) bool {
+	for _, project := range r.Projects {
+		if project.Registry.Status == "fail" {
+			return true
+		}
+	}
+	if r.Configuration.Status == "fail" || r.Proxy.Status.Status == "fail" || r.Proxy.HTTP.Status == "fail" {
+		return true
+	}
+	for _, route := range r.Routes {
+		if route.DNS.Status == "fail" || route.TLSSystem.Status == "fail" || route.TLSConfigured.Status == "fail" || route.Ownership.Status == "fail" || route.Application.Status == "fail" {
+			return true
+		}
+	}
+	return false
 }
 
 func proxyCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
@@ -1910,6 +2109,7 @@ func failError(e *envelope, err error) {
 	var runErr *runner.Error
 	var routeErr *routing.Error
 	var proxyErr *proxy.Error
+	var diagnosticErr *diagnostics.Error
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		code = "CANCELLED"
@@ -1933,6 +2133,8 @@ func failError(e *envelope, err error) {
 		code = routeErr.Code
 	case errors.As(err, &proxyErr):
 		code = proxyErr.Code
+	case errors.As(err, &diagnosticErr):
+		code = diagnosticErr.Code
 	}
 	e.fail(code, err.Error())
 	if errors.As(err, &configErr) {

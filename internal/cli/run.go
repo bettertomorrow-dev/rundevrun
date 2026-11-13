@@ -31,8 +31,10 @@ Discovery and registration:
                           Set a desired dependency binding; live services need restart.
   rdr alias LABEL         Name each service route in one worktree.
   rdr alias SERVICE HOST  Assign one HTTP service a full hostname.
+  rdr open <service>     Open a registered route from the current worktree.
   rdr proxy status|reload|stop
                           Inspect or control the local routing proxy.
+  rdr doctor             Diagnose routes, TLS, proxy, and application state.
   rdr logs <service>      Show recent application output.
   rdr ls                  Show known instances across registered projects.
   rdr status              Show known instances, optionally scoped to a project.
@@ -60,6 +62,8 @@ Examples:
   rdr up api --dry-run --json
   rdr up api --json
   rdr logs api --tail 50
+  rdr open console --project example --worktree ./feature-a --json
+  rdr doctor --project example --json
   rdr down api --json
 
 Graph dry-runs support service lists, default down, and global down. Retry uses
