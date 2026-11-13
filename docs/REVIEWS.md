@@ -30,3 +30,9 @@ MillDrum preview OAuth metadata requiring unauthenticated access. Generic passwo
 gate must protect every path; stage 7 cannot claim old OAuth behavior is preserved
 without resolving that conflict. These do not block independent stage 1 work once
 contracts are accepted. Second project selected by user: /home/alex/dev/twikko.
+
+## A0 re-check, 0478d52
+
+Astra found no blockers to 1A/1B on the corrected contract revision. Sol accepts
+stage 0. Runtime guarantees remain unimplemented and require the specified later
+checks. No source repositories or application processes were changed by reviews.
