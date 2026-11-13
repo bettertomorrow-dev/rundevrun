@@ -344,3 +344,31 @@ A read-only `rdr version --json` now reports product version and public API 1,
 allowing the MillDrum wrapper to reject incompatible binaries before running
 commands. CLI tests and a trimpath build pass. Local installation instructions
 are in INSTALL.md. No system install was performed.
+
+## MillDrum core A3 and backup correction
+
+MillDrum migration lives separately on `t3/rdr-migration` in
+`/home/alex/dev/milldrum`. Backend/data adapter 0277bf7 passed actual public CLI
+up/logs/restart/down with isolated disposable data. Core commits 72c1522 and
+9bd4726 add the project watcher, explicit dev proxy trust and locked handover.
+Full devproject/httpapi/owner/devrunner race suites passed. A3 found one P2:
+a symlink backup destination into the source allowed recursive copying. Fix
+a58eee5 canonicalizes paths before staging, rejects symlink destinations and
+moves new data into a namespace outside legacy data. A fresh A3 re-check closed
+the finding; alias/default-data isolation race tests passed. No confirmed P1/P2
+remained in the reviewed Linux core. UI/wrapper and real active-agent acceptance
+were outside that review and remain required.
+
+## Build completion and output draining
+
+The real disposable backend scenario exposed BUILD_FAILED with "no verified live
+session anchor" before launch. A build can exit and be reaped while cmd.Wait still
+drains stdout. The 20ms member scan treated proven absence as failure instead of
+waiting for the actual command result. The build loop now continues waiting only
+when whole-session absence is proven. Unknown survivors still fail closed.
+A deterministic regression holds the log writer after process exit and verifies
+both success and exit 7. It fails for both cases on 90af20b and passes under race
+after the fix. The shared path also serves hooks and snapshot builds.
+Initial build errors now retain the safe build-log path using os.PathError;
+the graph test verifies that the referenced log exists. Independent lifecycle
+re-check and a corrected real backend scenario follow before acceptance.

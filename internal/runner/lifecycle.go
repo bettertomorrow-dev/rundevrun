@@ -174,7 +174,7 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 	}
 	closeErr := buildLog.Close()
 	if err = errors.Join(buildErr, closeErr); err != nil {
-		return preparedRun{}, &Error{"BUILD_FAILED", err}
+		return preparedRun{}, &Error{"BUILD_FAILED", &os.PathError{Op: "build", Path: filepath.Join(runDir, "build.log"), Err: err}}
 	}
 
 	startTimeout, _ := time.ParseDuration(svc.StartTimeout)

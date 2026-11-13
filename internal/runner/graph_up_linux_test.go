@@ -151,6 +151,13 @@ depends_on = ['api']
 	if err == nil || failed.Status != "partial" {
 		t.Fatalf("expected build failure: %+v %v", failed, err)
 	}
+	var buildPath *os.PathError
+	if !errors.As(err, &buildPath) || filepath.Base(buildPath.Path) != "build.log" {
+		t.Fatalf("failed build omitted its log path: %v", err)
+	}
+	if _, err := os.Stat(buildPath.Path); err != nil {
+		t.Fatalf("failed build log unavailable: %v", err)
+	}
 	again, e := r.UpGraph(ctx, []Selection{{p, a, "worker"}, {p, b, "worker"}, {p, d, "worker"}})
 	if e != nil || len(again.Results) != 5 {
 		t.Fatalf("repeat: %+v %v", again, e)

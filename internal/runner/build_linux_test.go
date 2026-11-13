@@ -44,3 +44,74 @@ func TestBuildTimeoutCleansChild(t *testing.T) {
 		t.Fatalf("child %d remains: %v", pid, err)
 	}
 }
+
+func TestBuildExitBeforeOutputDrainPreservesExitResult(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "rdr")
+	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+		t.Fatalf("build binary: %v %s", err, output)
+	}
+	for _, code := range []int{0, 7} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			log, err := openLog(filepath.Join(t.TempDir(), "build.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer log.Close()
+			log.mu.Lock()
+			locked := true
+			defer func() {
+				if locked {
+					log.mu.Unlock()
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			persisted := make(chan procid.Ref, 1)
+			done := make(chan error, 1)
+			go func() {
+				done <- runBuildCommand(ctx, "printf output; exit "+strconv.Itoa(code), dir, os.Environ(), log, 4*time.Second, binary,
+					func(ref procid.Ref) error { persisted <- ref; return nil }, func() error { return nil }, func([]procid.Ref) error { return nil })
+			}()
+			var leader procid.Ref
+			select {
+			case leader = <-persisted:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			for {
+				live, err := procid.Check(leader)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !live {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+			// Force several member scans while Wait is blocked on log copying.
+			time.Sleep(100 * time.Millisecond)
+			log.mu.Unlock()
+			locked = false
+			select {
+			case err = <-done:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if code == 0 {
+				if err != nil {
+					t.Fatalf("successful build: %v", err)
+				}
+			} else {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != code {
+					t.Fatalf("lost exit %d: %v", code, err)
+				}
+			}
+		})
+	}
+}

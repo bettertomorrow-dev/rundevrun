@@ -116,6 +116,11 @@ func runBuildCommand(ctx context.Context, command, cwd string, env []string, log
 		case <-tick.C:
 			found, err := groupMembers(leader, members)
 			if err != nil {
+				// Wait may still be draining output after the session exited.
+				// Absence is safe, but only Wait supplies the command's result.
+				if verifySessionGone(leader) == nil {
+					continue
+				}
 				cleanupErr := cleanup()
 				select {
 				case <-done:
