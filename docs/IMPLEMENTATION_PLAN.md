@@ -223,7 +223,7 @@ Sol обновляет этот раздел после интеграции э�
 ```text
 Текущий этап: 2
 Статус: in_progress
-Активные задания: Terra 2A lifecycle одного сервиса; CLI-адаптер Luna запускается после фиксации API executor
+Активные задания: Terra 2A повторно назначается после возврата без реализации; CLI-адаптер Luna запускается после фиксации API executor
 Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa
 Последняя интегрированная ревизия: 2f8cefad23ade30dcc77f73bff7b00fb3e40bce9
 Проверки этапа 1: Linux Go 1.27.4; go vet ./...; go test ./...; go test -race ./...; git diff --check; GOOS=darwin GOARCH=arm64 go build ./... только сборка. Реальный binary /tmp/rundevrun-stage1-rdr во временном проекте: config check, register dry-run без runtime directory, register, services/status stopped; marker проектных команд не создан. Полный TOML example TECH_SPEC проходит config check с тремя сервисами. Parser, symlink/detached/ambiguous selectors, независимые Git roots, concurrent registry subprocesses, повреждённые записи и PID identity mismatch покрыты тестами. Interrupted-write тест моделирует оставленный частичный temp file; реальный сбой fsync/rename и macOS lifecycle не проверены.
@@ -243,6 +243,7 @@ Sol: go.mod/go.sum, cmd/rdr/** и internal/cli/**, docs; registration, services/
 Builders не меняют общие файлы и не коммитят чужие изменения. При противоречии контракта сообщают Sol.
 
 Назначение этапа 2A:
+Первая попытка Terra вернулась без кода/проверок, сославшись на отсутствие RTK.md в checkout. Это не контрактный блокер; RTK.md добавлен из действующих инструкций /home/alex/dev/dotfiles/agents/RTK.md. Этап не принят, та же модель получает повторное задание с явным требованием завершить реализацию.
 Terra: internal/runner/** новый executor/supervisor/logs/ownership, необходимые расширения internal/state/** и internal/procid/**, cmd/rdr/main.go только internal supervisor/bootstrap dispatch. Не менять config/discovery/cli/docs/module.
 Результат: один сервис без/с портом, plan/dry-run и исполнение, отдельная сборка, detached supervisor с durable intent/claim/bootstrap ACK, readiness+loopback/listener ownership, status/logs/stop/restart и cleanup. Экспортировать простой API для CLI. Hooks и граф зависимостей остаются этапами 4 и 3; до их появления явный отказ, никакого молчаливого игнорирования.
 Luna: CLI-оболочка будет назначена отдельным узким заданием после готовности API; пока не запущена, чтобы не изобретать несовместимые контракты.
