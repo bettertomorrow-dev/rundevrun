@@ -29,6 +29,11 @@ Use that absolute path in commands, or choose another private user-owned install
 directory. `version --json` returns `results[0].api_version`, currently `1`, for project
 wrappers to check compatibility; `--help` lists the available commands.
 
+On this Linux machine, the verified local binary is installed at
+`/home/alex/.local/bin/rdr`, already on PATH. It reports version `0.1.0-dev`
+and public API 1. Its source revision and acceptance evidence are recorded in
+[ACCEPTANCE.md](ACCEPTANCE.md). The private install above is an alternative.
+
 ## First project
 
 Put a `dev.toml` in the project root, then inspect it without running project
@@ -95,8 +100,9 @@ SSE. For local HTTPS setup and external acceptance limits, read
 
 ## Current limits
 
-Linux test suites and synthetic public-CLI scenarios cover lifecycle, routing,
-live sharing, and snapshots. Cross-builds exist for Darwin arm64 and amd64, but
-runtime behavior on macOS is not accepted. The selected twikko project has not
-been migrated or accepted. Real Cloudflare DNS/HTTPS acceptance is separate
-from the offline fake-provider scenario; see [acceptance evidence](ACCEPTANCE.md).
+Linux test suites and public CLI scenarios cover lifecycle, routing, live
+sharing and snapshots. Real MillDrum and twikko ran simultaneously with isolated
+data. Real Cloudflare HTTPS acceptance passed. Cross-builds exist for Darwin
+arm64 and amd64, but runtime behavior on macOS remains unaccepted because no Mac
+is available. The user's local HTTPS ingress also remains open. See the exact
+scope and reproducible checks in [acceptance evidence](ACCEPTANCE.md).

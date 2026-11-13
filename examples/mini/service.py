@@ -69,6 +69,15 @@ class Handler(BaseHTTPRequestHandler):
             # One unmasked server text frame, representing a tiny HMR-ready event.
             self.wfile.write(b"\x81\x0aHMR:ready!")
             self.wfile.flush()
+            # Keep the upgrade alive until the client closes it. Immediate EOF
+            # can race a real tunnel edge before its handshake has completed.
+            self.close_connection = True
+            self.connection.settimeout(5)
+            try:
+                while self.rfile.read(1):
+                    pass
+            except (OSError, TimeoutError):
+                pass
         elif self.path == "/identity":
             data = identity(self.role)
             if self.role == "reports":

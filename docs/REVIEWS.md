@@ -419,3 +419,59 @@ Special files, links, overlap and cancellation protections remain tested.
 Snapshot failure causes are appended to its build log, and supervisor failures
 reach the already advertised supervisor log. Publication/snapshot/CLI race suites
 pass; a fresh A2 re-check and the real protected-preview scenario follow.
+
+## Final A2 and Linux project acceptance
+
+A fresh Astra A2 re-check closed the nested-artifact correction on `254e2b4`.
+No confirmed P1/P2 remained in the reviewed scope. Full runner tests, vet and
+race passed on that production revision. Darwin arm64/amd64 builds also passed,
+without claiming runtime acceptance. Public mini, switch and offline share
+scenarios passed with confirmed cleanup.
+
+The real MillDrum UI scenario passed on `3f91b31` with runner `254e2b4`:
+normal sign-in/session exchange, API and authenticated WebSocket, exec with
+poisoned caller environment, seed snapshot/apply, combined logs, invalid-config
+stop, protected static snapshot and OAuth unavailable, then unshare preserving
+local RunIDs. A CA was trusted only by the test client.
+
+`examples/real_projects_scenario.py` passed against the original local MillDrum
+and twikko repositories with isolated synthetic data. Three services were ready
+simultaneously under one runner. Twikko edit/save/cancel and durable output
+passed without changing the MillDrum RunIDs. Other twikko worktrees lack config;
+partial registration was handled explicitly and only the selected valid worktree
+was launched. Natural editor exit is failed under the long-lived-service
+contract, then explicit down confirms stopped. App source was unchanged.
+
+The final real Cloudflare scenario passed HTTPS live/snapshot, password gate,
+cookies, authenticated WebSocket, immutable artifacts and cleanup. Early DNS and
+fixture WebSocket failures were not accepted as success. The fixture now sends a
+valid upgrade and keeps its server connection open until the client closes it.
+No resolver, trust store, DNS infrastructure or existing tunnels were changed.
+
+## Final A3 process-journal guard
+
+An additional Astra A3 audit reproduced a legacy owner crash leaving a recorded
+agent alive in a separate process group. Owner flock and cleared legacy parts
+alone did not protect backup and handover before DB migration. MillDrum
+`951c863` checks adapter process journals under the owner lock before any backup,
+DB open or handover metadata mutation. Matching live identity and unknown queries
+refuse the operation; foreign start identity is not killed. Descriptor-relative
+NOFOLLOW reads reject malformed, unreadable, linked or special journals. This is
+limited to processes recorded by the project adapter, with no global PID scan.
+
+A fresh Astra A3 re-check closed `951c863` without confirmed P1/P2. Race tests
+covered orphan owner death, normal and reverse handover, journal validation,
+preparation and concurrent identity inspection. The real active-agent script
+passed again, including normal backend restart after a verified agent shutdown.
+Both directions of real legacy handover also passed again, all processes stopped.
+No user's existing data was adopted or released by acceptance tests.
+
+macOS runtime remains open by explicit user instruction because no Mac is
+available. The user's local domain ingress also remains unprepared. The current result accepts the implemented Linux scope and does
+not approve a release, push or merge.
+
+The installed `/home/alex/.local/bin/rdr` was rebuilt from production code
+`254e2b4`. Version/API and help passed, followed by a second successful combined
+real-project scenario with the final MillDrum process-journal guard `951c863`.
+All temporary processes were stopped. MillDrum `0cfc7f1` records the final
+restart/handover evidence without changing production code.

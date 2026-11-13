@@ -51,14 +51,16 @@ the IDs in JSON output. Discovery and status do not create runtime state;
 registration stores private state under `$RDR_HOME`, `$XDG_STATE_HOME/rundevrun`,
 or `~/.local/state/rundevrun`.
 
-Graph lifecycle, hooks, batch switch, live sharing, and static snapshots have
-Linux test coverage. Unknown process ownership refuses unsafe cleanup and keeps
-state available for inspection. Darwin process/socket inspection cross-builds
-for arm64 and amd64; execution on real macOS remains unverified. Local HTTPS,
-aliases, and read-only diagnostics passed synthetic Linux fixtures. The offline
-live/snapshot public-CLI scenario passed. Real Cloudflare DNS/HTTPS and project
-migrations remain unaccepted. The first release still requires acceptance on
-the selected twikko project and on macOS.
+Graph lifecycle, hooks, batch switch, live sharing, and static snapshots passed
+Linux tests and public CLI scenarios. Unknown process ownership refuses unsafe
+cleanup and keeps state available for inspection. MillDrum and twikko ran together
+under one binary with disposable data. The MillDrum wrapper, watcher, backup,
+seed, sign-in, protected preview and legacy handover passed Linux acceptance.
+Real Cloudflare HTTPS, password authentication, WebSocket and immutable snapshots
+also passed. Darwin arm64/amd64 cross-builds passed; actual macOS process checks
+remain open because no Mac is available. The user's HTTPS ingress for
+`home.litvinovich.dev` also remains unprepared. These two conditions keep final
+acceptance open.
 See [local HTTPS setup](docs/LOCAL_HTTPS.md), [acceptance evidence](docs/ACCEPTANCE.md),
 [technical contracts](docs/TECH_SPEC.md) and [review status](docs/REVIEWS.md).
 

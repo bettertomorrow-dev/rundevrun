@@ -63,7 +63,7 @@ def https(url, path="/", method="GET", headers=None, body=None, timeout=8):
 
 def external(url, path="/", method="GET", headers=None, body=None, acceptable=None):
     last = None
-    for attempt in range(12):
+    for attempt in range(90):
         try:
             result = https(url, path, method, headers, body)
             if acceptable is None or result[0] in acceptable:
@@ -73,7 +73,7 @@ def external(url, path="/", method="GET", headers=None, body=None, acceptable=No
             last = f"HTTP {result[0]}"
         except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
             last = type(exc).__name__
-        if attempt < 11:
+        if attempt < 89:
             time.sleep(2)
     raise ScenarioError(f"Cloudflare endpoint {urlsplit(url).hostname} did not become ready: {last}")
 
@@ -104,7 +104,7 @@ def websocket(url, cookie, path="/socket"):
     key = base64.b64encode(os.urandom(16)).decode()
     tls.sendall((f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: Upgrade\r\n"
                  f"Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n"
-                 f"Cookie: {cookie}\r\n\r\n").encode())
+                 f"Origin: https://{host}\r\nCookie: {cookie}\r\n\r\n").encode())
     reply = b""
     while b"\r\n\r\n" not in reply:
         chunk = tls.recv(4096)
@@ -123,7 +123,7 @@ def websocket(url, cookie, path="/socket"):
                    if line.split(":", 1)[0].lower() == "sec-websocket-accept"), "")
     expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
     if b" 101 " not in head.lower() or accept != expected or frame[:2] != b"\x81\x0a" or frame[2:12] != b"HMR:ready!":
-        raise ScenarioError("authenticated WebSocket handshake or HMR frame failed")
+        raise ScenarioError(f"authenticated WebSocket failed: status={lines[0]}, accept_matches={accept == expected}, frame_header={frame[:2].hex()}, payload_matches={frame[2:12] == b'HMR:ready!'}")
 
 
 def run_ids(cwd, project):
@@ -203,10 +203,12 @@ def main():
         if not password or not publication_url.startswith("https://") or json.dumps(live).count(password) != 1:
             raise ScenarioError("live share did not return one HTTPS URL and one-time password")
         for path, upgrade in (("/", False), ("/identity", False), ("/socket", True)):
-            headers = {"Connection": "Upgrade", "Upgrade": "websocket"} if upgrade else None
+            headers = {"Connection": "Upgrade", "Upgrade": "websocket",
+                       "Sec-WebSocket-Key": base64.b64encode(os.urandom(16)).decode(),
+                       "Sec-WebSocket-Version": "13"} if upgrade else None
             status, _, _ = external(publication_url, path, headers=headers, acceptable={303})
             if status != 303:
-                raise ScenarioError(f"anonymous live request to {path} was not gated")
+                raise ScenarioError(f"anonymous live request to {path} returned HTTP {status}, expected password redirect")
         cookie = login(publication_url, password, "/identity")
         status, _, body = external(publication_url, "/identity", headers={"Cookie": cookie}, acceptable={200})
         if status != 200 or json.loads(body).get("role") != "reports":
