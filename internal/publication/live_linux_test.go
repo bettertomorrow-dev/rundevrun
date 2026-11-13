@@ -192,10 +192,18 @@ exec sleep 60
 	if !errors.As(buildErr, &typed) || typed.Code != "BUILD_FAILED" || failed.ID == "" || failed.State != "failed" || failed.Password != "" || len(failed.LogPaths) == 0 {
 		t.Fatalf("broken snapshot diagnostics: %+v %v", failed, buildErr)
 	}
+	buildCause := false
 	for _, path := range failed.LogPaths {
 		if !strings.HasSuffix(path, "build.log") && !strings.HasSuffix(path, "tunnel.log") {
 			t.Fatalf("unsafe log path: %s", path)
 		}
+		if strings.HasSuffix(path, "build.log") {
+			data, err := os.ReadFile(path)
+			buildCause = err == nil && strings.Contains(string(data), "exit status 7")
+		}
+	}
+	if !buildCause {
+		t.Fatal("failed publication build log omitted the command failure cause")
 	}
 	still, e := m.Status(ctx, selection)
 	if e != nil || still.ID != snapshotResult.ID || still.State != "ready" {

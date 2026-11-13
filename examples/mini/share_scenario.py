@@ -75,7 +75,7 @@ def endpoint(url, mapping_dir):
     return host, mapping["port"]
 
 
-def request(url, ca_file, mapping_dir, path="/", method="GET", headers=None, body=None):
+def request(url, ca_file, mapping_dir, path="/", method="GET", headers=None, body=None, max_bytes=65536):
     host, port = endpoint(url, mapping_dir)
     context = ssl.create_default_context(cafile=str(ca_file))
 
@@ -89,7 +89,7 @@ def request(url, ca_file, mapping_dir, path="/", method="GET", headers=None, bod
     request_headers.update(headers or {})
     conn.request(method, path, body=body, headers=request_headers)
     response = conn.getresponse()
-    payload = response.read(65536)
+    payload = response.read(max_bytes)
     status, response_headers = response.status, response.headers
     conn.close()
     return status, response_headers, payload

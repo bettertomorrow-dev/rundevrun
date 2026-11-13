@@ -40,7 +40,19 @@ func writeSnapshotSpec(dir string, spec snapshotBuildSpec) error {
 }
 
 // buildSnapshot is called by the publication supervisor, which is the sole runtime writer.
-func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication, record *state.PublicationRuntime, public, dir string, lease func() (bool, error), tunnelDone <-chan error) error {
+func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication, record *state.PublicationRuntime, public, dir string, lease func() (bool, error), tunnelDone <-chan error) (result error) {
+	defer func() {
+		if result == nil {
+			return
+		}
+		log, err := runner.OpenProxyLog(filepath.Join(dir, "build.log"))
+		if err != nil {
+			result = errors.Join(result, err)
+			return
+		}
+		_, err = fmt.Fprintln(log, "rdr: snapshot preparation failed:", result)
+		result = errors.Join(result, err, log.Close())
+	}()
 	f, err := os.Open(filepath.Join(dir, "snapshot.json"))
 	if err != nil {
 		return err

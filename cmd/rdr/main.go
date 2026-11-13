@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,6 +35,7 @@ func main() {
 	}
 	if len(os.Args) == 4 && os.Args[1] == "__rdr_supervisor" {
 		if err := runner.Supervise(os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, "rdr supervisor:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)

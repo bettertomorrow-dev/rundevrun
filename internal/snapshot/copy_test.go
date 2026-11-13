@@ -71,6 +71,32 @@ func TestCopyAndBoundaries(t *testing.T) {
 		t.Fatal("cancelled copy created destination")
 	}
 }
+
+func TestNestedArtifactsUseSourceDescriptors(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "web", "dist")
+	if err := os.MkdirAll(filepath.Join(src, "assets", "chunks"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{"index.html": "entry", "assets/app.js": "application", "assets/chunks/editor.js": "nested chunk"} {
+		if err := os.WriteFile(filepath.Join(src, name), []byte(value), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dest := filepath.Join(root, "publication")
+	if err := Copy(context.Background(), root, "web/dist", dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(src); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{"index.html": "entry", "assets/app.js": "application", "assets/chunks/editor.js": "nested chunk"} {
+		data, err := os.ReadFile(filepath.Join(dest, name))
+		if err != nil || string(data) != value {
+			t.Fatalf("copied %s: %q %v", name, data, err)
+		}
+	}
+}
 func TestRejectLinksAndSpecials(t *testing.T) {
 	for _, kind := range []string{"internal", "escaping", "cyclic", "fifo"} {
 		t.Run(kind, func(t *testing.T) {

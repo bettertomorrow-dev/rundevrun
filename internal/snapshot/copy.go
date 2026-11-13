@@ -103,11 +103,9 @@ func copyDir(ctx context.Context, src *os.File, dest string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("artifact contains symlink: %s", entry.Name())
 		}
-		entryInfo, e := entry.Info()
-		if e != nil {
-			return e
-		}
-		if !entryInfo.IsDir() && !entryInfo.Mode().IsRegular() {
+		// Nested files come from descriptor-relative Openat. DirEntry.Info
+		// would resolve their display name against the process working directory.
+		if kind := entry.Type(); kind != 0 && !kind.IsDir() {
 			return fmt.Errorf("artifact contains unsupported file: %s", entry.Name())
 		}
 		fd, e := unix.Openat(int(src.Fd()), entry.Name(), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)

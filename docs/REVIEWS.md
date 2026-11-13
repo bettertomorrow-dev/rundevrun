@@ -398,3 +398,24 @@ release, then legacy A backup and return. All final public statuses were stopped
 owner lock free and the fixed legacy port available. Test data were deleted only
 after cleanup proof. No user's launcher/data was switched. Wrapper/UI/preview
 acceptance is still running; these results do not approve a release.
+
+## Real UI and nested snapshot artifacts
+
+The first UI fixture incorrectly used automatic ports alongside runner tests.
+It failed at startup and public cleanup was confirmed. After fixed high ports,
+real Vite startup and five consecutive UI restarts passed with confirmed cleanup.
+The corrected scenario passed local UI, code exchange, authenticated API/WebSocket,
+poisoned-environment exec, seed snapshot/apply and combined logs. Its invalid-config
+stop exposed wrapper selection assumptions: registered selectors now use stable
+worktree IDs from public status, including partial configuration diagnostics.
+
+The next real snapshot compiled Vite successfully but failed to copy assets.
+A diagnostic appended to the private build log identified `lstat assets/...`:
+DirEntry.Info on nested descriptors from os.NewFile resolved display names against
+cwd. The copy now uses entry type plus descriptor-relative Openat with NOFOLLOW
+and final f.Stat. Nested chunk files copy independently and remain after source
+removal; the regression fails on 39891fe and passes under race after correction.
+Special files, links, overlap and cancellation protections remain tested.
+Snapshot failure causes are appended to its build log, and supervisor failures
+reach the already advertised supervisor log. Publication/snapshot/CLI race suites
+pass; a fresh A2 re-check and the real protected-preview scenario follow.
