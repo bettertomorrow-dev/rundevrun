@@ -60,6 +60,20 @@ func TestDiscoverThroughSymlink(t *testing.T) {
 	}
 }
 
+func TestDescriptorSelectionDoesNotRequireConfig(t *testing.T) {
+	root := t.TempDir()
+	p := &Project{Worktrees: []Worktree{{ID: "w_known", Root: root, Branch: "main", ConfigError: os.ErrNotExist}}}
+	for _, selector := range []string{"w_known", root, "main"} {
+		w, err := ResolveDescriptor(p, selector)
+		if err != nil || w.ID != "w_known" {
+			t.Fatalf("descriptor %q: %+v %v", selector, w, err)
+		}
+		if _, err := Resolve(p, selector); err == nil {
+			t.Fatalf("config-required resolution accepted %q", selector)
+		}
+	}
+}
+
 func TestResolveSymlinkAndRealAmbiguity(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "repo")

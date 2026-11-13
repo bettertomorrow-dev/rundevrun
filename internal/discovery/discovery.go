@@ -147,9 +147,19 @@ func Discover(start string) (*Project, error) {
 	return p, nil
 }
 func Resolve(p *Project, selector string) (*Worktree, error) {
+	w, err := ResolveDescriptor(p, selector)
+	if err != nil {
+		return nil, err
+	}
+	return selected(w)
+}
+
+// ResolveDescriptor resolves identity without requiring usable configuration.
+// Stop and logs can use registered descriptors after configuration is removed.
+func ResolveDescriptor(p *Project, selector string) (*Worktree, error) {
 	for i := range p.Worktrees {
 		if p.Worktrees[i].ID == selector {
-			return selected(&p.Worktrees[i])
+			return &p.Worktrees[i], nil
 		}
 	}
 	original := selector
@@ -157,7 +167,7 @@ func Resolve(p *Project, selector string) (*Worktree, error) {
 		if c, e := canonical(selector); e == nil {
 			for i := range p.Worktrees {
 				if p.Worktrees[i].Root == c {
-					return selected(&p.Worktrees[i])
+					return &p.Worktrees[i], nil
 				}
 			}
 		}
@@ -165,7 +175,7 @@ func Resolve(p *Project, selector string) (*Worktree, error) {
 		if c, e := canonical(a); e == nil {
 			for i := range p.Worktrees {
 				if p.Worktrees[i].Root == c {
-					return selected(&p.Worktrees[i])
+					return &p.Worktrees[i], nil
 				}
 			}
 		}
@@ -187,7 +197,7 @@ func Resolve(p *Project, selector string) (*Worktree, error) {
 		}
 		return nil, fmt.Errorf("ambiguous worktree %q: %w: %s", original, ErrAmbiguous, strings.Join(names, "; "))
 	}
-	return selected(&matches[0])
+	return &matches[0], nil
 }
 func selected(w *Worktree) (*Worktree, error) {
 	if w.Config == nil {
