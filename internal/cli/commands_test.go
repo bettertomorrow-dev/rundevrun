@@ -36,6 +36,22 @@ func invoke(t *testing.T, args ...string) (envelope, int) {
 	return e, code
 }
 
+func TestVersionWithoutRuntime(t *testing.T) {
+	runtime := filepath.Join(t.TempDir(), "absent")
+	t.Setenv("RDR_HOME", runtime)
+	e, code := invoke(t, "version", "--json")
+	if code != 0 || len(e.Results) != 1 {
+		t.Fatalf("version: %d %+v", code, e)
+	}
+	info := e.Results[0].(map[string]any)
+	if info["name"] != "rdr" || info["api_version"] != float64(1) || info["version"] != Version {
+		t.Fatalf("version contract: %+v", info)
+	}
+	if _, err := os.Stat(runtime); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("version created runtime: %v", err)
+	}
+}
+
 func cliRunIDs(t *testing.T, project string) map[string]string {
 	t.Helper()
 	e, code := invoke(t, "status", "--project", project, "--json")

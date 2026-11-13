@@ -155,6 +155,12 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--json --follow is unsupported; omit --follow for one JSON result")
 		return
 	}
+	if e.Command == "version" {
+		if validArity(args, 1, 1, e) {
+			e.Results = append(e.Results, versionInfo{"rdr", Version, APIVersion})
+		}
+		return
+	}
 	root, err := runtimeRoot()
 	if err != nil {
 		failError(e, err)

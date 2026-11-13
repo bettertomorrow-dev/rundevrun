@@ -85,6 +85,15 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 		for _, err := range e.Errors {
 			fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
 		}
+		for _, item := range e.Publications {
+			if _, err := fmt.Fprintln(out, item.ID, publicationResult{Status: item}); err != nil {
+				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+				return 4
+			}
+		}
+		for _, err := range e.PublicationErrors {
+			fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
+		}
 	}
 	for _, err := range e.Errors {
 		if err.Code == "CANCELLED" {

@@ -34,6 +34,20 @@ func TestJSONResultIsOneDocumentWithArrays(t *testing.T) {
 	}
 }
 
+func TestTextStatusIncludesPublicationDiagnostics(t *testing.T) {
+	e := result("status", options{})
+	e.Publications = []publication.Status{{ID: "failed-share", State: "failed", ErrorCode: "TUNNEL_FAILED", ErrorMessage: "publication failed", LogPaths: []string{"/private/run/tunnel.log"}}}
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, false); code != 0 {
+		t.Fatalf("status exit=%d: %s", code, errOut.String())
+	}
+	for _, value := range []string{"failed-share", "TUNNEL_FAILED", "publication failed", "/private/run/tunnel.log"} {
+		if !bytes.Contains(out.Bytes(), []byte(value)) {
+			t.Fatalf("missing %q: %s", value, out.String())
+		}
+	}
+}
+
 func TestInterspersedSelectorsAndInvalidFlags(t *testing.T) {
 	opts, args, err := parseArgs([]string{"--json", "services", "--project=p_1", "--worktree", "/tmp/a b"})
 	if err != nil || !opts.json || opts.project != "p_1" || opts.worktree != "/tmp/a b" || len(args) != 1 || args[0] != "services" {

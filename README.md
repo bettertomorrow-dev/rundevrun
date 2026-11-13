@@ -4,10 +4,12 @@ CLI for development services across projects and existing Git worktrees.
 Implementation follows [the plan](docs/IMPLEMENTATION_PLAN.md) and
 [PRD](docs/PRD.md). This is an intermediate implementation, not a release.
 
-Requires Go 1.27 and Git for Git worktree discovery.
+Requires Go 1.27 or newer and Git for worktree discovery. Go 1.27.4 was used
+for the current local build. See [local installation and usage](docs/INSTALL.md)
+for a repeatable build, private install, and JSON-first workflow.
 
 ```sh
-go build -o /tmp/rdr ./cmd/rdr
+go build -trimpath -o /tmp/rdr ./cmd/rdr
 /tmp/rdr --help
 ```
 
@@ -49,14 +51,14 @@ the IDs in JSON output. Discovery and status do not create runtime state;
 registration stores private state under `$RDR_HOME`, `$XDG_STATE_HOME/rundevrun`,
 or `~/.local/state/rundevrun`.
 
-Graph lifecycle, hooks, batch switch and interrupted-build recovery are implemented and tested
-on Linux. Unknown process ownership gives an explicit refusal and preserves state
-for inspection. Darwin process/socket inspection is implemented and cross-built
-for arm64 and amd64; execution on real macOS remains unverified.
-Local HTTPS proxy, aliases and read-only diagnostics passed the Linux test fixtures. `open --json` returns the browser URL without opening
-a browser. `doctor --json` separates DNS, TLS trust, listeners, route ownership
-and application state. Publication and project migration remain pending. The first release requires
-migration of MillDrum and acceptance on twikko, Linux and macOS.
+Graph lifecycle, hooks, batch switch, live sharing, and static snapshots have
+Linux test coverage. Unknown process ownership refuses unsafe cleanup and keeps
+state available for inspection. Darwin process/socket inspection cross-builds
+for arm64 and amd64; execution on real macOS remains unverified. Local HTTPS,
+aliases, and read-only diagnostics passed synthetic Linux fixtures. The offline
+live/snapshot public-CLI scenario passed. Real Cloudflare DNS/HTTPS and project
+migrations remain unaccepted. The first release still requires acceptance on
+the selected twikko project and on macOS.
 See [local HTTPS setup](docs/LOCAL_HTTPS.md), [acceptance evidence](docs/ACCEPTANCE.md),
 [technical contracts](docs/TECH_SPEC.md) and [review status](docs/REVIEWS.md).
 

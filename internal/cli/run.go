@@ -13,6 +13,7 @@ import (
 const help = `rdr manages development services configured in dev.toml.
 
 Discovery and registration:
+  rdr version             Show the binary version and public API version.
   rdr register [path]     Register a project and its existing worktrees.
   rdr projects            List registered projects and their stable IDs.
   rdr worktrees           List existing worktrees; never change Git state.

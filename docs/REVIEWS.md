@@ -331,3 +331,16 @@ the bounded client retries. The scenario reported INCOMPLETE and confirmed all
 fixture apps/publications stopped. Diagnostic fixture:
 `/tmp/rdr-mini-cloudflare-ah3vzp5c`. External acceptance remains open; no resolver,
 DNS, TLS trust, real-project data or existing tunnels were changed.
+
+## A2 re-check on 38628fa
+
+A fresh Astra re-check closed both P2 findings. Selected gateway, tunnel-crash,
+auth/upgrade and CLI share race tests passed from a clean archive. No new
+confirmed P1/P2 was reported in the correction scope. Stage 7 is unblocked.
+The reviewer also identified text status omitting publications. Sol added the
+same safe status and diagnostics to text output and a formatting check.
+
+A read-only `rdr version --json` now reports product version and public API 1,
+allowing the MillDrum wrapper to reject incompatible binaries before running
+commands. CLI tests and a trimpath build pass. Local installation instructions
+are in INSTALL.md. No system install was performed.

@@ -15,8 +15,8 @@
 | 6 | Lifecycle failures, фактические state и JSON exit code; hook failures | Linux / `a825cb3` | passed на Linux, hook retry и startup failures проверены; macOS отдельно |
 | 7 | Реальный SIGKILL frontend, bootstrap EOF, foreign identity, Child=ZERO recovery | Linux / `a825cb3`, A1 re-check | passed на Linux в проверенном scope; unknown survivor сохраняет state и reservations |
 | 8 | `examples/mini/switch_scenario.py`, hook/partial switch tests | Linux / `bacc5c9`, fixes `a825cb3` | passed на Linux, подготовка до остановки, частичный отказ без отката данных |
-| 9 | Offline live lifecycle/auth/CF fake, API/WS gate, cookie и unshare tests | Linux / `b8a3313`, CLI check `23a5a93` | partial, live offline прошёл; snapshot, public CLI fixture, реальный CF и A2 впереди |
-| 10 | Confined copy helper: symlinks/specials, независимость от source, failure cleanup | Linux / `7139131` | partial, copy helper прошёл tests/race/vet; full snapshot build/activation ещё в работе |
+| 9 | Offline live lifecycle/auth/CF fake, API/WS gate, cookie и unshare tests | Linux / `640f34f`, A2 `38628fa` | partial, offline live/snapshot CLI и A2 re-check прошли на38628fa; real CF зарегистрировался вhel02, publicDNS gaierror, cleanupconfirmed |
+| 10 | Confined copy helper: symlinks/specials, независимость от source, failure cleanup | Linux / `640f34f`, A2 `38628fa` | passed на Linux offline, full build/activation/immutable snapshot/failed recreate и public CLI scenario прошли на640f34f, A2 закрыта38628fa |
 | 11 | MillDrum backup/seed/sign-in/agent shutdown/watcher, SQLite isolation | Не запускалось | pending, этап 7 |
 | 12 | Lifecycle на Linux и macOS, инструкция twikko | Linux / `301afb9` частично | partial, Darwin arm64/amd64 cross-build прошёл; Mac пока недоступен, пользователь 2026-11-13 оставил runtime-приёмку открытой |
 | 13 | Routing/alias tests, `examples/mini/tls_scenario.py` | Linux / `31bb721`, code `1c46f79` | passed на Linux fixtures, hostname collision сохраняет старую адресную книгу, proxy restart сохраняет app RunIDs |
