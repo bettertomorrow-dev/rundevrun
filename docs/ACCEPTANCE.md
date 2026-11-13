@@ -18,7 +18,7 @@
 | 9 | Offline live lifecycle/auth/CF fake, API/WS gate, cookie и unshare tests | Linux / `b8a3313`, CLI check `23a5a93` | partial, live offline прошёл; snapshot, public CLI fixture, реальный CF и A2 впереди |
 | 10 | Confined copy helper: symlinks/specials, независимость от source, failure cleanup | Linux / `7139131` | partial, copy helper прошёл tests/race/vet; full snapshot build/activation ещё в работе |
 | 11 | MillDrum backup/seed/sign-in/agent shutdown/watcher, SQLite isolation | Не запускалось | pending, этап 7 |
-| 12 | Lifecycle на Linux и macOS, инструкция twikko | Linux / `301afb9` частично | partial, Darwin arm64/amd64 cross-build прошёл, runtime не проверен |
+| 12 | Lifecycle на Linux и macOS, инструкция twikko | Linux / `301afb9` частично | partial, Darwin arm64/amd64 cross-build прошёл; Mac пока недоступен, пользователь 2026-11-13 оставил runtime-приёмку открытой |
 | 13 | Routing/alias tests, `examples/mini/tls_scenario.py` | Linux / `31bb721`, code `1c46f79` | passed на Linux fixtures, hostname collision сохраняет старую адресную книгу, proxy restart сохраняет app RunIDs |
 | 14 | Реальный wildcard, DNS и отрицательные cert/key/date проверки | [LOCAL_HTTPS.md](LOCAL_HTTPS.md) | partial, внешний TLS handshake и runner TLS fixtures проверены; пользовательский ingress ещё не подготовлен |
 | 15 | `examples/mini/tls_scenario.py`: Secure cookie, WS handshake/HMR frame, SSE first-flush, A→main route | Linux / `31bb721`, code `1c46f79` | passed на Linux synthetic fixtures, CA доверен только тестовому клиенту; реальный домен/браузер отдельно |
