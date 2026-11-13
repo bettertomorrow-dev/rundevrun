@@ -416,11 +416,12 @@ errors. Empty results/errors use []. Discovery objects live in results, with IDs
 and configuration fields but no secrets. Plans use optional plan field. Errors
 have code, message, optional instance_id/field/candidates, and actions array.
 Exit 0 success/help; 2 usage/config/ambiguous/not-found/cycle; 3 busy/conflict;
-4 build/hook/readiness/process/IO failure; 5 partial; 130 cancellation. Stable codes:
+4 build/hook/readiness/process/IO/diagnostic failure; 5 partial; 130 cancellation. Stable codes:
 USAGE, CONFIG_INVALID, VERSION_UNSUPPORTED, NOT_FOUND, AMBIGUOUS, CYCLE,
 BINDING_INVALID, BUSY, STATE_CONFLICT, STATE_CORRUPT, PORT_CONFLICT,
 BUILD_FAILED, HOOK_FAILED, READINESS_TIMEOUT, PROCESS_FAILED, OWNERSHIP_UNKNOWN,
-IO_ERROR, TLS_INVALID, ROUTE_CONFLICT, TUNNEL_FAILED, CANCELLED.
+IO_ERROR, TLS_INVALID, ROUTE_CONFLICT, TUNNEL_FAILED, DIAGNOSTICS_FAILED,
+REGISTRY_ERROR, CANCELLED.
 No stack traces or environment dump. share may add credentials.password only
 on successful creation; repeated share returns URL without password. Nothing
 else exposes the plaintext secret, including dry-run, status, logs and errors.

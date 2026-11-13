@@ -195,3 +195,22 @@ Targeted external/provided daemon and routing race tests passed, as did 39 CLI
 tests, CLI vet and build. Open/doctor and a public transport scenario remain
 pending. Existing local domain observations are recorded in LOCAL_HTTPS.md; they
 do not demonstrate a working runner ingress.
+
+## Post-A1 Linux integration corrections, 991efdb
+
+Full integration tests exposed an obsolete late-fork fixture: it used an accepted
+claim with no child identity, where the new recovery contract forbids signalling.
+The fixture now records a real initial child in its own process group, then forks
+an unrecorded survivor on TERM. The targeted test passed three times.
+
+A full race run then observed ESRCH while reading an unrelated process stat after
+that process exited. Linux procfs can return ESRCH after open succeeds. Identity,
+group/session scans and descriptor snapshots now treat it as process disappearance,
+alongside ENOENT. Permission failures and malformed data still fail closed.
+`TestRetentionAfterSuccessfulSwitches` passed three times under race, 50.120 s;
+procid race tests and runner/procid vet passed. The complete race suite has not yet
+passed on this revision, so the targeted result does not replace that check.
+
+Read-only diagnostics passed race tests. Disabled routing skips unused proxy and
+pinned-host probes while keeping actual application observations. CLI open/doctor
+and the public TLS scenario remain separate integration tasks.
