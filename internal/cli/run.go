@@ -35,6 +35,8 @@ Discovery and registration:
   rdr proxy status|reload|stop
                           Inspect or control the local routing proxy.
   rdr doctor             Diagnose routes, TLS, proxy, and application state.
+  rdr share <service>    Create a live public link for one HTTP service.
+  rdr unshare <service>  Remove its public link without stopping the service.
   rdr logs <service>      Show recent application output.
   rdr ls                  Show known instances across registered projects.
   rdr status              Show known instances, optionally scoped to a project.
@@ -51,6 +53,8 @@ Options may appear before or after the command:
   --all                   Global down scope; cannot combine with selectors.
   --retry-hooks           Retry a saved failed or interrupted stop hook.
   --no-proxy              Skip automatic proxy start/reload after up, restart, or switch.
+  --mode live             Select the live Quick Tunnel share mode.
+  --recreate              Replace an existing share after the new link is ready.
   --tail N                Show the last N log lines, default 100, maximum 10000.
   --follow                Follow application logs; cannot combine with --json.
   --help, -h              Show this help.
@@ -70,6 +74,9 @@ Graph dry-runs support service lists, default down, and global down. Retry uses
 the original stopped run's hook record; a new consumer does not retry a failed
 after_start hook.
 --no-proxy skips only automatic proxy startup; routed addresses remain planned and direct URLs stay available.
+Sharing requires a running HTTP service. The password is shown once at creation;
+recreate replaces an existing link. rdr does not open the URL automatically.
+Quick Tunnels do not support server-sent events (SSE).
 Switch journals are shown by status and ls without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
 down to recover explicitly. A failed after_start hook remains attached to its run.

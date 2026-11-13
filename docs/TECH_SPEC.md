@@ -478,7 +478,12 @@ files and directories; all symlinks, including internal links, and special files
 are rejected before activation. Builds must materialize files rather than links.
 The copy uses confined descriptor-relative access and never serves the source
 build directory. Snapshot activates
-only after build/copy/gateway/tunnel readiness. Failure preserves existing share.
+only after build/copy/gateway/tunnel readiness. Preparation and activation failures
+preserve the existing share. Recreate commits the new active record and the old
+closing record atomically before stopping the old processes. Cleanup failure after
+that commit keeps the new publication active and returns its actual metadata with
+a partial error, without credentials. Explicit unshare/recreate is required to
+recover access; the runner does not roll back or reopen an old publication.
 Repeat share is idempotent; --recreate prepares before replacing and rotates secret.
 unshare stops only gateway/tunnel. down/switch close any publication whose root
 or explicitly routed dependency is affected before stopping it. Tunnel crash

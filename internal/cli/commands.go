@@ -21,6 +21,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
+	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
@@ -37,6 +38,18 @@ type openResult struct {
 }
 
 func (r openResult) String() string { return r.URL }
+
+type publicationResult struct {
+	publication.Status
+	Password string `json:"-"`
+}
+
+func (r publicationResult) String() string {
+	if r.Password != "" {
+		return fmt.Sprintf("%s\nPassword: %s", r.URL, r.Password)
+	}
+	return fmt.Sprintf("%s\t%s", r.State, r.URL)
+}
 
 func (p projectInfo) String() string { return fmt.Sprintf("%s\t%s\t%s", p.ID, p.Name, p.Root) }
 
@@ -115,6 +128,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--no-proxy is only valid with up, restart, or switch")
 		return
 	}
+	if (opts.mode != "" || opts.recreate) && e.Command != "share" {
+		e.fail("USAGE", "--mode and --recreate are only valid with share")
+		return
+	}
 	if opts.toWorktree != "" && e.Command != "bind" && e.Command != "switch" {
 		e.fail("USAGE", "--to-worktree is only supported by bind or switch")
 		return
@@ -146,6 +163,8 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		openCommand(ctx, store, args[1:], opts, e)
 	case "doctor":
 		doctorCommand(ctx, store, args[1:], opts, e)
+	case "share", "unshare":
+		publicationCommand(ctx, store, args[1:], opts, e)
 	case "switch":
 		switchCommand(ctx, store, args[1:], opts, e)
 	case "bind":
@@ -229,7 +248,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			e.fail("USAGE", "instance listings require --project with --worktree; projects does not accept --worktree")
 			return
 		}
-		listRegistry(store, opts, e)
+		listRegistry(ctx, store, opts, e)
 	case "worktrees", "services", "config check":
 		arity := 1
 		if e.Command == "config check" {
@@ -531,6 +550,81 @@ func openCommand(ctx context.Context, store *state.Store, args []string, opts op
 			failError(e, err)
 		}
 	}
+}
+
+func publicationCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+	if !validArity(append([]string{e.Command}, args...), 2, 2, e) {
+		return
+	}
+	if opts.mode != "" && opts.mode != "live" {
+		e.fail("USAGE", "only --mode live is supported")
+		return
+	}
+	if ctx.Err() != nil {
+		failError(e, ctx.Err())
+		return
+	}
+	d, w := resolveCommandSelection(store, opts, false, e)
+	if d == nil {
+		return
+	}
+	selection := runner.Selection{Project: d, Worktree: w, Service: args[0]}
+	manager := &publication.Manager{Store: store, Executable: executablePath()}
+	if e.Command == "share" {
+		if opts.dryRun {
+			plan, err := manager.PlanLive(ctx, selection)
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			e.Plan = struct {
+				Action string               `json:"action"`
+				Mode   string               `json:"mode"`
+				Plan   publication.LivePlan `json:"plan"`
+			}{"share", "live", plan}
+			return
+		}
+		created, err := manager.Share(ctx, selection, publication.Options{Mode: "live", Recreate: opts.recreate})
+		if err != nil {
+			failShare(e, created, err)
+			return
+		}
+		if created.Password != "" {
+			e.Credentials = &shareCredentials{Password: created.Password}
+		}
+		e.Results = append(e.Results, publicationResult{Status: created.Status, Password: created.Password})
+		return
+	}
+	if opts.dryRun {
+		current, err := manager.Status(ctx, selection)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Plan = struct {
+			Action string             `json:"action"`
+			State  publication.Status `json:"publication"`
+		}{"unshare", current}
+		return
+	}
+	result, err := manager.Unshare(ctx, selection)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	e.Results = append(e.Results, result.Status)
+}
+
+func failShare(e *envelope, result publication.Result, err error) {
+	e.Credentials = nil
+	if result.ID != "" {
+		e.Results = append(e.Results, publicationResult{Status: result.Status})
+		failError(e, err)
+		e.Errors[len(e.Errors)-1].Actions = []string{"inspect status, then unshare and create a fresh share to obtain new credentials"}
+		e.Status = "partial"
+		return
+	}
+	failError(e, err)
 }
 
 func openPlatformURL(ctx context.Context, url string) error {
@@ -1720,7 +1814,7 @@ func addOperationViews(store *state.Store, projects []string, e *envelope) {
 	}
 }
 
-func listRegistry(store *state.Store, opts options, e *envelope) {
+func listRegistry(ctx context.Context, store *state.Store, opts options, e *envelope) {
 	r, err := store.Read()
 	if err != nil {
 		failError(e, err)
@@ -1735,6 +1829,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 		ids = []string{p.ID}
 		e.Scope.Project = p.ID
 	}
+	selectedWorktrees := map[string]string{}
 	for _, id := range ids {
 		p, err := r.Project(id)
 		if err != nil {
@@ -1753,6 +1848,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 				continue
 			}
 			selectedWorktree = w.ID
+			selectedWorktrees[p.ID] = w.ID
 		}
 		for _, key := range sortedKeys(p.Instances) {
 			i := p.Instances[key]
@@ -1795,6 +1891,39 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 	}
 	if e.Command == "status" || e.Command == "ls" {
 		addOperationViews(store, ids, e)
+		addPublicationViews(ctx, store, ids, selectedWorktrees, e)
+	}
+}
+
+func addPublicationViews(ctx context.Context, store *state.Store, projectIDs []string, worktrees map[string]string, e *envelope) {
+	items, err := (&publication.Manager{Store: store}).List(ctx)
+	if err != nil {
+		before := len(e.Errors)
+		failError(e, err)
+		if len(e.Errors) > before {
+			e.PublicationErrors = append(e.PublicationErrors, e.Errors[len(e.Errors)-1])
+		}
+		if len(e.Results) > 0 {
+			e.Status = "partial"
+		}
+		return
+	}
+	wantedProjects := make(map[string]bool, len(projectIDs))
+	for _, id := range projectIDs {
+		wantedProjects[id] = true
+	}
+	for _, item := range items {
+		parts := strings.Split(item.Root.InstanceID, "/")
+		if len(parts) != 3 {
+			continue
+		}
+		if len(projectIDs) > 0 && !wantedProjects[parts[0]] {
+			continue
+		}
+		if selected := worktrees[parts[0]]; selected != "" && parts[1] != selected {
+			continue
+		}
+		e.Publications = append(e.Publications, item)
 	}
 }
 

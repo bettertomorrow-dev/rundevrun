@@ -233,3 +233,90 @@ func validForwardedFor(value string) bool {
 	}
 	return true
 }
+
+// NewPinnedHandler routes only the captured publication graph. It never resolves
+// a target from the incoming host and verifies both source and target before dial.
+func NewPinnedHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string) http.Handler {
+	pins := make(map[string]string, len(routedRuns))
+	for id, run := range routedRuns {
+		pins[id] = run
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, err := hostname(req.Host); err != nil {
+			http.Error(w, "bad host", http.StatusBadRequest)
+			return
+		}
+		m, err := store.ReadManifest(rootRunID)
+		if err != nil || m.InstanceID != rootID {
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		targetID, targetRun, strip := rootID, rootRunID, ""
+		var best *state.Route
+		for i := range m.Routes {
+			route := &m.Routes[i]
+			if route.Path == "" || route.Path[0] != '/' || strings.Contains(route.Path, "//") || strings.Contains(route.Path, "..") || route.Dependency == "" {
+				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			prefix := strings.TrimSuffix(route.Path, "/")
+			if prefix == "" {
+				prefix = "/"
+			}
+			if req.URL.Path == prefix || prefix == "/" || strings.HasPrefix(req.URL.Path, prefix+"/") {
+				if best == nil || len(route.Path) > len(best.Path) {
+					best = route
+				}
+			}
+		}
+		if best != nil {
+			targetID = m.EffectiveBindings[best.Dependency]
+			targetRun = pins[targetID]
+			targetParts := strings.Split(targetID, "/")
+			if len(targetParts) != 3 || targetParts[0] != projectID || targetParts[2] != best.Dependency || targetRun == "" {
+				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if best.StripPrefix {
+				strip = strings.TrimSuffix(best.Path, "/")
+				if strip == "/" {
+					strip = ""
+				}
+			}
+		}
+		transport := &http.Transport{DisableKeepAlives: true, Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			if _, e := runner.VerifyProxyTarget(store, projectID, rootID, rootRunID); e != nil {
+				return nil, e
+			}
+			port, e := runner.VerifyProxyTarget(store, projectID, targetID, targetRun)
+			if e != nil {
+				return nil, e
+			}
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		}}
+		defer transport.CloseIdleConnections()
+		proxy := httputil.ReverseProxy{Transport: transport, FlushInterval: -1, ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		}, Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = "http"
+			pr.Out.URL.Host = "127.0.0.1:1"
+			pr.Out.Host = req.Host
+			if strip != "" {
+				pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, strip)
+				if pr.Out.URL.Path == "" {
+					pr.Out.URL.Path = "/"
+				}
+				pr.Out.URL.RawPath = ""
+			}
+			for name := range pr.Out.Header {
+				if strings.HasPrefix(strings.ToLower(name), "x-forwarded-") || strings.EqualFold(name, "forwarded") || strings.EqualFold(name, "x-real-ip") {
+					pr.Out.Header.Del(name)
+				}
+			}
+			pr.SetXForwarded()
+			pr.Out.Header.Set("X-Forwarded-Host", req.Host)
+			pr.Out.Header.Set("X-Forwarded-Proto", "https")
+		}}
+		proxy.ServeHTTP(w, req)
+	})
+}

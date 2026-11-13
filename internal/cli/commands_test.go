@@ -575,6 +575,166 @@ func TestDoctorReportsChecksReadOnlyAndReturnsFailureExit(t *testing.T) {
 	}
 }
 
+func TestPublicationGrammarAndDryRunsDoNotCreatePublicationState(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	writeProject(t, root)
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	project := registered.Scope.Project
+	flags := []struct {
+		args []string
+		code int
+	}{
+		{[]string{"share", "worker", "--project", project, "--worktree", root, "--mode", "snapshot", "--json"}, 2},
+		{[]string{"unshare", "worker", "--project", project, "--worktree", root, "--recreate", "--json"}, 2},
+		{[]string{"share", "worker", "--project", project, "--worktree", root, "--dry-run", "--json"}, -1},
+	}
+	for _, tc := range flags {
+		if _, code := invoke(t, tc.args...); tc.code >= 0 && code != tc.code || tc.code < 0 && code == 0 {
+			t.Fatalf("%v exit=%d want %d", tc.args, code, tc.code)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications.json")); !os.IsNotExist(err) {
+		t.Fatalf("rejected/dry-run share wrote publication registry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications")); !os.IsNotExist(err) {
+		t.Fatalf("rejected/dry-run share created publication directory: %v", err)
+	}
+	e, code := invoke(t, "unshare", "worker", "--project", project, "--worktree", root, "--dry-run", "--json")
+	if code != 0 || e.Plan == nil {
+		t.Fatalf("unshare dry-run: %d %+v", code, e)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications.json")); !os.IsNotExist(err) {
+		t.Fatalf("unshare dry-run wrote publication registry: %v", err)
+	}
+}
+
+func TestPublicationStatusIsWhitelistedAndReadOnly(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	writeProject(t, root)
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	otherRoot := filepath.Join(base, "other-project")
+	writeProject(t, otherRoot)
+	t.Chdir(otherRoot)
+	otherRegistered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register other project: %d %+v", code, otherRegistered)
+	}
+	t.Chdir(root)
+	reg, err := (&state.Store{Root: runtimeRootPath}).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := reg.Project(registered.Scope.Project)
+	if err != nil || len(project.Worktrees) != 1 {
+		t.Fatalf("registered worktree: %+v %v", project, err)
+	}
+	otherProject, err := reg.Project(otherRegistered.Scope.Project)
+	if err != nil || len(otherProject.Worktrees) != 1 {
+		t.Fatalf("other registered worktree: %+v %v", otherProject, err)
+	}
+	store := &state.Store{Root: runtimeRootPath}
+	owner, err := procid.Observe(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationRegistry := state.PublicationRegistry{Version: 1, Publications: map[string]state.Publication{
+		"share-safe": {
+			ID: "share-safe", ProjectID: project.ID, RootID: project.ID + "/" + project.Worktrees[0].ID + "/worker", RootRunID: "run-safe",
+			Mode: "live", Phase: "preparing", Cloudflared: "/usr/bin/cloudflared", Owner: owner,
+			Salt: bytes.Repeat([]byte("S"), 16), Verifier: bytes.Repeat([]byte("V"), 32), SigningKey: bytes.Repeat([]byte("K"), 32),
+		},
+		"share-other": {
+			ID: "share-other", ProjectID: otherProject.ID, RootID: otherProject.ID + "/" + otherProject.Worktrees[0].ID + "/worker", RootRunID: "other-run",
+			Mode: "live", Phase: "preparing", Cloudflared: "/usr/bin/cloudflared", Owner: owner,
+			Salt: bytes.Repeat([]byte("T"), 16), Verifier: bytes.Repeat([]byte("W"), 32), SigningKey: bytes.Repeat([]byte("L"), 32),
+		},
+	}}
+	lock, err := store.LockPublicationRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WritePublications(publicationRegistry); err != nil {
+		lock.Close()
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtimeRootPath, "publications.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"status", "ls"} {
+		e, code := invoke(t, command, "--json")
+		if code != 0 || len(e.Publications) != 2 || e.Publications[0].State != "starting" || e.Publications[1].State != "starting" {
+			t.Fatalf("%s publications: %d %+v", command, code, e)
+		}
+		encoded, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"SigningKey", "signing_key", "Verifier", "verifier", "Salt", "salt", "Owner", "owner", "Cloudflared", "cloudflared", "secret-password"} {
+			if bytes.Contains(encoded, []byte(secret)) {
+				t.Fatalf("%s exposed publication secret %q: %s", command, secret, encoded)
+			}
+		}
+	}
+	scoped, code := invoke(t, "status", "--project", project.ID, "--worktree", root, "--json")
+	if code != 0 || len(scoped.Publications) != 1 || scoped.Publications[0].ID != "share-safe" {
+		t.Fatalf("publication scope filter: %d %+v", code, scoped)
+	}
+	after, err := os.ReadFile(filepath.Join(runtimeRootPath, "publications.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("status wrote publication registry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications", "share-safe", "runtime.json")); !os.IsNotExist(err) {
+		t.Fatalf("status created publication runtime: %v", err)
+	}
+}
+
+func TestPublicationStatusFailureKeepsAppStateVisibleAndCancellationWins(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	writeProject(t, root)
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	pubPath := filepath.Join(runtimeRootPath, "publications.json")
+	if err := os.WriteFile(pubPath, []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "status", "--project", registered.Scope.Project, "--json")
+	if code != 5 || e.Status != "partial" || len(e.Results) != 1 || len(e.PublicationErrors) != 1 {
+		t.Fatalf("publication read error hid app state: %d %+v", code, e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out, errOut bytes.Buffer
+	code = Run(ctx, []string{"share", "worker", "--project", registered.Scope.Project, "--worktree", root, "--json"}, &out, &errOut)
+	var cancelled envelope
+	if err := json.Unmarshal(out.Bytes(), &cancelled); err != nil || code != 130 || len(cancelled.Errors) == 0 || cancelled.Errors[0].Code != "CANCELLED" {
+		t.Fatalf("cancelled share: code=%d err=%v envelope=%+v stderr=%s", code, err, cancelled, errOut.String())
+	}
+}
+
 func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")

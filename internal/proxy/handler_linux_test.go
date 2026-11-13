@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -312,5 +313,79 @@ func TestTLSHost(t *testing.T) {
 	_ = response.Body.Close()
 	if response.StatusCode != 421 {
 		t.Fatalf("fronting: %d", response.StatusCode)
+	}
+}
+
+func TestPinnedPublicationRoutesAndRunIdentity(t *testing.T) {
+	store, _, _ := fixture(t)
+	pins := map[string]string{"p/w/api": "api-run"}
+	h := NewPinnedHandler(store, "p", "p/w/web", "web-run", pins)
+	req := httptest.NewRequest("GET", "http://gateway/api/hello", nil)
+	req.Host = "public.trycloudflare.com"
+	req.Header.Set("Cookie", "application=keep")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("routed: %d %s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	if e := json.Unmarshal(w.Body.Bytes(), &body); e != nil {
+		t.Fatal(e)
+	}
+	if body["path"] != "/hello" || body["host"] != "public.trycloudflare.com" || body["proto"] != "https" || body["cookie"] != "application=keep" || w.Header().Get("Set-Cookie") == "" {
+		t.Fatalf("forwarding: %+v", body)
+	}
+	// A changed routed run cannot reach the still-listening old process.
+	if e := store.Update(func(reg *state.Registry) error {
+		p, e := reg.Project("p")
+		if e != nil {
+			return e
+		}
+		i := p.Instances["p/w/api"]
+		i.RunID = "different-run"
+		p.Instances[i.ID] = i
+		return reg.SetProject(p.ID, p)
+	}); e != nil {
+		t.Fatal(e)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("changed target accepted: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	NewPinnedHandler(store, "p", "p/w/web", "wrong-run", pins).ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("invalid root accepted: %d", w.Code)
+	}
+}
+func TestPinnedPublicationRootStripKeepsAbsolutePath(t *testing.T) {
+	store, _, _ := fixture(t)
+	path := filepath.Join(store.Root, "runs", "web-run", "manifest.json")
+	raw, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var m state.Manifest
+	if e = json.Unmarshal(raw, &m); e != nil {
+		t.Fatal(e)
+	}
+	m.Routes = []state.Route{{Path: "/", Dependency: "api", StripPrefix: true}}
+	raw, e = json.Marshal(m)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(path, raw, 0600); e != nil {
+		t.Fatal(e)
+	}
+	h := NewPinnedHandler(store, "p", "p/w/web", "web-run", map[string]string{"p/w/api": "api-run"})
+	req := httptest.NewRequest("GET", "http://gateway/identity", nil)
+	req.Host = "public.trycloudflare.com"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var body map[string]string
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body["path"] != "/identity" {
+		t.Fatalf("root strip: %d %s", w.Code, w.Body.String())
 	}
 }

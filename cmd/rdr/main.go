@@ -9,10 +9,23 @@ import (
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/cli"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
+	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 )
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "__rdr_publication" {
+		if err := publication.Supervise(os.Args[2], os.Args[3]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if len(os.Args) >= 3 && os.Args[1] == "__rdr_publication_bootstrap" {
+		if err := publication.Bootstrap(os.Args[2:]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) == 4 && os.Args[1] == "__rdr_proxy" {
 		if err := proxy.Serve(os.Args[2], os.Args[3]); err != nil {
 			os.Exit(1)

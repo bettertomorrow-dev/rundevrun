@@ -11,11 +11,13 @@ type options struct {
 	worktree    string
 	toWorktree  string
 	file        string
+	mode        string
 	all         bool
 	allServices bool
 	cascade     bool
 	retryHooks  bool
 	noProxy     bool
+	recreate    bool
 	json        bool
 	dryRun      bool
 	help        bool
@@ -45,7 +47,7 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services", "--no-proxy":
+		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services", "--no-proxy", "--recreate":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
@@ -66,10 +68,12 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.allServices = true
 			case "--no-proxy":
 				opts.noProxy = true
+			case "--recreate":
+				opts.recreate = true
 			default:
 				opts.help = true
 			}
-		case "--project", "--worktree", "--to-worktree", "--tail", "--file":
+		case "--project", "--worktree", "--to-worktree", "--tail", "--file", "--mode":
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 					return opts, positional, fmt.Errorf("%s requires a value", name)
@@ -90,6 +94,8 @@ func parseArgs(args []string) (options, []string, error) {
 				opts.toWorktree = value
 			} else if name == "--file" {
 				opts.file = value
+			} else if name == "--mode" {
+				opts.mode = value
 			} else if name == "--project" {
 				opts.project = value
 			} else {

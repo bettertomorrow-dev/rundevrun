@@ -230,6 +230,9 @@ func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason
 	if e = gate.Close(); e != nil {
 		return e
 	}
+	if e = ClosePublicationsForInstances(ctx, r.Store, []string{id}); e != nil {
+		return e
+	}
 	manifest, e := r.Store.ReadManifest(runID)
 	if e != nil {
 		return e

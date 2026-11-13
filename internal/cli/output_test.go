@@ -3,8 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"testing"
+
+	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
+	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 )
 
 func TestJSONResultIsOneDocumentWithArrays(t *testing.T) {
@@ -64,5 +68,47 @@ func TestCancellationExitCodeWinsOverPartialAndEarlierErrors(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := writeResult(&out, &errOut, e, true); code != 130 {
 		t.Fatalf("exit = %d, want cancellation code 130", code)
+	}
+}
+
+func TestSharePasswordIsOneTimeCredentialOnlyInJSON(t *testing.T) {
+	e := result("share", options{json: true})
+	e.Results = append(e.Results, publicationResult{Status: publication.Status{State: "ready", URL: "https://fixture.trycloudflare.com"}, Password: "one-time-secret"})
+	e.Credentials = &shareCredentials{Password: "one-time-secret"}
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, true); code != 0 {
+		t.Fatalf("share exit=%d: %s", code, errOut.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["credentials"].(map[string]any)["password"] != "one-time-secret" {
+		t.Fatalf("missing one-time credential: %#v", got)
+	}
+	resultJSON, err := json.Marshal(got["results"])
+	if err != nil || bytes.Contains(resultJSON, []byte("one-time-secret")) {
+		t.Fatalf("password leaked into result item: %s (%v)", resultJSON, err)
+	}
+	e.Credentials = nil
+	e.Results = []any{publicationResult{Status: publication.Status{State: "ready", URL: "https://fixture.trycloudflare.com"}}}
+	out.Reset()
+	if code := writeResult(&out, &errOut, e, false); code != 0 || bytes.Contains(out.Bytes(), []byte("Password:")) {
+		t.Fatalf("repeat share exposed password: code=%d stdout=%q", code, out.String())
+	}
+}
+
+func TestShareCleanupErrorPreservesActivePublicationWithoutCredentials(t *testing.T) {
+	e := result("share", options{json: true})
+	failShare(&e, publication.Result{
+		Status:   publication.Status{ID: "new-share", State: "ready", URL: "https://fixture.trycloudflare.com"},
+		Password: "must-not-escape-on-error",
+	}, &runner.Error{Code: "TUNNEL_FAILED", Err: errors.New("old publication cleanup failed")})
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, true); code != 5 || e.Status != "partial" || len(e.Results) != 1 || e.Credentials != nil {
+		t.Fatalf("share partial result: code=%d envelope=%+v", code, e)
+	}
+	if bytes.Contains(out.Bytes(), []byte("must-not-escape-on-error")) || bytes.Contains(out.Bytes(), []byte("credentials")) {
+		t.Fatalf("share error exposed credentials: %s", out.String())
 	}
 }
