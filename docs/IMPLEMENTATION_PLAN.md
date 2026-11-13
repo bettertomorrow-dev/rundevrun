@@ -223,13 +223,13 @@ Sol обновляет этот раздел после интеграции э�
 ```text
 Текущий этап: 2
 Статус: in_progress
-Активные задания: Terra 2A повторно назначается после возврата без реализации; CLI-адаптер Luna запускается после фиксации API executor
+Активные задания: 2A core и 2B CLI интегрированы как промежуточный результат; Terra 2C назначается на durable build и fail-closed orphan cleanup
 Принятые этапы: 0 done на 0478d52, A0 re-check без блокеров; 1 done на 2f8cefa
-Последняя интегрированная ревизия: 2f8cefad23ade30dcc77f73bff7b00fb3e40bce9
+Последняя интегрированная ревизия: a840226ff54b6ff1c6248a191819e502dfc8ba82, промежуточные 2A/2B; этап2 не принят
 Проверки этапа 1: Linux Go 1.27.4; go vet ./...; go test ./...; go test -race ./...; git diff --check; GOOS=darwin GOARCH=arm64 go build ./... только сборка. Реальный binary /tmp/rundevrun-stage1-rdr во временном проекте: config check, register dry-run без runtime directory, register, services/status stopped; marker проектных команд не создан. Полный TOML example TECH_SPEC проходит config check с тремя сервисами. Parser, symlink/detached/ambiguous selectors, независимые Git roots, concurrent registry subprocesses, повреждённые записи и PID identity mismatch покрыты тестами. Interrupted-write тест моделирует оставленный частичный temp file; реальный сбой fsync/rename и macOS lifecycle не проверены.
 Замечания Astra: A0 на 75f90a3 выявила 10 дефектов контрактов; исправления и соответствия в docs/REVIEWS.md; re-check 0478d52: блокеров этапа 1 нет, lifecycle ещё не принят
 Внешние условия: второй проект /home/alex/dev/twikko выбран пользователем, HEAD 631e4b2, status чистый, инструкции прочитаны; macOS; готовый домен/сертификат; OAuth preview при миграции
-Следующий шаг: Terra 2A реализует executor/supervisor; затем Luna подключает публичные CLI команды и Sol проверяет настоящий binary. Не открывать этап 3 до полной приёмки этапа 2.
+Следующий шаг: Terra 2C закрывает SIGKILL build recovery и гонку orphan cleanup, затем Sol проверяет общую версию. Не открывать этап3 до полной приёмки этапа2.
 
 Назначение этапа 0:
 Sol: docs/TECH_SPEC.md, docs/MIGRATION_MAP.md, go.mod, cmd/rdr/main.go.
@@ -248,6 +248,12 @@ Terra: internal/runner/** новый executor/supervisor/logs/ownership, нео�
 Результат: один сервис без/с портом, plan/dry-run и исполнение, отдельная сборка, detached supervisor с durable intent/claim/bootstrap ACK, readiness+loopback/listener ownership, status/logs/stop/restart и cleanup. Экспортировать простой API для CLI. Hooks и граф зависимостей остаются этапами 4 и 3; до их появления явный отказ, никакого молчаливого игнорирования.
 Luna: CLI-оболочка будет назначена отдельным узким заданием после готовности API; пока не запущена, чтобы не изобретать несовместимые контракты.
 Sol: принимает 2A по коду и tests, фиксирует API, затем интегрирует CLI и binary acceptance, только после этого отмечает этап 2 done.
+Текущий известный незакрытый пункт 2A: build helper покрывает timeout/cancel, но пока не сохраняет durable identity для recovery после SIGKILL CLI во время build. Сначала фиксируется API, затем Luna adapter и отдельная узкая доработка Terra durable build/recovery могут идти параллельно; до закрытия этап 2 не принят.
+Промежуточные 2A/2B интегрированы в a840226, пока не весь этап2. Реализованы Plan/Up/Stop/Restart/Logs, gated supervisor/bootstrap, Linux loopback socket ownership, bounded logs, CLI и типизированные ошибки. Доработка Sol: readonly state inspection errors не скрываются success, неизвестное состояние представлено state_unknown вместо вымышленного enum state.
+Общие проверки на промежуточном коде: go test ./...; go vet ./...; go test -race ./...; git diff --check; darwin/arm64 только cross-build. Binary /tmp/rundevrun-stage2-rdr в temp project: up dry-run без записи и без runs dir; up/repeat up с тем же run_id; restart с новым run_id; HTTP ready и GET; logs JSON; status running/ready; удаление dev.toml; down обеих служб и status stopped. Все временные процессы остановлены.
+Core tests также проверяют fixed-port restart, HTTP readiness, build failure с сохранением old run, build timeout descendants, bootstrap EOF без ACK, non-loopback/foreign sockets, connected UDP, быстрый выход лидера при живом supervisor, SIGSTOP supervisor stop и ротацию/tail логов.
+Незакрытые обязательные пункты2C: build до project exec без durable identity при SIGKILL CLI; возможный false cleanup если supervisor/leader исчезают до сохранения descendants; full leftover group/session verification при stop. Уже исчезнувший supervisor вызывает OWNERSHIP_UNKNOWN, но этого недостаточно для гонки внутри stop. macOS process/listener inspection пока fail-closed без runtime поддержки, это сохраняется как непроверенная/нереализованная платформа до соответствующей задачи и приёмки.
+Назначение2C: Terra меняет только runner/state/procid и hidden dispatch main при необходимости. Публичный API сохраняет; если нужно изменять CLI/schema контракты, сообщает Sol. Реальные SIGKILL tests используют только собственные temp-процессы; чужие группы не завершаются. В сомнительном ownership fail-closed с ненулевым кодом, без ложного stopped.
 
 Исходные PRD и план взяты из незакоммиченных docs/ основного checkout /home/alex/dev/rundevrun, скопированы в рабочую ветку и сохранены commit 014a96e. Оригиналы и изменённый README основного checkout не трогались.
 Go отсутствовал в PATH. Установлен отдельный Go 1.27.4 из официального go.dev/dl с проверкой SHA-256, без системных изменений. Для проверок: PATH=/home/alex/.cache/rundevrun-toolchain/go/bin:$PATH.

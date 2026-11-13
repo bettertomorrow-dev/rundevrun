@@ -19,10 +19,13 @@ func Identity(pid int) (string, error) {
 	s := string(b)
 	i := strings.LastIndexByte(s, ')') // the command name may contain spaces and parentheses
 	if i < 0 {
-		return "", ErrGone
+		return "", fmt.Errorf("malformed process stat for %d", pid)
 	}
 	f := strings.Fields(s[i+1:])
-	if len(f) < 20 || f[0] == "Z" || f[0] == "X" {
+	if len(f) < 20 {
+		return "", fmt.Errorf("short process stat for %d", pid)
+	}
+	if f[0] == "Z" || f[0] == "X" {
 		return "", ErrGone
 	}
 	return f[19], nil
@@ -35,7 +38,7 @@ func bootID() (string, error) {
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
-		return "", ErrGone
+		return "", fmt.Errorf("empty boot identity")
 	}
 	return s, nil
 }

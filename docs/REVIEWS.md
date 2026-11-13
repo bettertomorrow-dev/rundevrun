@@ -48,3 +48,20 @@ regression checks. Sol completed DNS domain label validation and integrated CLI
 registration/listings and typed JSON errors. Stage 1 accepted on Linux after
 vet/test/race and real-binary discovery checks. macOS cross-build is not runtime
 acceptance. Orphan temp-file test simulates interruption, not injected disk faults.
+
+## Intermediate stage 2A/2B, a840226
+
+Sol integrated Terra core and Luna CLI and ran all-package test/vet/race checks
+and a public-binary smoke scenario with isolated worker and HTTP services. Core
+review fixed unsafe identity-error swallowing, group rechecks before signalling,
+UDP client/listener distinction, immediate leader exit while supervisor lives,
+fixed-port restart, bounded unresponsive-supervisor stop, config-independent stop
+and log access, and CLI state-inspection error reporting.
+
+Stage 2 remains in_progress. Required follow-up 2C must persist preparation/build
+identity before executing project code and recover after frontend SIGKILL without
+leaving children or losing the previous active run. Stop must not claim cleanup
+when an untracked group could remain after supervisor death during shutdown.
+Current fail-closed refusal for an already-dead supervisor is partial protection.
+Darwin inspection currently refuses operations; cross-build passed, runtime did
+not. No real MillDrum/twikko processes or data were used.
