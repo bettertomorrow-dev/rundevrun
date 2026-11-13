@@ -372,3 +372,29 @@ after the fix. The shared path also serves hooks and snapshot builds.
 Initial build errors now retain the safe build-log path using os.PathError;
 the graph test verifies that the referenced log exists. Independent lifecycle
 re-check and a corrected real backend scenario follow before acceptance.
+
+## Lifecycle re-check and real migration scenarios
+
+A fresh Astra A1 build-drain re-check closed 014953c in the reviewed Linux scope.
+Race checks passed for both exit results, timeout cleanup, bootstrap ACK, unknown
+session survivors, foreign preparation identity and hook timeout. Root then ran
+full go test ./..., go vet ./... and go test -race ./... successfully; runner took
+116.519s normally and 157.738s under race. Darwin arm64/amd64 builds passed; no
+macOS runtime was available.
+
+MillDrum `scripts/check-rdr-backend.py` passed on archive a58eee5 with runner
+014953c, preserved HOME and isolated data. It verified distinct live data homes,
+invalid-source preservation, successful watcher replacement within the same rdr
+RunID, backup of stopped A before B and refusal after an injected backup FIFO.
+The earlier failed-run diagnostic fixture remains at
+`/tmp/rdr-milldrum-7e-x5bjsfoa`; public cleanup was confirmed.
+
+`scripts/check-rdr-agent-stop.py` passed on MillDrum f3a3cbe. A real fake-agent
+had a separate PGID and the owner's SID. Public down stopped it, released the
+owner lock, and left integrity_check=ok with launch stopped/owner_shutdown.
+`scripts/check-rdr-handover.py` passed on d74dc85: real legacy A stopped,
+offline adoption, new B backup and launch, adopted-home legacy refusal, offline
+release, then legacy A backup and return. All final public statuses were stopped,
+owner lock free and the fixed legacy port available. Test data were deleted only
+after cleanup proof. No user's launcher/data was switched. Wrapper/UI/preview
+acceptance is still running; these results do not approve a release.

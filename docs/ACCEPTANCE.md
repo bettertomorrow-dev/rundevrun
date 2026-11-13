@@ -17,7 +17,7 @@
 | 8 | `examples/mini/switch_scenario.py`, hook/partial switch tests | Linux / `bacc5c9`, fixes `a825cb3` | passed на Linux, подготовка до остановки, частичный отказ без отката данных |
 | 9 | Offline live lifecycle/auth/CF fake, API/WS gate, cookie и unshare tests | Linux / `640f34f`, A2 `38628fa` | partial, offline live/snapshot CLI и A2 re-check прошли на38628fa; real CF зарегистрировался вhel02, publicDNS gaierror, cleanupconfirmed |
 | 10 | Confined copy helper: symlinks/specials, независимость от source, failure cleanup | Linux / `640f34f`, A2 `38628fa` | passed на Linux offline, full build/activation/immutable snapshot/failed recreate и public CLI scenario прошли на640f34f, A2 закрыта38628fa |
-| 11 | MillDrum backup/seed/sign-in/agent shutdown/watcher, SQLite isolation | Не запускалось | pending, этап 7 |
+| 11 | MillDrum check-rdr-backend.py, check-rdr-agent-stop.py, check-rdr-handover.py | Linux / MillDrum a58eee5, f3a3cbe, d74dc85; runner014953c | partial, real watcher/data isolation/backup/active-agent shutdown/двусторонний handover прошли; seed/UI/sign-in/preview ещё проверяются |
 | 12 | Lifecycle на Linux и macOS, инструкция twikko | Linux / `301afb9` частично | partial, Darwin arm64/amd64 cross-build прошёл; Mac пока недоступен, пользователь 2026-11-13 оставил runtime-приёмку открытой |
 | 13 | Routing/alias tests, `examples/mini/tls_scenario.py` | Linux / `31bb721`, code `1c46f79` | passed на Linux fixtures, hostname collision сохраняет старую адресную книгу, proxy restart сохраняет app RunIDs |
 | 14 | Реальный wildcard, DNS и отрицательные cert/key/date проверки | [LOCAL_HTTPS.md](LOCAL_HTTPS.md) | partial, внешний TLS handshake и runner TLS fixtures проверены; пользовательский ingress ещё не подготовлен |
@@ -27,7 +27,7 @@
 | 18 | Discovery, IDs, dry-run, bind и graph lifecycle через публичный JSON без интерактива | Linux / `12a2457` | passed для этапов 1–3; switch/share войдут в итоговый сценарий этапа 8 |
 | 19 | `examples/mini/switch_scenario.py`, switch graph/CLI tests | Linux / `bacc5c9`, A1 fixes `a825cb3` | passed на Linux, public JSON и подтверждённый cleanup |
 | 20 | TCP/UDP wildcard ownership, proxy loopback, share-only exposure, отсутствие DNS API | Linux / `301afb9` частично | partial, Linux listener checks прошли; Darwin runtime и share впереди, loopback proxy проверен Linux fixtures |
-| 21 | Все ежедневные сценарии MillDrum через новую обёртку | Не запускалось | pending, этап 7; пользователь разрешил отключить OAuth только в защищённом preview, см. MIGRATION_MAP |
+| 21 | Все ежедневные сценарии MillDrum через новую обёртку | Linux / MillDrum ab5436e, runner014953c | partial, wrapper реализован; реальный backend/agent/handover прошли, UI/preview ещё проверяются; пользователь разрешил отключить OAuth только в защищённом preview, см. MIGRATION_MAP |
 
 Для окончательной приёмки каждая строка получает точный commit, выполненную
 команду или путь к воспроизводимому сценарию и фактический результат.
