@@ -104,3 +104,52 @@ and readonly graph/binding plans. This does not yet implement graph execution.
 Examples use public JSON commands and isolated Git worktrees. The scenario now
 reaches multi-service up and reports INCOMPLETE, then confirms cleanup via public
 status. It cannot count as the second real project or as passed stage 3.
+
+## Stage 3 execution integration, 12a2457
+
+Up, down and restart use one graph planner and shared preparation/activation.
+Sol reviewed complete graph reservations, all-build-before-old-stop restart,
+consumer stop guards, partial result reporting and cleanup. Corrections include
+unknown state reporting instead of swallowed inspection errors, typed error
+codes, cancellation priority and unhealthy dependency startup gates.
+
+All-package Linux test/vet/race passed. The rebuilt public binary completed
+`python3 examples/mini/scenario.py /tmp/rundevrun-stage3-rdr` with PASS and
+verified cleanup. This closes the stage 3 example, not real-project, macOS,
+switch or publication acceptance.
+
+## Internal stage 5 review, integrated in fb58efe
+
+Terra found that listener ownership accepted any loopback address, while health
+and proxy dialing always use `127.0.0.1`. An owned listener on `127.0.0.2` or
+`::1` therefore could coexist with an unrelated listener on `127.0.0.1` at the
+same port. Port-only ownership did not protect the actual connection target.
+
+The shared inspection now requires ownership at the actual dial address and
+retains rejection of tracked non-loopback sockets. Linux also rejects foreign
+listeners on that endpoint, including SO_REUSEPORT co-listeners and wildcard
+listeners. Real separate-process regressions verify refusal without harming the
+foreign process. Darwin rejects SO_REUSEPORT on the selected listener rather
+than claiming exclusive ownership without a global socket inventory. Native
+parser fixtures cover exact address, IPv4-mapped address and reuse flags.
+
+All-package Linux test/vet/race passed after integration. Sol additionally strips
+all incoming X-Forwarded-* extensions and X-Real-IP before generating accepted
+forwarding metadata; tests check spoofed port/prefix and unchanged application
+cookies. Include the check-to-dial race and address invariant in A1 and A2.
+macOS runtime remains pending, and the handler alone is not stage 5 completion.
+
+## Hook integration, fb58efe and 4641840
+
+Immutable hook invocation/environment and durable identity precede project code.
+Recovery verifies cleanup and requires explicit retry of failed/interrupted stop
+hooks. after_start failure retains the application and blocks new consumers.
+Operation IDs span the batch, and hook reason follows the actual command even
+when restarting a stopped service. Sol reviewed lifecycle/recovery and ran the
+all-package Linux test/vet/race checks.
+
+A rebuilt public binary verified failed before_stop keeps the app live, ordinary
+down does not replay it, --retry-hooks executes the saved old command after a
+config edit, status excludes private environment, and final cleanup is confirmed.
+This accepts stage 4A only. Switch, interrupted switch and independent Astra A1
+remain outstanding.
