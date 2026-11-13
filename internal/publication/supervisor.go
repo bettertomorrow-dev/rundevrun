@@ -135,7 +135,7 @@ func Supervise(root, id string) (result error) {
 		if result != nil {
 			record.State = "failed"
 			record.ErrorCode = failureCode
-			record.ErrorMessage = "publication preparation failed"
+			record.ErrorMessage = "publication failed; see tunnel log"
 			if failureCode == "BUILD_FAILED" {
 				record.ErrorMessage = "snapshot build or copy failed; see build log"
 			}
@@ -164,7 +164,7 @@ func Supervise(root, id string) (result error) {
 	handler.Store(handlerBox{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "publication starting", http.StatusServiceUnavailable)
 	})})
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.Load().(handlerBox).Handler.ServeHTTP(w, r) }), ReadHeaderTimeout: 5 * time.Second}
+	server := newGatewayServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.Load().(handlerBox).Handler.ServeHTTP(w, r) }))
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.Serve(listener) }()
 	defer server.Close()
@@ -343,4 +343,11 @@ func Supervise(root, id string) (result error) {
 			}
 		}
 	}
+}
+
+// ReadTimeout bounds body reads and net/http's unread-body drain on rejected
+// requests. No write deadline: streamed responses may outlive a request body.
+// The standard HTTP hijack path clears deadlines for WebSocket connections.
+func newGatewayServer(handler http.Handler) *http.Server {
+	return &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second}
 }

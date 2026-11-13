@@ -36,12 +36,21 @@ func newID() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-func publicStatus(p state.Publication, rt state.PublicationRuntime) Status {
+func (m *Manager) publicStatus(p state.Publication, rt state.PublicationRuntime) Status {
 	s := Status{ID: p.ID, Mode: p.Mode, State: rt.State, URL: rt.URL, Root: Target{p.RootID, p.RootRunID}}
 	for id, run := range p.RoutedRuns {
 		s.Routed = append(s.Routed, Target{id, run})
 	}
 	sort.Slice(s.Routed, func(i, j int) bool { return s.Routed[i].InstanceID < s.Routed[j].InstanceID })
+	s.ErrorCode, s.ErrorMessage = rt.ErrorCode, rt.ErrorMessage
+	if dir, err := m.Store.PublicationDir(p.ID, false); err == nil {
+		for _, name := range []string{"tunnel.log", "build.log"} {
+			path := filepath.Join(dir, name)
+			if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+				s.LogPaths = append(s.LogPaths, path)
+			}
+		}
+	}
 	return s
 }
 
@@ -85,7 +94,7 @@ func (m *Manager) List(ctx context.Context) ([]Status, error) {
 		} else if err != nil {
 			return nil, &runner.Error{Code: "OWNERSHIP_UNKNOWN", Err: fmt.Errorf("publication %s runtime unavailable: %w", id, err)}
 		}
-		status := publicStatus(p, rt)
+		status := m.publicStatus(p, rt)
 		if p.Phase == "preparing" && status.State == "ready" {
 			status.State = "starting"
 			status.URL = ""
@@ -127,6 +136,10 @@ func (m *Manager) List(ctx context.Context) ([]Status, error) {
 			if !validQuickURL(rt.URL) {
 				return nil, fmt.Errorf("%w: invalid publication URL", state.ErrCorrupt)
 			}
+		}
+		if status.State == "failed" && status.ErrorCode == "" {
+			status.ErrorCode = "TUNNEL_FAILED"
+			status.ErrorMessage = "publication process exited; see publication logs"
 		}
 		result = append(result, status)
 	}
@@ -428,18 +441,18 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 		// observed active candidate and report it instead of rolling it back.
 		if observed, readErr := m.Store.ReadPublications(); readErr == nil && observed.Publications[id].Phase == "active" {
 			activated = true
-			result = Result{Status: publicStatus(p, rt)}
+			result = Result{Status: m.publicStatus(p, rt)}
 		}
 		return result, e
 	}
 	activated = true
-	result = Result{Status: publicStatus(p, rt)}
+	result = Result{Status: m.publicStatus(p, rt)}
 	if prior.ID != "" {
 		if e = runner.ClosePublication(ctx, m.Store, prior.ID); e != nil {
 			return result, e
 		}
 	}
-	result = Result{Status: publicStatus(p, rt), Password: password}
+	result = Result{Status: m.publicStatus(p, rt), Password: password}
 	return result, nil
 }
 func (m *Manager) Unshare(ctx context.Context, selection runner.Selection) (Result, error) {

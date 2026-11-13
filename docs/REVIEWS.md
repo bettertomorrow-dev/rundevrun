@@ -307,3 +307,27 @@ Luna's first attempt found a fixture count assumption: status includes the stopp
 indexer as well as live catalog/reports. That was corrected and cleanup confirmed.
 The fixture uses no real public network or DNS/trust changes. It does not establish
 real Cloudflare or snapshot acceptance.
+
+## A2 on 640f34f and corrections
+
+Astra found two P2 defects: an incomplete anonymous body could hold the gateway
+indefinitely, including net/http draining rejected requests; and tunnel death
+after activation omitted its cause and log paths from public status. No additional
+confirmed P1/P2 was found in the reviewed integrated stages 4–6.
+
+Sol added a 15-second server read timeout without a write timeout. Network tests
+cover stalled login bodies with accepted and rejected Origin, delayed streaming
+and hijacked responses. Status now carries supervisor-authored error metadata
+and existing tunnel/build log paths, with credentials still excluded. The
+existing real-process tunnel-crash test verifies those fields and secret absence.
+Combined publication/CLI/shareauth race suites passed, as did full vet and diff
+checks. A fresh A2 re-check remains required.
+
+The full snapshot integration at 640f34f passed Linux all-package tests, race and
+vet; public offline live/snapshot scenario passed with confirmed cleanup. A real
+Cloudflare attempt on 2026-11-13 created a Quick Tunnel and registered a QUIC
+connection in hel02, but system DNS could not resolve its public hostname during
+the bounded client retries. The scenario reported INCOMPLETE and confirmed all
+fixture apps/publications stopped. Diagnostic fixture:
+`/tmp/rdr-mini-cloudflare-ah3vzp5c`. External acceptance remains open; no resolver,
+DNS, TLS trust, real-project data or existing tunnels were changed.

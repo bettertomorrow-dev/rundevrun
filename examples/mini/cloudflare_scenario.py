@@ -75,7 +75,7 @@ def external(url, path="/", method="GET", headers=None, body=None, acceptable=No
             last = type(exc).__name__
         if attempt < 11:
             time.sleep(2)
-    raise ScenarioError(f"Cloudflare endpoint did not become ready: {last}")
+    raise ScenarioError(f"Cloudflare endpoint {urlsplit(url).hostname} did not become ready: {last}")
 
 
 def login(url, password, next_path):

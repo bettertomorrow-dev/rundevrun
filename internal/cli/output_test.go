@@ -121,7 +121,7 @@ func TestShareCleanupErrorPreservesActivePublicationWithoutCredentials(t *testin
 
 func TestSharePreparationErrorPreservesFailedStatusAsError(t *testing.T) {
 	e := result("share", options{json: true})
-	failShare(&e, publication.Result{Status: publication.Status{ID: "failed-share", State: "failed", URL: "https://fixture.trycloudflare.com"}, LogPaths: []string{"runs/share/tunnel.log"}},
+	failShare(&e, publication.Result{Status: publication.Status{ID: "failed-share", State: "failed", URL: "https://fixture.trycloudflare.com", LogPaths: []string{"runs/share/tunnel.log"}}},
 		&runner.Error{Code: "BUILD_FAILED", Err: errors.New("snapshot build failed")})
 	var out, errOut bytes.Buffer
 	if code := writeResult(&out, &errOut, e, true); code != 4 || e.Status != "error" || len(e.Results) != 1 || e.Credentials != nil {

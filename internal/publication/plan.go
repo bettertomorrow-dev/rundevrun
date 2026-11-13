@@ -34,17 +34,19 @@ type LivePlan struct {
 	Revision  uint64   `json:"revision"`
 }
 type Status struct {
-	ID     string   `json:"id,omitempty"`
-	Mode   string   `json:"mode,omitempty"`
-	State  string   `json:"state"`
-	URL    string   `json:"url,omitempty"`
-	Root   Target   `json:"root"`
-	Routed []Target `json:"routed,omitempty"`
+	ID           string   `json:"id,omitempty"`
+	Mode         string   `json:"mode,omitempty"`
+	State        string   `json:"state"`
+	URL          string   `json:"url,omitempty"`
+	Root         Target   `json:"root"`
+	Routed       []Target `json:"routed,omitempty"`
+	ErrorCode    string   `json:"error_code,omitempty"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+	LogPaths     []string `json:"log_paths,omitempty"`
 }
 type Result struct {
 	Status
-	Password string   `json:"-"`
-	LogPaths []string `json:"log_paths,omitempty"`
+	Password string `json:"-"`
 }
 
 // PlanLive verifies the exact active HTTP root and explicitly routed targets.

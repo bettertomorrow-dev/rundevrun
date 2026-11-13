@@ -41,14 +41,16 @@ func (r openResult) String() string { return r.URL }
 
 type publicationResult struct {
 	publication.Status
-	Password string   `json:"-"`
-	LogPaths []string `json:"log_paths,omitempty"`
+	Password string `json:"-"`
 }
 
 func (r publicationResult) String() string {
 	line := fmt.Sprintf("%s\t%s", r.State, r.URL)
 	if r.Password != "" {
 		line = fmt.Sprintf("%s\nPassword: %s", r.URL, r.Password)
+	}
+	if r.ErrorCode != "" {
+		line += "\n" + r.ErrorCode + ": " + r.ErrorMessage
 	}
 	if len(r.LogPaths) > 0 {
 		line += "\nLogs: " + strings.Join(r.LogPaths, ", ")
@@ -622,7 +624,7 @@ func publicationCommand(ctx context.Context, store *state.Store, args []string, 
 func failShare(e *envelope, result publication.Result, err error) {
 	e.Credentials = nil
 	if result.ID != "" {
-		e.Results = append(e.Results, publicationResult{Status: result.Status, LogPaths: result.LogPaths})
+		e.Results = append(e.Results, publicationResult{Status: result.Status})
 		failError(e, err)
 		if result.State == "ready" {
 			e.Errors[len(e.Errors)-1].Actions = []string{"inspect status, then unshare and create a fresh share to obtain new credentials"}

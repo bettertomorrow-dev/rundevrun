@@ -4,9 +4,11 @@ package publication
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +105,13 @@ exit 1
 	}
 	if e != nil || status.State != "failed" {
 		t.Fatalf("tunnel crash not exposed: %+v %v", status, e)
+	}
+	if status.ErrorCode != "TUNNEL_FAILED" || status.ErrorMessage == "" || len(status.LogPaths) == 0 {
+		t.Fatalf("post-activation failure lost diagnostics: %+v", status)
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil || strings.Contains(string(encoded), "signing_key") || strings.Contains(string(encoded), "verifier") || strings.Contains(string(encoded), created.Password) {
+		t.Fatalf("failure status leaked credentials: %s %v", encoded, err)
 	}
 	if _, e = m.Unshare(ctx, selection); e != nil {
 		t.Fatal(e)
