@@ -467,11 +467,17 @@ Live/snapshot gateway is per publication, bound loopback, with cloudflared child
 tracked by identity. No general HTTP forward proxy. Every route, static file and
 WebSocket handshake passes password gate. Password is random >=128 bits,
 stored only as a salted verification hash; gateway session signing key private.
+Authenticated responses use private, no-store even when an upstream requests
+public caching; the wrapper preserves streaming and HTTP upgrade support.
 Use publication-specific cookie name/path, Secure/HttpOnly/SameSite=Lax, random
 session key each publication; no old cookie acceptance. Login POST has same-origin
 checks, bounded body, constant-time verification and throttling. No Cookie/Origin
 rewrite, OAuth bypass, injected login script or CSP override. Snapshot copies
-artifacts to a private staging directory, rejects escaping symlinks, activates
+artifacts to a private staging directory. Artifact trees must contain only regular
+files and directories; all symlinks, including internal links, and special files
+are rejected before activation. Builds must materialize files rather than links.
+The copy uses confined descriptor-relative access and never serves the source
+build directory. Snapshot activates
 only after build/copy/gateway/tunnel readiness. Failure preserves existing share.
 Repeat share is idempotent; --recreate prepares before replacing and rotates secret.
 unshare stops only gateway/tunnel. down/switch close any publication whose root
