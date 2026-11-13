@@ -84,6 +84,9 @@ depends_on=["api-v1","api_v1"]
 }
 func TestShellVariablesAndQuotedPlaceholder(t *testing.T) {
 	c := &Config{Services: map[string]Service{"api": {Protocol: "http"}}}
+	if e := ValidateCommand(`echo {{literal}}`, c); e != nil {
+		t.Fatal(e)
+	}
 	if e := ValidateCommand(`echo ${HOME} {port}`, c); e != nil {
 		t.Fatal(e)
 	}

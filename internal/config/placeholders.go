@@ -120,9 +120,6 @@ func scan(s string, command bool, c *Config) (bool, error) {
 	if quote != 0 {
 		return false, fmt.Errorf("unbalanced quote")
 	}
-	if command && !seen {
-		return false, fmt.Errorf("literal braces must use {{ and }}")
-	}
 	return seen, nil
 }
 func validPlaceholder(n string, c *Config) bool {
