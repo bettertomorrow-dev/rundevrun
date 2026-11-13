@@ -44,22 +44,25 @@ func (w worktreeInfo) String() string {
 }
 
 type instanceInfo struct {
-	ID              string            `json:"instance_id"`
-	ProjectID       string            `json:"project_id"`
-	WorktreeID      string            `json:"worktree_id"`
-	Service         string            `json:"service"`
-	State           string            `json:"state,omitempty"`
-	StateUnknown    bool              `json:"state_unknown,omitempty"`
-	Protocol        string            `json:"protocol,omitempty"`
-	RunID           string            `json:"run_id,omitempty"`
-	ConfigChanged   bool              `json:"config_changed"`
-	RestartRequired bool              `json:"restart_required"`
-	ConfigError     string            `json:"config_error,omitempty"`
-	Preparation     *preparationInfo  `json:"preparation,omitempty"`
-	PID             int               `json:"pid,omitempty"`
-	DirectURL       string            `json:"direct_url,omitempty"`
-	URL             string            `json:"url,omitempty"`
-	LogPaths        map[string]string `json:"log_paths,omitempty"`
+	ID                string            `json:"instance_id"`
+	ProjectID         string            `json:"project_id"`
+	WorktreeID        string            `json:"worktree_id"`
+	Service           string            `json:"service"`
+	State             string            `json:"state,omitempty"`
+	StateUnknown      bool              `json:"state_unknown,omitempty"`
+	Protocol          string            `json:"protocol,omitempty"`
+	RunID             string            `json:"run_id,omitempty"`
+	ConfigChanged     bool              `json:"config_changed"`
+	RestartRequired   bool              `json:"restart_required"`
+	DesiredBindings   map[string]string `json:"desired_bindings,omitempty"`
+	EffectiveBindings map[string]string `json:"effective_bindings,omitempty"`
+	DependencyError   string            `json:"dependency_error,omitempty"`
+	ConfigError       string            `json:"config_error,omitempty"`
+	Preparation       *preparationInfo  `json:"preparation,omitempty"`
+	PID               int               `json:"pid,omitempty"`
+	DirectURL         string            `json:"direct_url,omitempty"`
+	URL               string            `json:"url,omitempty"`
+	LogPaths          map[string]string `json:"log_paths,omitempty"`
 }
 
 type preparationInfo struct {
@@ -71,6 +74,14 @@ type preparationInfo struct {
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
 func execute(ctx context.Context, args []string, opts options, e *envelope, out io.Writer) {
+	if opts.all && e.Command != "down" {
+		e.fail("USAGE", "--all is only valid with down")
+		return
+	}
+	if opts.cascade && e.Command != "down" {
+		e.fail("USAGE", "--cascade is only valid with down")
+		return
+	}
 	if opts.toWorktree != "" && e.Command != "bind" {
 		e.fail("USAGE", "--to-worktree is only supported by bind at this stage")
 		return
@@ -126,7 +137,11 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			e.Results = append(e.Results, bound)
 		}
 	case "up", "down", "restart", "logs":
-		if !validArity(args, 2, 2, e) {
+		if e.Command == "logs" {
+			if !validArity(args, 2, 2, e) {
+				return
+			}
+		} else if !validLifecycleArity(args, e.Command, e) {
 			return
 		}
 		if e.Command == "logs" && opts.dryRun {
@@ -137,7 +152,11 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			e.fail("USAGE", "--follow and --tail are only valid with logs")
 			return
 		}
-		lifecycle(ctx, store, args[1], opts, e, out)
+		if e.Command == "logs" {
+			logsCommand(ctx, store, args[1], opts, e, out)
+		} else {
+			lifecycleCommand(ctx, store, args[1:], opts, e)
+		}
 	case "register":
 		if !validArity(args, 1, 2, e) {
 			return
@@ -185,104 +204,355 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 }
 
-func lifecycle(ctx context.Context, store *state.Store, service string, opts options, e *envelope, stdout io.Writer) {
-	d, w := resolveCommandSelection(store, opts, e.Command == "up" || e.Command == "restart", e)
-	if d == nil {
+func validLifecycleArity(args []string, command string, e *envelope) bool {
+	min := 2
+	if command == "down" {
+		min = 1
+	}
+	if len(args) < min {
+		e.fail("USAGE", "missing service selector", "see rdr --help")
+		return false
+	}
+	return true
+}
+
+func lifecycleCommand(ctx context.Context, store *state.Store, services []string, opts options, e *envelope) {
+	if opts.all && (opts.project != "" || opts.worktree != "" || len(services) != 0) {
+		e.fail("USAGE", "down --all cannot be combined with --project, --worktree, or service selectors")
 		return
 	}
-	var err error
-	runnerInstance := runner.New(store, executablePath())
-	if e.Command == "logs" {
-		var logOut io.Writer = stdout
-		captured := &cappedWriter{limit: 1 << 20}
-		if opts.json {
-			logOut = captured
-		}
-		err = runnerInstance.Logs(ctx, d, w, service, opts.tail, opts.follow, logOut)
+	if opts.all {
+		selections, revision, err := allDownSelections(store)
 		if err != nil {
 			failError(e, err)
 			return
 		}
-		if opts.json {
-			e.Results = append(e.Results, map[string]any{"service": service, "logs": captured.String(), "logs_truncated": captured.truncated})
+		if len(selections) == 0 {
+			if opts.dryRun {
+				e.Plan = runner.GraphPlan{Action: "down", Revision: revision, Instances: []runner.PlannedInstance{}}
+			} else {
+				e.Results = append(e.Results, map[string]any{"status": "unchanged"})
+			}
+			return
 		}
+		if opts.dryRun {
+			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
+			return
+		}
+		runGraph(ctx, store, "down", selections, opts.cascade, e)
 		return
 	}
-	action := e.Command
-	if opts.dryRun {
-		if action != "restart" {
-			plan, er := runnerInstance.PlanGraph(ctx, action, []runner.Selection{{Project: d, Worktree: w, Service: service}}, false)
-			if er != nil {
-				failError(e, er)
+	if e.Command == "down" && len(services) == 0 {
+		selections, revision, err := currentDownSelections(store, opts, e)
+		if err != nil || len(e.Errors) != 0 {
+			if err != nil {
+				failError(e, err)
+			}
+			return
+		}
+		if len(selections) == 0 {
+			if opts.dryRun {
+				e.Plan = runner.GraphPlan{Action: "down", Revision: revision, Instances: []runner.PlannedInstance{}}
+			} else {
+				e.Results = append(e.Results, map[string]any{"status": "unchanged"})
+			}
+			return
+		}
+		if opts.dryRun {
+			setGraphPlan(ctx, store, "down", selections, opts.cascade, revision, e)
+			return
+		}
+		runGraph(ctx, store, "down", selections, opts.cascade, e)
+		return
+	}
+
+	if len(services) == 0 {
+		e.fail("USAGE", "at least one service is required")
+		return
+	}
+	seen := make(map[string]bool, len(services))
+	for _, service := range services {
+		if seen[service] {
+			e.fail("USAGE", "duplicate service selector: "+service)
+			return
+		}
+		seen[service] = true
+	}
+	requireConfig := e.Command != "down"
+	d, w := resolveCommandSelection(store, opts, requireConfig, e)
+	if d == nil {
+		return
+	}
+	reg, err := store.Read()
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	p, err := reg.Project(d.ID)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	selections := make([]runner.Selection, 0, len(services))
+	for _, service := range services {
+		if requireConfig {
+			if _, ok := w.Config.Services[service]; !ok {
+				e.fail("NOT_FOUND", "service not found: "+service)
 				return
 			}
-			e.Plan = plan
+		} else if _, ok := p.Instances[d.ID+"/"+w.ID+"/"+service]; !ok {
+			e.fail("NOT_FOUND", "registered service instance not found: "+service)
 			return
 		}
-		plan, er := runnerInstance.Plan(ctx, action, d, w, service)
-		if er != nil {
-			failError(e, er)
-			return
-		}
-		e.Plan = plan
+		selections = append(selections, runner.Selection{Project: d, Worktree: w, Service: service})
+	}
+	if opts.dryRun {
+		setGraphPlan(ctx, store, e.Command, selections, opts.cascade, reg.Revision, e)
 		return
 	}
-	var result runner.Result
+	runGraph(ctx, store, e.Command, selections, opts.cascade, e)
+}
+
+func setGraphPlan(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, revision uint64, e *envelope) {
+	if len(selections) == 0 {
+		e.Plan = runner.GraphPlan{Action: action, Revision: revision, Instances: []runner.PlannedInstance{}}
+		return
+	}
+	plan, err := runner.New(store, executablePath()).PlanGraph(ctx, action, selections, cascade)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	e.Plan = plan
+}
+
+func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, e *envelope) {
+	r := runner.New(store, executablePath())
+	var result runner.GraphResult
+	var err error
 	switch action {
 	case "up":
-		result, err = runnerInstance.Up(ctx, d, w, service)
+		result, err = r.UpGraph(ctx, selections)
 	case "down":
-		result, err = runnerInstance.Stop(ctx, d, w, service)
+		result, err = r.DownGraph(ctx, selections, cascade)
 	case "restart":
-		result, err = runnerInstance.Restart(ctx, d, w, service)
+		result, err = r.RestartGraph(ctx, selections)
+	default:
+		e.fail("USAGE", "unsupported graph action: "+action)
+		return
+	}
+	for _, item := range result.Results {
+		if action == "up" {
+			e.Results = append(e.Results, graphInstanceInfo(store, item, e))
+		} else {
+			e.Results = append(e.Results, item)
+		}
+	}
+	for _, failure := range result.Errors {
+		e.Errors = append(e.Errors, commandError{Code: failure.Code, Message: failure.Message, InstanceID: failure.InstanceID, Actions: []string{}})
 	}
 	if err != nil {
-		var runErr *runner.Error
-		if errors.Is(err, context.Canceled) {
-			e.fail("CANCELLED", err.Error())
-		} else if errors.As(err, &runErr) {
-			e.fail(runErr.Code, err.Error())
-		} else {
-			failError(e, err)
-		}
-		if result.InstanceID != "" {
-			fields := map[string]any{"instance_id": result.InstanceID, "state": result.State, "run_id": result.RunID, "status": result.Status, "urls": result.URLs, "log_paths": result.LogPaths}
-			if instance := instanceByID(store, d.ID, result.InstanceID); instance.Preparation != nil {
-				fields["preparation"] = preparationView(store, instance)
-			}
-			e.Results = append(e.Results, fields)
-			return
-		}
-		id := d.ID + "/" + w.ID + "/" + service
-		stateName := ""
-		if reg, readErr := store.Read(); readErr == nil {
-			if saved, projectErr := reg.Project(d.ID); projectErr == nil {
-				if instance, ok := saved.Instances[id]; ok {
-					if observed, inspectErr := store.Inspect(instance); inspectErr == nil {
-						stateName = observed
-						if stateName == "stale" {
-							stateName = "failed"
-						}
-					}
+		code := graphFailureCode(ctx, err)
+		appendError := len(result.Errors) == 0
+		if code == "CANCELLED" {
+			appendError = true
+			for _, existing := range e.Errors {
+				if existing.Code == "CANCELLED" {
+					appendError = false
+					break
 				}
 			}
 		}
-		if stateName == "" {
-			e.Results = append(e.Results, map[string]any{"instance_id": id, "status": "failed", "state_unknown": true, "preparation": preparationView(store, instanceByID(store, d.ID, id))})
-		} else {
-			e.Results = append(e.Results, map[string]any{"instance_id": id, "state": stateName, "status": "failed", "preparation": preparationView(store, instanceByID(store, d.ID, id))})
+		if appendError {
+			e.Errors = append(e.Errors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
 		}
+	}
+	switch result.Status {
+	case "partial":
+		e.Status = "partial"
+	case "error":
+		e.Status = "error"
+	default:
+		e.Status = "ok"
+		if len(e.Errors) > 0 {
+			succeeded := false
+			for _, raw := range e.Results {
+				if item, ok := raw.(map[string]any); ok && (item["status"] == "completed" || item["status"] == "unchanged") {
+					succeeded = true
+					break
+				}
+				if item, ok := raw.(runner.Result); ok && (item.Status == "completed" || item.Status == "unchanged") {
+					succeeded = true
+					break
+				}
+			}
+			if succeeded {
+				e.Status = "partial"
+			} else {
+				e.Status = "error"
+			}
+		}
+	}
+}
+
+func graphFailureCode(ctx context.Context, err error) string {
+	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		return "CANCELLED"
+	}
+	var runErr *runner.Error
+	if errors.As(err, &runErr) {
+		return runErr.Code
+	}
+	return "PROCESS_FAILED"
+}
+
+func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) map[string]any {
+	fields := map[string]any{
+		"instance_id": result.InstanceID,
+		"status":      result.Status,
+		"run_id":      result.RunID,
+		"urls":        result.URLs,
+		"log_paths":   result.LogPaths,
+	}
+	if result.StateUnknown || result.State == "" {
+		fields["state_unknown"] = true
+	} else {
+		fields["state"] = result.State
+	}
+	if result.InstanceID == "" || result.StateUnknown {
+		return fields
+	}
+	parts := strings.Split(result.InstanceID, "/")
+	if len(parts) != 3 {
+		addGraphInstanceError(e, result.InstanceID, "STATE_CORRUPT", "runner returned an invalid instance ID")
+		return fields
+	}
+	reg, err := store.Read()
+	if err != nil {
+		addGraphInstanceError(e, result.InstanceID, "IO_ERROR", "cannot read status after up: "+err.Error())
+		return fields
+	}
+	project, err := reg.Project(parts[0])
+	if err != nil {
+		addGraphInstanceError(e, result.InstanceID, "NOT_FOUND", "project disappeared after up: "+parts[0])
+		return fields
+	}
+	instance, ok := project.Instances[result.InstanceID]
+	if !ok {
+		addGraphInstanceError(e, result.InstanceID, "NOT_FOUND", "instance metadata disappeared after up")
+		return fields
+	}
+	instance.State = result.State
+	if result.RunID != "" {
+		instance.RunID = result.RunID
+	}
+	worktree, ok := findWorktree(project, instance.WorktreeID)
+	if !ok {
+		addGraphInstanceError(e, result.InstanceID, "NOT_FOUND", "worktree metadata disappeared after up")
+		return fields
+	}
+	cfg, err := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+	if err != nil {
+		fields["config_error"] = err.Error()
+		return fields
+	}
+	service, ok := cfg.Services[instance.Service]
+	if !ok {
+		fields["config_error"] = "service is absent from current dev.toml"
+		return fields
+	}
+	changed, restartRequired := configDrift(store, instance, cfg.Digest, e)
+	info := instanceInfo{ID: instance.ID, ProjectID: project.ID, WorktreeID: worktree.ID, Service: instance.Service, State: result.State, StateUnknown: result.StateUnknown, RunID: instance.RunID, ConfigChanged: changed, RestartRequired: restartRequired}
+	addDependencyDetails(store, project, worktree, &service, instance, true, &info, e)
+	fields["config_changed"] = info.ConfigChanged
+	fields["restart_required"] = info.RestartRequired
+	if len(info.DesiredBindings) > 0 {
+		fields["desired_bindings"] = info.DesiredBindings
+	}
+	if len(info.EffectiveBindings) > 0 {
+		fields["effective_bindings"] = info.EffectiveBindings
+	}
+	if info.DependencyError != "" {
+		fields["dependency_error"] = info.DependencyError
+	}
+	return fields
+}
+
+func addGraphInstanceError(e *envelope, instanceID, code, message string) {
+	e.fail(code, message)
+	e.Errors[len(e.Errors)-1].InstanceID = instanceID
+}
+
+func currentDownSelections(store *state.Store, opts options, e *envelope) ([]runner.Selection, uint64, error) {
+	d, w := resolveCommandSelection(store, opts, false, e)
+	if d == nil {
+		return nil, 0, nil
+	}
+	reg, err := store.Read()
+	if err != nil {
+		return nil, 0, err
+	}
+	p, err := reg.Project(d.ID)
+	if err != nil {
+		return nil, 0, err
+	}
+	selections := make([]runner.Selection, 0)
+	for _, id := range sortedKeys(p.Instances) {
+		i := p.Instances[id]
+		if i.WorktreeID == w.ID {
+			if id != d.ID+"/"+i.WorktreeID+"/"+i.Service || i.Service == "" {
+				return nil, 0, fmt.Errorf("registered instance metadata mismatch: %s", id)
+			}
+			selections = append(selections, runner.Selection{Project: d, Worktree: w, Service: i.Service})
+		}
+	}
+	return selections, reg.Revision, nil
+}
+
+func allDownSelections(store *state.Store) ([]runner.Selection, uint64, error) {
+	reg, err := store.Read()
+	if err != nil {
+		return nil, 0, err
+	}
+	selections := make([]runner.Selection, 0)
+	for _, projectID := range sortedKeys(reg.Projects) {
+		p, err := reg.Project(projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		d := descriptor(p)
+		for _, id := range sortedKeys(p.Instances) {
+			i := p.Instances[id]
+			if id != p.ID+"/"+i.WorktreeID+"/"+i.Service || i.Service == "" {
+				return nil, 0, fmt.Errorf("registered instance metadata mismatch: %s", id)
+			}
+			w, ok := findWorktree(p, i.WorktreeID)
+			if !ok || i.Service == "" {
+				return nil, 0, fmt.Errorf("registered instance %s has incomplete worktree metadata", id)
+			}
+			selections = append(selections, runner.Selection{Project: d, Worktree: &discovery.Worktree{ID: w.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached}, Service: i.Service})
+		}
+	}
+	return selections, reg.Revision, nil
+}
+
+func logsCommand(ctx context.Context, store *state.Store, service string, opts options, e *envelope, stdout io.Writer) {
+	d, w := resolveCommandSelection(store, opts, false, e)
+	if d == nil {
 		return
 	}
-	if action == "up" {
-		changed, restartRequired := false, false
-		if result.State == "running" || result.State == "ready" || result.State == "unhealthy" {
-			instance := state.Instance{ID: result.InstanceID, RunID: result.RunID, State: result.State}
-			changed, restartRequired = configDrift(store, instance, w.Config.Digest, e)
-		}
-		e.Results = append(e.Results, map[string]any{"instance_id": result.InstanceID, "state": result.State, "run_id": result.RunID, "status": result.Status, "urls": result.URLs, "log_paths": result.LogPaths, "config_changed": changed, "restart_required": restartRequired})
-	} else {
-		e.Results = append(e.Results, result)
+	var logOut io.Writer = stdout
+	captured := &cappedWriter{limit: 1 << 20}
+	if opts.json {
+		logOut = captured
+	}
+	err := runner.New(store, executablePath()).Logs(ctx, d, w, service, opts.tail, opts.follow, logOut)
+	if err != nil {
+		failError(e, err)
+		return
+	}
+	if opts.json {
+		e.Results = append(e.Results, map[string]any{"service": service, "logs": captured.String(), "logs_truncated": captured.truncated})
 	}
 }
 
@@ -458,6 +728,14 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 		failError(e, stateErr)
 		return
 	}
+	viewProject := state.Project{ID: p.ID, Name: p.Name, Root: p.Root, GitCommonDir: p.GitCommonDir}
+	for _, wt := range p.Worktrees {
+		viewProject.Worktrees = append(viewProject.Worktrees, state.Worktree{ID: wt.ID, Root: wt.Root, Branch: wt.Branch, Detached: wt.Detached})
+	}
+	registered := stateErr == nil
+	if registered {
+		viewProject = saved
+	}
 	for _, w := range worktrees {
 		if e.Command == "worktrees" {
 			info := worktreeInfo{ID: w.ID, ProjectID: p.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached, ConfigValid: w.Config != nil}
@@ -477,8 +755,11 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 		}
 		for _, name := range sortedKeys(w.Config.Services) {
 			id := p.ID + "/" + w.ID + "/" + name
-			info := instanceInfo{ID: id, ProjectID: p.ID, WorktreeID: w.ID, Service: name, State: "stopped", Protocol: w.Config.Services[name].Protocol}
-			if instance, ok := saved.Instances[id]; ok {
+			service := w.Config.Services[name]
+			info := instanceInfo{ID: id, ProjectID: p.ID, WorktreeID: w.ID, Service: name, State: "stopped", Protocol: service.Protocol}
+			instance := state.Instance{ID: id, Service: name, WorktreeID: w.ID}
+			if savedInstance, ok := saved.Instances[id]; ok {
+				instance = savedInstance
 				info.State, info.RunID = instance.State, instance.RunID
 				info.State, info.StateUnknown = inspectState(store, instance, e)
 				instance.State = info.State
@@ -486,6 +767,7 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 				info.Preparation = preparationView(store, instance)
 				addRunDetails(store, instance, &info)
 			}
+			addDependencyDetails(store, viewProject, state.Worktree{ID: w.ID, Root: w.Root}, &service, instance, registered, &info, e)
 			e.Results = append(e.Results, info)
 		}
 	}
@@ -542,18 +824,22 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 				cfg, configErr := config.Load(filepath.Join(worktree.Root, "dev.toml"))
 				if configErr != nil {
 					info.ConfigError = configErr.Error()
+					addDependencyDetails(store, p, worktree, nil, i, true, &info, e)
 				} else {
 					service, exists := cfg.Services[i.Service]
 					if exists {
 						info.Protocol = service.Protocol
 						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
+						addDependencyDetails(store, p, worktree, &service, i, true, &info, e)
 					} else {
 						info.ConfigError = "service is absent from current dev.toml"
 						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
+						addDependencyDetails(store, p, worktree, nil, i, true, &info, e)
 					}
 				}
 			} else {
 				info.ConfigError = "registered worktree metadata is missing"
+				addDependencyDetails(store, p, state.Worktree{ID: i.WorktreeID}, nil, i, true, &info, e)
 			}
 			e.Results = append(e.Results, info)
 		}
@@ -621,6 +907,170 @@ func configDrift(store *state.Store, instance state.Instance, currentDigest stri
 	}
 	changed := manifest.Digest != currentDigest
 	return changed, changed
+}
+
+func addDependencyDetails(store *state.Store, project state.Project, worktree state.Worktree, service *config.Service, instance state.Instance, registered bool, info *instanceInfo, e *envelope) {
+	desired := copyBindings(instance.DesiredBindings)
+	effective := copyBindings(instance.EffectiveBindings)
+	live := !info.StateUnknown && (info.State == "starting" || info.State == "running" || info.State == "ready" || info.State == "unhealthy")
+	var manifest *state.Manifest
+	if live && instance.RunID != "" {
+		m, err := store.ReadManifest(instance.RunID)
+		if err != nil {
+			addDependencyError(info, e, manifestErrorCode(err), "cannot read active dependency bindings: "+err.Error())
+		} else if m.InstanceID != instance.ID {
+			addDependencyError(info, e, "STATE_CORRUPT", "active manifest instance does not match "+instance.ID)
+		} else {
+			manifest = &m
+			effective = copyBindings(m.EffectiveBindings)
+		}
+	}
+
+	dependencies := []string{}
+	if service != nil {
+		dependencies = append(dependencies, service.DependsOn...)
+	} else {
+		for dependency := range desired {
+			dependencies = append(dependencies, dependency)
+		}
+		for dependency := range effective {
+			if !contains(dependencies, dependency) {
+				dependencies = append(dependencies, dependency)
+			}
+		}
+	}
+	sort.Strings(dependencies)
+	seen := make(map[string]bool, len(dependencies))
+	for _, dependency := range dependencies {
+		seen[dependency] = true
+		defaultTarget := project.ID + "/" + worktree.ID + "/" + dependency
+		desiredTarget := desired[dependency]
+		if desiredTarget == "" {
+			desiredTarget = defaultTarget
+			desired[dependency] = desiredTarget
+		}
+		effectiveTarget := effective[dependency]
+		if effectiveTarget == "" && live {
+			effectiveTarget = defaultTarget
+			effective[dependency] = effectiveTarget
+		}
+		if live && manifest != nil && effectiveTarget != "" && effectiveTarget != desiredTarget {
+			info.RestartRequired = true
+		}
+		if targetErr := validateDependencyTarget(project, desiredTarget, dependency, registered); targetErr != nil {
+			addDependencyError(info, e, "BINDING_INVALID", targetErr.Error())
+		}
+		if effectiveTarget != "" {
+			_, targetInstance, targetErr := dependencyTarget(project, effectiveTarget, dependency, registered)
+			if targetErr != nil {
+				addDependencyError(info, e, "BINDING_INVALID", targetErr.Error())
+			} else if live && manifest != nil {
+				if targetInstance.RunID == "" {
+					addDependencyError(info, e, "OWNERSHIP_UNKNOWN", "effective dependency has no run manifest: "+effectiveTarget)
+				} else if targetManifest, err := store.ReadManifest(targetInstance.RunID); err != nil {
+					addDependencyError(info, e, manifestErrorCode(err), "cannot read effective dependency manifest: "+err.Error())
+				} else if targetManifest.InstanceID != effectiveTarget {
+					addDependencyError(info, e, "STATE_CORRUPT", "dependency manifest instance does not match "+effectiveTarget)
+				} else if dependencyAddressesChanged(dependency, manifest.StopContract.Env, targetManifest.Addresses) {
+					info.RestartRequired = true
+				}
+			}
+		}
+	}
+	for dependency := range desired {
+		if !seen[dependency] {
+			addDependencyError(info, e, "BINDING_INVALID", "saved binding names an undeclared dependency: "+dependency)
+		}
+	}
+	if len(desired) != 0 {
+		info.DesiredBindings = desired
+	}
+	if len(effective) != 0 {
+		info.EffectiveBindings = effective
+	}
+}
+
+func copyBindings(bindings map[string]string) map[string]string {
+	copy := make(map[string]string, len(bindings))
+	for key, value := range bindings {
+		copy[key] = value
+	}
+	return copy
+}
+
+func manifestErrorCode(err error) string {
+	if errors.Is(err, state.ErrCorrupt) {
+		return "STATE_CORRUPT"
+	}
+	return "OWNERSHIP_UNKNOWN"
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func validateDependencyTarget(project state.Project, targetID, dependency string, registered bool) error {
+	_, _, err := dependencyTarget(project, targetID, dependency, registered)
+	return err
+}
+
+func dependencyTarget(project state.Project, targetID, dependency string, registered bool) (state.Worktree, state.Instance, error) {
+	parts := strings.Split(targetID, "/")
+	if len(parts) != 3 || parts[0] != project.ID || parts[2] != dependency {
+		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s has invalid target %s", dependency, targetID)
+	}
+	worktree, ok := findWorktree(project, parts[1])
+	if !ok || worktree.Root == "" {
+		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target worktree is missing: %s", dependency, targetID)
+	}
+	cfg, err := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+	if err != nil {
+		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target config is invalid: %s", dependency, targetID)
+	}
+	if _, ok := cfg.Services[dependency]; !ok {
+		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target service is missing: %s", dependency, targetID)
+	}
+	instanceID := targetID
+	instance, ok := project.Instances[instanceID]
+	if registered && !ok {
+		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target instance is missing: %s", dependency, targetID)
+	}
+	return worktree, instance, nil
+}
+
+func dependencyAddressesChanged(dependency string, previous, current map[string]string) bool {
+	normalized := strings.ToUpper(strings.ReplaceAll(dependency, "-", "_"))
+	prefix := "RDR_DEP_" + normalized + "_"
+	for _, field := range []string{"HOST", "PORT", "DIRECT_URL", "URL"} {
+		old, exists := previous[prefix+field]
+		if !exists {
+			continue
+		}
+		if current[strings.ToLower(field)] != old {
+			return true
+		}
+	}
+	return false
+}
+
+func addDependencyError(info *instanceInfo, e *envelope, code, message string) {
+	if info.DependencyError == "" {
+		info.DependencyError = message
+	} else if !strings.Contains(info.DependencyError, message) {
+		info.DependencyError += "; " + message
+	}
+	for _, existing := range e.Errors {
+		if existing.InstanceID == info.ID && existing.Message == message {
+			return
+		}
+	}
+	e.fail(code, message)
+	e.Errors[len(e.Errors)-1].InstanceID = info.ID
 }
 
 func inspectState(store *state.Store, instance state.Instance, e *envelope) (string, bool) {

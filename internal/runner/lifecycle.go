@@ -21,139 +21,34 @@ import (
 )
 
 func (r *Runner) Up(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string) (Result, error) {
-	return r.start(ctx, p, w, service, false)
-}
-func (r *Runner) Restart(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string) (Result, error) {
-	return r.start(ctx, p, w, service, true)
-}
-func (r *Runner) Stop(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string) (Result, error) {
-	plan, err := r.Plan(ctx, "down", p, w, service)
-	if err != nil {
-		return Result{}, err
-	}
-	lock, err := r.Store.LockInstances(plan.InstanceID)
-	if err != nil {
-		return Result{}, err
-	}
-	defer lock.Close()
-	if err = r.recoverPreparation(ctx, p.ID, plan.InstanceID); err != nil {
-		return Result{}, err
-	}
-	plan, err = r.Plan(ctx, "down", p, w, service)
-	if err != nil {
-		return Result{}, err
-	}
-	if plan.RunID == "" {
-		result := Result{InstanceID: plan.InstanceID, State: "stopped", Status: "unchanged"}
-		if err := r.pruneRuns(plan.InstanceID); err != nil {
-			return result, &Error{"IO_ERROR", err}
-		}
-		return result, nil
-	}
-	if err = r.stopLocked(ctx, p.ID, plan.InstanceID, plan.RunID); err != nil {
-		return Result{}, err
-	}
-	result := Result{InstanceID: plan.InstanceID, State: "stopped", RunID: plan.RunID, Status: "completed"}
-	if err := r.pruneRuns(plan.InstanceID); err != nil {
-		return result, &Error{"IO_ERROR", err}
-	}
-	return result, nil
-}
-
-func (r *Runner) start(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string, restart bool) (result Result, retErr error) {
-	action := "up"
-	if restart {
-		action = "restart"
-	}
-	plan, err := r.Plan(ctx, action, p, w, service)
-	if err != nil {
-		return Result{}, err
-	}
-	lock, err := r.Store.LockInstances(plan.InstanceID)
-	if err != nil {
-		return Result{}, err
-	}
-	defer lock.Close()
-	if err = r.recoverPreparation(ctx, p.ID, plan.InstanceID); err != nil {
-		return Result{}, err
-	}
-	plan, err = r.Plan(ctx, action, p, w, service)
-	if err != nil {
-		return Result{}, err
-	}
-	if !restart && (plan.State == "running" || plan.State == "ready" || plan.State == "unhealthy") {
-		result, err := r.result(plan.InstanceID, plan.RunID, "unchanged")
-		if err != nil {
+	g, err := r.UpGraph(ctx, []Selection{{p, w, service}})
+	id, _ := selectionID(Selection{p, w, service})
+	for _, result := range g.Results {
+		if result.InstanceID == id {
 			return result, err
 		}
-		if err = r.pruneRuns(plan.InstanceID); err != nil {
-			return result, &Error{"IO_ERROR", err}
+	}
+	return Result{}, err
+}
+func (r *Runner) Restart(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string) (Result, error) {
+	g, err := r.RestartGraph(ctx, []Selection{{p, w, service}})
+	id, _ := selectionID(Selection{p, w, service})
+	for _, result := range g.Results {
+		if result.InstanceID == id {
+			return result, err
 		}
-		return result, nil
 	}
-	fresh, err := discovery.Discover(w.Root)
-	if err != nil {
-		return Result{}, err
-	}
-	current, err := discovery.Resolve(fresh, w.ID)
-	if err != nil {
-		return Result{}, err
-	}
-	if fresh.ID != p.ID {
-		return Result{}, errors.New("project identity changed")
-	}
-	if current.Config.Digest != plan.Digest {
-		return Result{}, &Error{"STATE_CONFLICT", errors.New("configuration changed during planning")}
-	}
-	svc := current.Config.Services[service]
-	runID, err := randomID()
-	if err != nil {
-		return Result{}, err
-	}
-	operationID, err := randomID()
-	if err != nil {
-		return Result{}, err
-	}
-	port, err := r.reserve(p.ID, plan.InstanceID, runID, operationID, svc.Port)
-	if err != nil {
-		return Result{}, err
-	}
-	prepared := preparedRun{projectID: p.ID, plan: plan, runID: runID, reserved: true}
-	defer func() {
-		if retErr != nil && prepared.active {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			cleanupErr := r.stopLocked(cleanupCtx, p.ID, plan.InstanceID, runID)
-			retErr = errors.Join(retErr, cleanupErr)
-			if cleanupErr == nil {
-				prepared.active = false
-			}
+	return Result{}, err
+}
+func (r *Runner) Stop(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string) (Result, error) {
+	g, err := r.DownGraph(ctx, []Selection{{p, w, service}}, false)
+	id, _ := selectionID(Selection{p, w, service})
+	for _, result := range g.Results {
+		if result.InstanceID == id {
+			return result, err
 		}
-		if prepared.reserved && !prepared.active {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			cleanupErr := r.recoverPreparation(cleanupCtx, p.ID, plan.InstanceID)
-			retErr = errors.Join(retErr, cleanupErr)
-			if cleanupErr == nil {
-				if err := r.pruneRuns(plan.InstanceID); err != nil {
-					retErr = errors.Join(retErr, &Error{"IO_ERROR", err})
-				}
-			}
-		}
-	}()
-	built, err := r.prepareLocked(ctx, p.ID, fresh, current, service, svc, plan, runID, operationID, port)
-	if err != nil {
-		return Result{}, err
 	}
-	prepared = built
-	result, err = r.activateLocked(ctx, &prepared)
-	if err != nil {
-		return result, err
-	}
-	if err = r.pruneRuns(plan.InstanceID); err != nil {
-		return result, &Error{"IO_ERROR", err}
-	}
-	return result, nil
+	return Result{}, err
 }
 
 type preparedRun struct {
@@ -167,7 +62,7 @@ type preparedRun struct {
 }
 
 // prepareLocked requires the instance lock and an existing preparation reservation.
-func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *discovery.Project, current *discovery.Worktree, service string, svc config.Service, plan Plan, runID, operationID string, port int) (preparedRun, error) {
+func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *discovery.Project, current *discovery.Worktree, service string, svc config.Service, plan Plan, runID, operationID string, port int, dependencies map[string]map[string]string, bindings map[string]string) (preparedRun, error) {
 	runDir := filepath.Join(r.Store.Root, "runs", runID)
 	values := map[string]string{"host": "127.0.0.1", "run_dir": runDir, "worktree": current.Root, "project": fresh.Name, "service": service}
 	addresses := map[string]string{"host": "127.0.0.1"}
@@ -181,9 +76,24 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 		addresses["url"] = values["url"]
 		addresses["direct_url"] = values["url"]
 	}
+	for dep, addresses := range dependencies {
+		for k, v := range addresses {
+			if k != "tentative" {
+				values["dependencies."+dep+"."+k] = v
+			}
+		}
+	}
 	env, err := environment(svc, values)
 	if err != nil {
 		return preparedRun{}, err
+	}
+	for dep, addresses := range dependencies {
+		norm := strings.ToUpper(strings.ReplaceAll(dep, "-", "_"))
+		for k, v := range addresses {
+			if k != "tentative" {
+				env["RDR_DEP_"+norm+"_"+strings.ToUpper(k)] = v
+			}
+		}
 	}
 	command, subs, err := substitute(svc.Command, values, true)
 	if err != nil {
@@ -198,7 +108,7 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 	if err != nil {
 		return preparedRun{}, err
 	}
-	manifest := state.Manifest{RunID: runID, InstanceID: plan.InstanceID, OperationID: operationID, Digest: current.Config.Digest, Addresses: addresses, StopContract: state.StopContract{Cwd: cwd, Command: svc.Command, RunDir: runDir, Env: env}, Launch: state.LaunchContract{Command: command, Cwd: cwd, Env: launchEnv, Protocol: svc.Protocol, Port: port, StopTimeout: svc.StopTimeout}}
+	manifest := state.Manifest{RunID: runID, InstanceID: plan.InstanceID, OperationID: operationID, Digest: current.Config.Digest, Addresses: addresses, EffectiveBindings: bindings, StopContract: state.StopContract{Cwd: cwd, Command: svc.Command, RunDir: runDir, Env: env}, Launch: state.LaunchContract{Command: command, Cwd: cwd, Env: launchEnv, Protocol: svc.Protocol, Port: port, StopTimeout: svc.StopTimeout}}
 	if v, ok := svc.Health["http"].(string); ok {
 		manifest.Launch.HealthPath = v
 	}
@@ -291,6 +201,7 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 		}
 		instance.Preparation = nil
 		instance.RunID = runID
+		instance.EffectiveBindings = prepared.manifest.EffectiveBindings
 		instance.State = "starting"
 		instance.Intent = &state.Intent{OperationID: operationID, RunID: runID, Phase: "spawning"}
 		project.Instances[plan.InstanceID] = instance
@@ -360,7 +271,7 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 			return Result{}, readErr
 		}
 		if readErr == nil && record.State == "failed" {
-			return Result{}, errors.New("supervisor failed")
+			return Result{}, &Error{"PROCESS_FAILED", errors.New("supervisor failed")}
 		}
 		select {
 		case <-waitCtx.Done():
@@ -413,96 +324,6 @@ func mergeEnv(base, extra map[string]string) []string {
 	return out
 }
 
-func (r *Runner) reserve(projectID, id, runID, operationID string, requested any) (int, error) {
-	var assigned int
-	err := r.Store.Update(func(reg *state.Registry) error {
-		used := map[int]string{}
-		for key := range reg.Projects {
-			p, err := reg.Project(key)
-			if err != nil {
-				return err
-			}
-			for key, i := range p.Instances {
-				for _, port := range i.Reservations {
-					if previous, ok := used[port]; ok && previous != key {
-						return errors.New("conflicting reservations")
-					}
-					used[port] = key
-				}
-			}
-		}
-		if requested == nil {
-			project, err := reg.Project(projectID)
-			if err != nil {
-				return err
-			}
-			i, ok := project.Instances[id]
-			if !ok {
-				return os.ErrNotExist
-			}
-			if i.Preparation != nil {
-				return state.ErrBusy
-			}
-			i.Preparation = &state.Intent{RunID: runID, OperationID: operationID, Phase: "preparing"}
-			project.Instances[id] = i
-			return reg.SetProject(projectID, project)
-		}
-		start, end := 20000, 65535
-		if requested == "auto" {
-			project, err := reg.Project(projectID)
-			if err != nil {
-				return err
-			}
-			instance := project.Instances[id]
-			if previous := instance.Reservations[instance.RunID]; previous != 0 {
-				start, end = previous, previous
-			}
-		}
-		if p, ok := requested.(int64); ok {
-			start, end = int(p), int(p)
-		}
-		for p := start; p <= end; p++ {
-			if owner, ok := used[p]; ok {
-				if owner == id && start == end {
-					assigned = p
-					break
-				}
-				continue
-			}
-			l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
-			if err != nil {
-				continue
-			}
-			if err = l.Close(); err != nil {
-				return err
-			}
-			assigned = p
-			break
-		}
-		if assigned == 0 {
-			return &Error{"PORT_CONFLICT", errors.New("no available port")}
-		}
-		project, err := reg.Project(projectID)
-		if err != nil {
-			return err
-		}
-		i, ok := project.Instances[id]
-		if !ok {
-			return os.ErrNotExist
-		}
-		if i.Reservations == nil {
-			i.Reservations = map[string]int{}
-		}
-		if i.Preparation != nil {
-			return state.ErrBusy
-		}
-		i.Reservations[runID] = assigned
-		i.Preparation = &state.Intent{RunID: runID, OperationID: operationID, Phase: "preparing"}
-		project.Instances[id] = i
-		return reg.SetProject(projectID, project)
-	})
-	return assigned, err
-}
 func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) error {
 	var gate *state.Locks
 	for {

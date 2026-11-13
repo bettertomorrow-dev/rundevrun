@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
@@ -124,8 +127,8 @@ func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	if _, code = invoke(t, "up", "--dry-run", "--json"); code != 2 {
 		t.Fatalf("missing service exit=%d", code)
 	}
-	if _, code = invoke(t, "down", "--all", "--json"); code != 2 {
-		t.Fatalf("broad down exit=%d", code)
+	if e, code = invoke(t, "down", "--all", "--json"); code != 0 || len(e.Results) != 1 {
+		t.Fatalf("global down no-op: exit=%d result=%+v", code, e)
 	}
 }
 
@@ -404,5 +407,316 @@ func TestStatusIncludesAddressesAndLogPathsWithoutPrivateEnvironment(t *testing.
 	}
 	if bytes.Contains(encoded, []byte("DO_NOT_DISCLOSE")) || item["env"] != nil {
 		t.Fatal("status disclosed private environment")
+	}
+}
+
+func writeDependencyProject(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(`version = 1
+[project]
+name = "example"
+[services.api]
+command = "touch executed"
+protocol = "http"
+port = "auto"
+[services.worker]
+command = "touch executed"
+protocol = "process"
+depends_on = ["api"]
+env = { API_URL = "{dependencies.api.direct_url}" }
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGraphDryRunsSupportListsDefaultAndGlobalDown(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeDependencyProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	store := &state.Store{Root: runtime}
+	otherRoot := filepath.Join(base, "other-worktree")
+	writeDependencyProject(t, otherRoot)
+	if err := store.Update(func(reg *state.Registry) error {
+		for id := range reg.Projects {
+			p, err := reg.Project(id)
+			if err != nil {
+				return err
+			}
+			other := state.Worktree{ID: "w_other", Root: otherRoot}
+			p.Worktrees = append(p.Worktrees, other)
+			for _, service := range []string{"api", "worker"} {
+				id := p.ID + "/" + other.ID + "/" + service
+				p.Instances[id] = state.Instance{ID: id, Service: service, WorktreeID: other.ID, State: "stopped"}
+			}
+			if err := reg.SetProject(id, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		args  []string
+		count int
+	}{
+		{[]string{"up", "api", "worker", "--dry-run", "--json"}, 2},
+		{[]string{"restart", "api", "worker", "--dry-run", "--json"}, 2},
+		{[]string{"down", "api", "worker", "--cascade", "--dry-run", "--json"}, 2},
+		{[]string{"down", "--dry-run", "--json"}, 2},
+		{[]string{"down", "--all", "--dry-run", "--json"}, 4},
+	} {
+		e, code := invoke(t, tc.args...)
+		if code != 0 || e.Plan == nil {
+			t.Fatalf("%v: exit=%d result=%+v", tc.args, code, e)
+		}
+		encoded, err := json.Marshal(e.Plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan map[string]any
+		if err := json.Unmarshal(encoded, &plan); err != nil {
+			t.Fatal(err)
+		}
+		instances := plan["instances"].([]any)
+		if len(instances) != tc.count {
+			t.Fatalf("%v selected %d instances, want %d: %s", tc.args, len(instances), tc.count, encoded)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("dry-run changed registry: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtime, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created run directory: %v", err)
+	}
+}
+
+func TestGlobalDownRejectsMixedScopesWithoutWritingRegistry(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"down", "--all", "--project", "example", "--json"},
+		{"down", "--all", "--worktree", root, "--json"},
+		{"down", "worker", "--all", "--json"},
+		{"up", "worker", "--cascade", "--dry-run", "--json"},
+	} {
+		e, code := invoke(t, args...)
+		if code != 2 || len(e.Errors) != 1 || e.Errors[0].Code != "USAGE" {
+			t.Fatalf("%v: exit=%d result=%+v", args, code, e)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("rejected scope changed registry: %v", err)
+	}
+}
+
+func TestStatusShowsExactDesiredAndEffectiveBindings(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	otherRoot := filepath.Join(base, "other-worktree")
+	t.Setenv("RDR_HOME", runtime)
+	writeDependencyProject(t, root)
+	writeDependencyProject(t, otherRoot)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	store := &state.Store{Root: runtime}
+	reg, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var initial state.Project
+	for id := range reg.Projects {
+		initial, err = reg.Project(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	defaultAPIID := initial.ID + "/" + initial.Worktrees[0].ID + "/api"
+	services, code := invoke(t, "services", "--project", "example", "--worktree", root, "--json")
+	if code != 0 {
+		t.Fatalf("services: exit=%d result=%+v", code, services)
+	}
+	for _, raw := range services.Results {
+		item := raw.(map[string]any)
+		if item["service"] == "worker" && item["desired_bindings"].(map[string]any)["api"] != defaultAPIID {
+			t.Fatalf("default binding did not use current worktree: %#v", item)
+		}
+	}
+	var workerID, localAPIID, otherAPIID string
+	if err := store.Update(func(reg *state.Registry) error {
+		for id := range reg.Projects {
+			p, err := reg.Project(id)
+			if err != nil {
+				return err
+			}
+			current := p.Worktrees[0]
+			other := state.Worktree{ID: "w_other", Root: otherRoot}
+			p.Worktrees = append(p.Worktrees, other)
+			workerID = p.ID + "/" + current.ID + "/worker"
+			localAPIID = p.ID + "/" + current.ID + "/api"
+			otherAPIID = p.ID + "/" + other.ID + "/api"
+			worker := p.Instances[workerID]
+			worker.DesiredBindings = map[string]string{"api": otherAPIID}
+			worker.EffectiveBindings = map[string]string{"api": localAPIID}
+			p.Instances[workerID] = worker
+			p.Instances[otherAPIID] = state.Instance{ID: otherAPIID, Service: "api", WorktreeID: other.ID, State: "stopped"}
+			return reg.SetProject(id, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "status", "--json")
+	if code != 0 || len(e.Results) != 3 {
+		t.Fatalf("status: exit=%d result=%+v", code, e)
+	}
+	for _, raw := range e.Results {
+		item := raw.(map[string]any)
+		if item["instance_id"] != workerID {
+			continue
+		}
+		if item["desired_bindings"].(map[string]any)["api"] != otherAPIID || item["effective_bindings"].(map[string]any)["api"] != localAPIID {
+			t.Fatalf("status did not expose exact binding IDs: %#v", item)
+		}
+		return
+	}
+	t.Fatalf("worker result missing: %+v", e)
+}
+
+func TestDependencyBindingAndAddressDriftDoNotExposeEnvironment(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	otherRoot := filepath.Join(base, "other-worktree")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeDependencyProject(t, root)
+	writeDependencyProject(t, otherRoot)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	store := &state.Store{Root: runtime}
+	reg, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var project state.Project
+	for id := range reg.Projects {
+		project, err = reg.Project(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	current := project.Worktrees[0]
+	other := state.Worktree{ID: "w_other", Root: otherRoot}
+	project.Worktrees = append(project.Worktrees, other)
+	workerID := project.ID + "/" + current.ID + "/worker"
+	localAPIID := project.ID + "/" + current.ID + "/api"
+	otherAPIID := project.ID + "/" + other.ID + "/api"
+	worker := project.Instances[workerID]
+	worker.RunID = "worker-run"
+	worker.DesiredBindings = map[string]string{"api": otherAPIID}
+	worker.EffectiveBindings = map[string]string{"api": localAPIID}
+	localAPI := project.Instances[localAPIID]
+	localAPI.RunID = "api-run"
+	project.Instances[localAPIID] = localAPI
+	project.Instances[workerID] = worker
+	project.Instances[otherAPIID] = state.Instance{ID: otherAPIID, Service: "api", WorktreeID: other.ID, State: "stopped"}
+	if err := store.Update(func(reg *state.Registry) error { return reg.SetProject(project.ID, project) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteManifest("worker-run", state.Manifest{RunID: "worker-run", InstanceID: workerID, EffectiveBindings: map[string]string{"api": localAPIID}, StopContract: state.StopContract{Env: map[string]string{"TOKEN": "PRIVATE_DEPENDENCY_SECRET", "RDR_DEP_API_DIRECT_URL": "http://127.0.0.1:20000", "RDR_DEP_API_PORT": "20000"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	service := config.Service{DependsOn: []string{"api"}}
+	for _, tc := range []struct {
+		name        string
+		runID       string
+		desired     string
+		address     map[string]string
+		wantRestart bool
+		wantDepErr  bool
+	}{
+		{name: "pending desired bind", runID: "api-run-1", desired: otherAPIID, address: map[string]string{"port": "20000", "direct_url": "http://127.0.0.1:20000", "url": "http://127.0.0.1:20000", "host": "127.0.0.1"}, wantRestart: true},
+		{name: "effective dependency address changed", runID: "api-run-2", desired: localAPIID, address: map[string]string{"port": "32000", "direct_url": "http://127.0.0.1:32000", "url": "http://127.0.0.1:32000", "host": "127.0.0.1"}, wantRestart: true},
+		{name: "invalid pending target remains separate", runID: "api-run-3", desired: project.ID + "/w_missing/api", address: map[string]string{"port": "20000", "direct_url": "http://127.0.0.1:20000", "url": "http://127.0.0.1:20000", "host": "127.0.0.1"}, wantRestart: true, wantDepErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			worker.DesiredBindings = map[string]string{"api": tc.desired}
+			localAPI.RunID = tc.runID
+			project.Instances[localAPIID] = localAPI
+			if err := store.Update(func(reg *state.Registry) error { return reg.SetProject(project.ID, project) }); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.WriteManifest(tc.runID, state.Manifest{RunID: tc.runID, InstanceID: localAPIID, Addresses: tc.address}); err != nil {
+				t.Fatal(err)
+			}
+			info := instanceInfo{ID: workerID, State: "running"}
+			result := &envelope{Results: []any{}, Errors: []commandError{}}
+			addDependencyDetails(store, project, current, &service, worker, true, &info, result)
+			if !info.RestartRequired || info.RestartRequired != tc.wantRestart {
+				t.Fatalf("restart_required=%t, want %t", info.RestartRequired, tc.wantRestart)
+			}
+			if info.DesiredBindings["api"] != tc.desired || info.EffectiveBindings["api"] != localAPIID {
+				t.Fatalf("wrong binding IDs: desired=%v effective=%v", info.DesiredBindings, info.EffectiveBindings)
+			}
+			if (info.DependencyError != "") != tc.wantDepErr || (len(result.Errors) != 0) != tc.wantDepErr || info.State != "running" {
+				t.Fatalf("dependency error overwrote state or was missing: info=%+v errors=%+v", info, result.Errors)
+			}
+			encoded, err := json.Marshal(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(encoded, []byte("PRIVATE_DEPENDENCY_SECRET")) || bytes.Contains(encoded, []byte("20000")) {
+				t.Fatalf("dependency environment escaped into status: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestGraphAdapterKeepsTypedReadinessTimeout(t *testing.T) {
+	err := &runner.Error{Code: "READINESS_TIMEOUT", Err: context.DeadlineExceeded}
+	if code := graphFailureCode(context.Background(), err); code != "READINESS_TIMEOUT" {
+		t.Fatalf("failure code = %q, want READINESS_TIMEOUT", code)
+	}
+	e := result("up", options{json: true})
+	e.fail(graphFailureCode(context.Background(), err), err.Error())
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, true); code != 4 {
+		t.Fatalf("typed timeout exit = %d, want 4", code)
+	}
+	if code := graphFailureCode(context.Background(), errors.New("process failed")); code != "PROCESS_FAILED" {
+		t.Fatalf("untyped failure code = %q, want PROCESS_FAILED", code)
 	}
 }

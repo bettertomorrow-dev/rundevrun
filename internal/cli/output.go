@@ -61,6 +61,11 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 			fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
 		}
 	}
+	for _, err := range e.Errors {
+		if err.Code == "CANCELLED" {
+			return 130
+		}
+	}
 	if e.Status == "partial" {
 		return 5
 	}

@@ -53,3 +53,16 @@ func TestLogOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestCancellationExitCodeWinsOverPartialAndEarlierErrors(t *testing.T) {
+	e := result("down", options{json: true})
+	e.Status = "error"
+	e.Errors = append(e.Errors,
+		commandError{Code: "IO_ERROR", Message: "cleanup failed", Actions: []string{}},
+		commandError{Code: "CANCELLED", Message: "context canceled", Actions: []string{}},
+	)
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, true); code != 130 {
+		t.Fatalf("exit = %d, want cancellation code 130", code)
+	}
+}

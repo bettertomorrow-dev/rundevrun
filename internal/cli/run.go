@@ -18,9 +18,10 @@ Discovery and registration:
   rdr worktrees           List existing worktrees; never change Git state.
   rdr services            List configured services, including stopped instances.
   rdr config check        Validate configuration without running project code.
-  rdr up <service>        Build and start one service.
-  rdr down <service>      Stop one service.
-  rdr restart <service>   Restart one service.
+  rdr up <service...>     Build and start services and their dependencies.
+  rdr down [service...]   Stop services; without names, select this worktree.
+  rdr down --all          Select services across all registered projects.
+  rdr restart <service...> Restart selected services; start missing dependencies.
   rdr bind <service> <dependency> --to-worktree ID|PATH|NAME
                           Set a desired dependency binding; live services need restart.
   rdr logs <service>      Show recent application output.
@@ -33,6 +34,8 @@ Options may appear before or after the command:
   --to-worktree ID|PATH|NAME Select the dependency worktree for bind.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
+  --cascade               Include live consumers in a down plan.
+  --all                   Global down scope; cannot combine with selectors.
   --tail N                Show the last N log lines, default 100, maximum 10000.
   --follow                Follow application logs; cannot combine with --json.
   --help, -h              Show this help.
@@ -46,8 +49,8 @@ Examples:
   rdr logs api --tail 50
   rdr down api --json
 
-Lifecycle currently accepts one service and rejects dependencies and hooks.
-Proxy, sharing and graph operations remain in progress.
+Graph dry-runs support service lists, default down, and global down. Graph
+execution and hooks remain in progress. Proxy and sharing are not implemented.
 Runtime state: RDR_HOME, else XDG_STATE_HOME/rundevrun,
 else ~/.local/state/rundevrun. Registration runs no project commands.`
 
