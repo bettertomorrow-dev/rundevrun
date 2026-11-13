@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,7 +34,7 @@ func TestPublicationFrontendChild(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = (&Manager{Store: &state.Store{Root: stateRoot}, Executable: binary}).Share(context.Background(), runner.Selection{Project: p, Worktree: &p.Worktrees[0], Service: "api"}, Options{Mode: "live"})
+	_, e = (&Manager{Store: &state.Store{Root: stateRoot}, Executable: binary}).Share(context.Background(), runner.Selection{Project: p, Worktree: &p.Worktrees[0], Service: "api"}, Options{Mode: os.Getenv("FAKE_FRONTEND_MODE")})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -66,7 +68,7 @@ exec sleep 60
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
-	cfg := "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n"
+	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n")
 	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -189,5 +191,141 @@ exec sleep 60
 	live, e := procid.Check(runtime.Tunnel)
 	if e != nil || live {
 		t.Fatalf("tunnel survived: %v %v", live, e)
+	}
+}
+
+func TestKilledFrontendDuringSnapshotBuild(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "rdr")
+	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v %s", err, out)
+	}
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\nprintf '%s\\n' 'https://example.trycloudflare.com' 'INF Registered tunnel connection'\nexec sleep 60\n"
+	if err := os.WriteFile(filepath.Join(bin, "cloudflared"), []byte(fake), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	t.Setenv("FAKE_FRONTEND_MODE", "snapshot")
+	root := filepath.Join(dir, "project")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "building")
+	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n[services.api.share]\nmode = 'snapshot'\nbuild = 'sleep 60 & echo $! > "+marker+"; wait'\ndir = 'dist'\n")
+	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := discovery.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &p.Worktrees[0]
+	id := p.ID + "/" + w.ID + "/api"
+	store, err := state.New(filepath.Join(dir, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Update(func(reg *state.Registry) error {
+		return reg.SetProject(p.ID, state.Project{ID: p.ID, Name: p.Name, Root: p.Root, Worktrees: []state.Worktree{{ID: w.ID, Root: w.Root}}, Instances: map[string]state.Instance{id: {ID: id, Service: "api", WorktreeID: w.ID, State: "stopped"}}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.New(store, binary)
+	m := &Manager{Store: store, Executable: binary}
+	sel := runner.Selection{Project: p, Worktree: w, Service: "api"}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err = r.Up(ctx, p, w, "api"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = m.Unshare(cleanup, sel)
+		_, _ = r.Stop(cleanup, p, w, "api")
+	}()
+	child := exec.Command(os.Args[0], "-test.run=^TestPublicationFrontendChild$", "--", root, store.Root, binary)
+	if err = child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if child.Process != nil {
+			_ = child.Process.Kill()
+			_, _ = child.Process.Wait()
+		}
+	}()
+	for n := 0; n < 500; n++ {
+		if _, err = os.Stat(marker); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal("build did not start")
+	}
+	pubs, err := store.ReadPublications()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var idPub string
+	var rt state.PublicationRuntime
+	for key, pub := range pubs.Publications {
+		if pub.Phase == "preparing" {
+			idPub = key
+			rt, err = store.ReadPublicationRuntime(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if idPub == "" || rt.Build.PID <= 0 {
+		t.Fatalf("missing durable build: %+v", rt)
+	}
+	childBytes, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(childBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buildChild, err := procid.Observe(childPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = child.Wait()
+	child.Process = nil
+	for n := 0; n < 500; n++ {
+		live, e := procid.Check(rt.Supervisor)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if !live {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err = m.Unshare(ctx, sel); err != nil {
+		t.Fatal(err)
+	}
+	live, err := procid.Check(rt.Build)
+	if err != nil || live {
+		t.Fatalf("build survived frontend death: %v %v", live, err)
+	}
+	childLive, err := procid.Check(buildChild)
+	if err != nil || childLive {
+		t.Fatalf("build descendant survived frontend death: %v %v", childLive, err)
+	}
+	all, err := m.List(ctx)
+	if err != nil || len(all) != 0 {
+		t.Fatalf("orphan publication: %+v %v", all, err)
 	}
 }

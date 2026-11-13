@@ -23,6 +23,7 @@ type Publication struct {
 	RootID      string            `json:"root_id"`
 	RootRunID   string            `json:"root_run_id"`
 	RoutedRuns  map[string]string `json:"routed_runs,omitempty"`
+	BuildRuns   map[string]string `json:"build_runs,omitempty"`
 	Mode        string            `json:"mode"`
 	Phase       string            `json:"phase"`
 	PreviousID  string            `json:"previous_id,omitempty"`
@@ -35,12 +36,16 @@ type Publication struct {
 
 // PublicationRuntime is exclusively written by the publication supervisor.
 type PublicationRuntime struct {
-	ID         string       `json:"id"`
-	State      string       `json:"state"`
-	URL        string       `json:"url,omitempty"`
-	Supervisor procid.Ref   `json:"supervisor"`
-	Tunnel     procid.Ref   `json:"tunnel"`
-	Members    []procid.Ref `json:"members,omitempty"`
+	ID           string       `json:"id"`
+	State        string       `json:"state"`
+	ErrorCode    string       `json:"error_code,omitempty"`
+	ErrorMessage string       `json:"error_message,omitempty"`
+	URL          string       `json:"url,omitempty"`
+	Supervisor   procid.Ref   `json:"supervisor"`
+	Tunnel       procid.Ref   `json:"tunnel"`
+	Build        procid.Ref   `json:"build,omitempty"`
+	BuildMembers []procid.Ref `json:"build_members,omitempty"`
+	Members      []procid.Ref `json:"members,omitempty"`
 }
 
 func (s *Store) LockPublicationRegistry() (*Locks, error) {
@@ -125,7 +130,7 @@ func validatePublications(reg PublicationRegistry) error {
 	active := map[string]bool{}
 	for id, p := range reg.Publications {
 		parts := strings.Split(p.RootID, "/")
-		if !safeName(id) || p.ID != id || len(parts) != 3 || parts[0] != p.ProjectID || parts[1] == "" || parts[2] == "" || !safeName(p.RootRunID) || p.Mode != "live" || !oneOf(p.Phase, "preparing", "active", "closing", "closed", "failed") || len(p.Salt) < 16 || len(p.Verifier) != 32 || len(p.SigningKey) < 32 || !filepath.IsAbs(p.Cloudflared) || p.Owner.PID <= 0 || p.Owner.PGID <= 0 || p.Owner.SID <= 0 || p.Owner.Identity == "" || p.Owner.BootID == "" || (p.PreviousID != "" && !safeName(p.PreviousID)) {
+		if !safeName(id) || p.ID != id || len(parts) != 3 || parts[0] != p.ProjectID || parts[1] == "" || parts[2] == "" || !safeName(p.RootRunID) || !oneOf(p.Mode, "live", "snapshot") || !oneOf(p.Phase, "preparing", "active", "closing", "closed", "failed") || len(p.Salt) < 16 || len(p.Verifier) != 32 || len(p.SigningKey) < 32 || !filepath.IsAbs(p.Cloudflared) || p.Owner.PID <= 0 || p.Owner.PGID <= 0 || p.Owner.SID <= 0 || p.Owner.Identity == "" || p.Owner.BootID == "" || (p.PreviousID != "" && !safeName(p.PreviousID)) {
 			return fmt.Errorf("%w: invalid publication %s", ErrCorrupt, id)
 		}
 		if p.Phase == "active" {
@@ -133,6 +138,12 @@ func validatePublications(reg PublicationRegistry) error {
 				return fmt.Errorf("%w: duplicate active publication", ErrCorrupt)
 			}
 			active[p.RootID] = true
+		}
+		for target, run := range p.BuildRuns {
+			parts := strings.Split(target, "/")
+			if p.Mode != "snapshot" || len(parts) != 3 || parts[0] != p.ProjectID || parts[1] == "" || parts[2] == "" || !safeName(run) {
+				return fmt.Errorf("%w: invalid publication build target", ErrCorrupt)
+			}
 		}
 		for target, run := range p.RoutedRuns {
 			targetParts := strings.Split(target, "/")

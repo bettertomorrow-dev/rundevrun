@@ -54,3 +54,39 @@ func TestClosePublicationNeverClaimedAndMissingActive(t *testing.T) {
 		t.Fatal("missing active runtime modified registry")
 	}
 }
+
+func TestPreparingSnapshotIncludesBuildOnlyDependency(t *testing.T) {
+	s, err := state.New(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := procid.Observe(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := state.Publication{ID: "snapshot", ProjectID: "p", RootID: "p/w/web", RootRunID: "rootrun", Mode: "snapshot", Phase: "preparing", Cloudflared: "/bin/true", Owner: owner, Salt: make([]byte, 16), Verifier: make([]byte, 32), SigningKey: make([]byte, 32), BuildRuns: map[string]string{"p/w/worker": "run"}}
+	registry := state.PublicationRegistry{Version: 1, Publications: map[string]state.Publication{p.ID: p}}
+	if err = s.WritePublications(registry); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := publicationIDsForInstances(s, []string{"p/w/worker"})
+	if err != nil || len(ids) != 1 || ids[0] != p.ID {
+		t.Fatalf("preparing: %v %v", ids, err)
+	}
+	if err = ClosePublicationsForInstances(context.Background(), s, []string{"p/w/worker"}); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := s.ReadPublications()
+	if err != nil || closed.Publications[p.ID].Phase != "closed" {
+		t.Fatalf("preparing build not revoked: %+v %v", closed, err)
+	}
+	p.Phase = "active"
+	registry.Publications[p.ID] = p
+	if err = s.WritePublications(registry); err != nil {
+		t.Fatal(err)
+	}
+	ids, err = publicationIDsForInstances(s, []string{"p/w/worker"})
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("active: %v %v", ids, err)
+	}
+}

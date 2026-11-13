@@ -5,17 +5,20 @@ package publication
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
+	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -66,7 +69,7 @@ exec sleep 60
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
-	cfg := "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n"
+	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n")
 	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -99,6 +102,141 @@ exec sleep 60
 		_, _ = m.Unshare(cleanup, selection)
 		_, _ = r.Stop(cleanup, p, w, "api")
 	}()
+	snapshotConfig := cfg + "[services.api.share]\nmode = 'snapshot'\nbuild = 'mkdir -p dist; printf secret-build-command > dist/index.html'\ndir = 'dist'\nenv = { PRIVATE_VALUE = 'snapshot-secret-value' }\n"
+	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(snapshotConfig), 0600); e != nil {
+		t.Fatal(e)
+	}
+	snapshotPlan, e := m.PlanSnapshot(ctx, selection)
+	if e != nil {
+		t.Fatal(e)
+	}
+	encodedPlan, e := json.Marshal(snapshotPlan)
+	if e != nil || strings.Contains(string(encodedPlan), "secret-build-command") || strings.Contains(string(encodedPlan), "snapshot-secret-value") {
+		t.Fatalf("snapshot plan leaked private build: %s %v", encodedPlan, e)
+	}
+	if snapshotPlan.Digest == "" || snapshotPlan.ArtifactDir != "dist" {
+		t.Fatalf("invalid snapshot plan: %+v", snapshotPlan)
+	}
+	configured, e := m.Plan(ctx, selection, Options{})
+	if e != nil || configured.Mode != "snapshot" || configured.Snapshot == nil {
+		t.Fatalf("configured mode: %+v %v", configured, e)
+	}
+	override, e := m.Plan(ctx, selection, Options{Mode: "live"})
+	if e != nil || override.Mode != "live" || override.Live == nil {
+		t.Fatalf("mode override: %+v %v", override, e)
+	}
+	snapshotResult, e := m.Share(ctx, selection, Options{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if snapshotResult.Mode != "snapshot" || snapshotResult.Password == "" {
+		t.Fatalf("snapshot result: %+v", snapshotResult)
+	}
+	copied, e := os.ReadFile(filepath.Join(store.Root, "publications", snapshotResult.ID, "snapshot", "index.html"))
+	if e != nil || string(copied) != "secret-build-command" {
+		t.Fatalf("snapshot copy: %q %v", copied, e)
+	}
+	if e = os.RemoveAll(filepath.Join(root, "dist")); e != nil {
+		t.Fatal(e)
+	}
+	gatewayBytes, e := os.ReadFile(gatewayFile)
+	if e != nil {
+		t.Fatal(e)
+	}
+	snapshotClient := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	loginForm := url.Values{"password": {snapshotResult.Password}}
+	login, e := http.NewRequest("POST", string(gatewayBytes)+"/_rdr/login", strings.NewReader(loginForm.Encode()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	login.Host = "example.trycloudflare.com"
+	login.Header.Set("X-Forwarded-Proto", "https")
+	login.Header.Set("Origin", "https://example.trycloudflare.com")
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginResponse, e := snapshotClient.Do(login)
+	if e != nil {
+		t.Fatal(e)
+	}
+	loginResponse.Body.Close()
+	if len(loginResponse.Cookies()) == 0 {
+		t.Fatal("snapshot login missing cookie")
+	}
+	asset, e := http.NewRequest("GET", string(gatewayBytes)+"/", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	asset.Host = "example.trycloudflare.com"
+	asset.Header.Set("X-Forwarded-Proto", "https")
+	asset.AddCookie(loginResponse.Cookies()[0])
+	assetResponse, e := snapshotClient.Do(asset)
+	if e != nil {
+		t.Fatal(e)
+	}
+	assetData, e := io.ReadAll(assetResponse.Body)
+	assetResponse.Body.Close()
+	if e != nil || assetResponse.StatusCode != 200 || string(assetData) != "secret-build-command" {
+		t.Fatalf("snapshot gateway: %d %q %v", assetResponse.StatusCode, assetData, e)
+	}
+	for _, action := range []string{"down", "restart"} {
+		plan, err := r.PlanGraph(ctx, action, []runner.Selection{selection}, false)
+		if err != nil || len(plan.Publications) != 1 || plan.Publications[0] != snapshotResult.ID {
+			t.Fatalf("%s publication plan: %+v %v", action, plan.Publications, err)
+		}
+	}
+	brokenConfig := strings.Replace(snapshotConfig, "mkdir -p dist; printf secret-build-command > dist/index.html", "exit 7", 1)
+	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(brokenConfig), 0600); e != nil {
+		t.Fatal(e)
+	}
+	failed, buildErr := m.Share(ctx, selection, Options{Mode: "snapshot", Recreate: true})
+	var typed *runner.Error
+	if !errors.As(buildErr, &typed) || typed.Code != "BUILD_FAILED" || failed.ID == "" || failed.State != "failed" || failed.Password != "" || len(failed.LogPaths) == 0 {
+		t.Fatalf("broken snapshot diagnostics: %+v %v", failed, buildErr)
+	}
+	for _, path := range failed.LogPaths {
+		if !strings.HasSuffix(path, "build.log") && !strings.HasSuffix(path, "tunnel.log") {
+			t.Fatalf("unsafe log path: %s", path)
+		}
+	}
+	still, e := m.Status(ctx, selection)
+	if e != nil || still.ID != snapshotResult.ID || still.State != "ready" {
+		t.Fatalf("old snapshot lost: %+v %v", still, e)
+	}
+	buildPID := filepath.Join(dir, "snapshot-build.pid")
+	longConfig := strings.Replace(snapshotConfig, "mkdir -p dist; printf secret-build-command > dist/index.html", "echo $$ > "+buildPID+"; sleep 60", 1)
+	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(longConfig), 0600); e != nil {
+		t.Fatal(e)
+	}
+	short, stopBuild := context.WithTimeout(ctx, 2*time.Second)
+	_, e = m.Share(short, selection, Options{Mode: "snapshot", Recreate: true})
+	stopBuild()
+	if !errors.Is(e, context.DeadlineExceeded) {
+		t.Fatalf("snapshot cancellation: %v", e)
+	}
+	pidText, e := os.ReadFile(buildPID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	pid, e := strconv.Atoi(strings.TrimSpace(string(pidText)))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if ref, err := procid.Observe(pid); err == nil {
+		if live, _ := procid.Check(ref); live {
+			t.Fatalf("snapshot build survived cancellation: %d", pid)
+		}
+	}
+	if e = os.RemoveAll(filepath.Join(root, "dist")); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = os.Stat(filepath.Join(store.Root, "publications", snapshotResult.ID, "snapshot", "index.html")); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = m.Unshare(ctx, selection); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+		t.Fatal(e)
+	}
 	type shareResponse struct {
 		result Result
 		err    error

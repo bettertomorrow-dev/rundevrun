@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"syscall"
 	"time"
 
@@ -69,11 +70,25 @@ func ClosePublication(ctx context.Context, store *state.Store, id string) error 
 		return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid publication supervisor identity")}
 	}
 	refs := append([]procid.Ref(nil), record.Members...)
-	if record.Tunnel != (procid.Ref{}) {
-		if record.Tunnel.PID <= 1 || record.Tunnel.PGID != record.Tunnel.PID || record.Tunnel.SID != supervisor.SID || record.Tunnel.BootID != supervisor.BootID || record.Tunnel.Identity == "" {
-			return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid tunnel identity")}
+	for _, child := range []procid.Ref{record.Tunnel} {
+		if child == (procid.Ref{}) {
+			continue
 		}
-		refs = append(refs, record.Tunnel)
+		if child.PID <= 1 || child.PGID != child.PID || child.SID != supervisor.SID || child.BootID != supervisor.BootID || child.Identity == "" {
+			return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid publication child identity")}
+		}
+		refs = append(refs, child)
+	}
+	if record.Build != (procid.Ref{}) {
+		b := record.Build
+		if b.PID <= 1 || b.PGID != b.PID || b.SID != b.PID || b.Identity == "" || b.BootID == "" || b.BootID != supervisor.BootID {
+			return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid publication build identity")}
+		}
+		for _, member := range record.BuildMembers {
+			if member.SID != b.SID || member.BootID != b.BootID {
+				return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid publication build member")}
+			}
+		}
 	}
 	if e = setPhase("closing", false); e != nil {
 		return e
@@ -91,8 +106,11 @@ func ClosePublication(ctx context.Context, store *state.Store, id string) error 
 			anchors = append(anchors, ref)
 		}
 	}
-	if len(anchors) > 0 && record.Tunnel != (procid.Ref{}) {
-		members, err := groupMembers(record.Tunnel, anchors)
+	for _, child := range []procid.Ref{record.Tunnel} {
+		if len(anchors) == 0 || child == (procid.Ref{}) {
+			continue
+		}
+		members, err := groupMembers(child, anchors)
 		if err != nil {
 			return &Error{"OWNERSHIP_UNKNOWN", err}
 		}
@@ -130,6 +148,32 @@ func ClosePublication(ctx context.Context, store *state.Store, id string) error 
 	if len(procid.Terminate(refs, time.Second)) > 0 {
 		return &Error{"OWNERSHIP_UNKNOWN", errors.New("tunnel cleanup unresolved")}
 	}
+	if record.Build != (procid.Ref{}) {
+		buildRefs := append([]procid.Ref{record.Build}, record.BuildMembers...)
+		var buildAnchors []procid.Ref
+		for _, ref := range buildRefs {
+			live, err := procid.Check(ref)
+			if err != nil {
+				return &Error{"OWNERSHIP_UNKNOWN", err}
+			}
+			if live {
+				buildAnchors = append(buildAnchors, ref)
+			}
+		}
+		if len(buildAnchors) != 0 {
+			members, err := groupMembers(record.Build, buildAnchors)
+			if err != nil {
+				return &Error{"OWNERSHIP_UNKNOWN", err}
+			}
+			buildRefs = mergeMembers(buildRefs, members)
+		}
+		if len(procid.Terminate(buildRefs, time.Second)) > 0 {
+			return &Error{"OWNERSHIP_UNKNOWN", errors.New("publication build cleanup unresolved")}
+		}
+		if err := verifySessionGone(record.Build); err != nil {
+			return &Error{"OWNERSHIP_UNKNOWN", err}
+		}
+	}
 	if e = verifySessionGone(supervisor); e != nil {
 		return &Error{"OWNERSHIP_UNKNOWN", e}
 	}
@@ -155,6 +199,11 @@ func ClosePublicationsForInstances(ctx context.Context, store *state.Store, ids 
 		for target := range p.RoutedRuns {
 			affected = affected || selected[target]
 		}
+		if p.Phase == "preparing" {
+			for target := range p.BuildRuns {
+				affected = affected || selected[target]
+			}
+		}
 		if affected {
 			if e = ClosePublication(ctx, store, id); e != nil {
 				return fmt.Errorf("publication %s: %w", id, e)
@@ -162,4 +211,36 @@ func ClosePublicationsForInstances(ctx context.Context, store *state.Store, ids 
 		}
 	}
 	return nil
+}
+
+// publicationIDsForInstances lists private-record identifiers only; no credentials.
+func publicationIDsForInstances(store *state.Store, ids []string) ([]string, error) {
+	selected := map[string]bool{}
+	for _, id := range ids {
+		selected[id] = true
+	}
+	reg, err := store.ReadPublications()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for id, p := range reg.Publications {
+		if p.Phase == "closed" {
+			continue
+		}
+		affected := selected[p.RootID]
+		for target := range p.RoutedRuns {
+			affected = affected || selected[target]
+		}
+		if p.Phase == "preparing" {
+			for target := range p.BuildRuns {
+				affected = affected || selected[target]
+			}
+		}
+		if affected {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

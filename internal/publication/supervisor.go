@@ -127,12 +127,25 @@ func Supervise(root, id string) (result error) {
 		return e
 	}
 	record := state.PublicationRuntime{ID: id, State: "starting", Supervisor: self}
+	failureCode := "TUNNEL_FAILED"
 	if e = store.WritePublicationRuntime(id, record); e != nil {
 		return e
 	}
 	defer func() {
 		if result != nil {
 			record.State = "failed"
+			record.ErrorCode = failureCode
+			record.ErrorMessage = "publication preparation failed"
+			if failureCode == "BUILD_FAILED" {
+				record.ErrorMessage = "snapshot build or copy failed; see build log"
+			}
+			if errors.Is(result, errSnapshotTunnelLost) {
+				record.ErrorCode = "TUNNEL_FAILED"
+				record.ErrorMessage = "tunnel failed during publication preparation"
+			}
+			if errors.Is(result, context.DeadlineExceeded) {
+				record.ErrorCode = "READINESS_TIMEOUT"
+			}
 		} else {
 			record.State = "stopped"
 		}
@@ -254,7 +267,9 @@ func Supervise(root, id string) (result error) {
 			if public != "" && public != candidate {
 				return errors.New("tunnel URL changed during startup")
 			}
-			if public == "" {
+			if public == "" && p.Mode == "snapshot" {
+				public = candidate
+			} else if public == "" {
 				credentials := shareauth.Record{Salt: p.Salt, Verifier: p.Verifier, SigningKey: p.SigningKey}
 				next := proxy.NewPinnedHandler(store, p.ProjectID, p.RootID, p.RootRunID, p.RoutedRuns)
 				auth, err := shareauth.NewHandler(id, credentials, candidate, next)
@@ -286,6 +301,20 @@ func Supervise(root, id string) (result error) {
 		case err := <-serverDone:
 			return err
 		}
+	}
+	if p.Mode == "snapshot" {
+		failureCode = "BUILD_FAILED"
+		if e = buildSnapshot(ctx, store, p, &record, public, dir, lease, done); e != nil {
+			return e
+		}
+		credentials := shareauth.Record{Salt: p.Salt, Verifier: p.Verifier, SigningKey: p.SigningKey}
+		next := proxy.NewPinnedSnapshotHandler(store, p.ProjectID, p.RootID, p.RootRunID, p.RoutedRuns, filepath.Join(dir, "snapshot"))
+		auth, err := shareauth.NewHandler(id, credentials, public, next)
+		if err != nil {
+			return err
+		}
+		handler.Store(handlerBox{auth})
+		failureCode = "TUNNEL_FAILED"
 	}
 	record.URL = public
 	record.State = "ready"

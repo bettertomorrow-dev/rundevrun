@@ -39,9 +39,10 @@ type HookStatus struct {
 	Phase string `json:"phase"`
 }
 type GraphPlan struct {
-	Action    string            `json:"action"`
-	Revision  uint64            `json:"revision"`
-	Instances []PlannedInstance `json:"instances"`
+	Action       string            `json:"action"`
+	Revision     uint64            `json:"revision"`
+	Instances    []PlannedInstance `json:"instances"`
+	Publications []string          `json:"publications,omitempty"`
 }
 type BindResult struct {
 	ConsumerID      string `json:"consumer_id"`
@@ -257,7 +258,16 @@ func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Sele
 	g := newGraph(r, reg)
 	result := GraphPlan{Action: action, Revision: reg.Revision, Instances: []PlannedInstance{}}
 	if action == "down" {
-		return g.down(ctx, selections, cascade)
+		result, err := g.down(ctx, selections, cascade)
+		if err != nil {
+			return GraphPlan{}, err
+		}
+		ids := make([]string, 0, len(result.Instances))
+		for _, instance := range result.Instances {
+			ids = append(ids, instance.InstanceID)
+		}
+		result.Publications, err = publicationIDsForInstances(r.Store, ids)
+		return result, err
 	}
 	if action == "restart" {
 		g.replace = map[string]bool{}
@@ -279,6 +289,16 @@ func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Sele
 	}
 	for _, id := range g.order {
 		result.Instances = append(result.Instances, g.nodes[id].plan)
+	}
+	if action == "restart" {
+		ids := make([]string, 0, len(g.replace))
+		for id := range g.replace {
+			ids = append(ids, id)
+		}
+		result.Publications, e = publicationIDsForInstances(r.Store, ids)
+		if e != nil {
+			return GraphPlan{}, e
+		}
 	}
 	return result, nil
 }

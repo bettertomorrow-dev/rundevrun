@@ -41,14 +41,19 @@ func (r openResult) String() string { return r.URL }
 
 type publicationResult struct {
 	publication.Status
-	Password string `json:"-"`
+	Password string   `json:"-"`
+	LogPaths []string `json:"log_paths,omitempty"`
 }
 
 func (r publicationResult) String() string {
+	line := fmt.Sprintf("%s\t%s", r.State, r.URL)
 	if r.Password != "" {
-		return fmt.Sprintf("%s\nPassword: %s", r.URL, r.Password)
+		line = fmt.Sprintf("%s\nPassword: %s", r.URL, r.Password)
 	}
-	return fmt.Sprintf("%s\t%s", r.State, r.URL)
+	if len(r.LogPaths) > 0 {
+		line += "\nLogs: " + strings.Join(r.LogPaths, ", ")
+	}
+	return line
 }
 
 func (p projectInfo) String() string { return fmt.Sprintf("%s\t%s\t%s", p.ID, p.Name, p.Root) }
@@ -556,8 +561,8 @@ func publicationCommand(ctx context.Context, store *state.Store, args []string, 
 	if !validArity(append([]string{e.Command}, args...), 2, 2, e) {
 		return
 	}
-	if opts.mode != "" && opts.mode != "live" {
-		e.fail("USAGE", "only --mode live is supported")
+	if opts.mode != "" && opts.mode != "live" && opts.mode != "snapshot" {
+		e.fail("USAGE", "--mode must be live or snapshot")
 		return
 	}
 	if ctx.Err() != nil {
@@ -572,19 +577,18 @@ func publicationCommand(ctx context.Context, store *state.Store, args []string, 
 	manager := &publication.Manager{Store: store, Executable: executablePath()}
 	if e.Command == "share" {
 		if opts.dryRun {
-			plan, err := manager.PlanLive(ctx, selection)
+			plan, err := manager.Plan(ctx, selection, publication.Options{Mode: opts.mode})
 			if err != nil {
 				failError(e, err)
 				return
 			}
 			e.Plan = struct {
-				Action string               `json:"action"`
-				Mode   string               `json:"mode"`
-				Plan   publication.LivePlan `json:"plan"`
-			}{"share", "live", plan}
+				Action string           `json:"action"`
+				Plan   publication.Plan `json:"plan"`
+			}{"share", plan}
 			return
 		}
-		created, err := manager.Share(ctx, selection, publication.Options{Mode: "live", Recreate: opts.recreate})
+		created, err := manager.Share(ctx, selection, publication.Options{Mode: opts.mode, Recreate: opts.recreate})
 		if err != nil {
 			failShare(e, created, err)
 			return
@@ -618,10 +622,14 @@ func publicationCommand(ctx context.Context, store *state.Store, args []string, 
 func failShare(e *envelope, result publication.Result, err error) {
 	e.Credentials = nil
 	if result.ID != "" {
-		e.Results = append(e.Results, publicationResult{Status: result.Status})
+		e.Results = append(e.Results, publicationResult{Status: result.Status, LogPaths: result.LogPaths})
 		failError(e, err)
-		e.Errors[len(e.Errors)-1].Actions = []string{"inspect status, then unshare and create a fresh share to obtain new credentials"}
-		e.Status = "partial"
+		if result.State == "ready" {
+			e.Errors[len(e.Errors)-1].Actions = []string{"inspect status, then unshare and create a fresh share to obtain new credentials"}
+			e.Status = "partial"
+		} else {
+			e.Errors[len(e.Errors)-1].Actions = []string{"inspect status and the listed publication logs"}
+		}
 		return
 	}
 	failError(e, err)

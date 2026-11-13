@@ -190,10 +190,25 @@ func (m *Manager) Status(ctx context.Context, selection runner.Selection) (Statu
 }
 
 func (m *Manager) Share(ctx context.Context, selection runner.Selection, options Options) (result Result, retErr error) {
-	if options.Mode != "" && options.Mode != "live" {
-		return result, &runner.Error{Code: "CONFIG_INVALID", Err: errors.New("only live publication is supported")}
+	if options.Mode == "" {
+		chosen, err := m.Plan(ctx, selection, options)
+		if err != nil {
+			return result, err
+		}
+		options.Mode = chosen.Mode
 	}
-	plan, e := m.PlanLive(ctx, selection)
+	if options.Mode != "live" && options.Mode != "snapshot" {
+		return result, &runner.Error{Code: "CONFIG_INVALID", Err: errors.New("invalid publication mode")}
+	}
+	var snap SnapshotPlan
+	var plan LivePlan
+	var e error
+	if options.Mode == "snapshot" {
+		snap, e = m.PlanSnapshot(ctx, selection)
+		plan = snap.LivePlan
+	} else {
+		plan, e = m.PlanLive(ctx, selection)
+	}
 	if e != nil {
 		return result, e
 	}
@@ -202,7 +217,17 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 		return result, e
 	}
 	defer locks.Close()
-	again, e := m.PlanLive(ctx, selection)
+	var again LivePlan
+	if options.Mode == "snapshot" {
+		var fresh SnapshotPlan
+		fresh, e = m.PlanSnapshot(ctx, selection)
+		again = fresh.LivePlan
+		if e == nil && !reflect.DeepEqual(snap, fresh) {
+			return result, &runner.Error{Code: "STATE_CONFLICT", Err: errors.New("snapshot configuration changed while locking")}
+		}
+	} else {
+		again, e = m.PlanLive(ctx, selection)
+	}
 	if e != nil {
 		return result, e
 	}
@@ -217,6 +242,9 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 		return result, &runner.Error{Code: "BUSY", Err: errors.New("existing publication needs explicit unshare")}
 	}
 	if prior.ID != "" && !options.Recreate {
+		if prior.Mode != options.Mode {
+			return result, &runner.Error{Code: "BUSY", Err: errors.New("existing publication has a different mode")}
+		}
 		if prior.State != "ready" {
 			return result, &runner.Error{Code: "BUSY", Err: errors.New("existing publication needs explicit unshare")}
 		}
@@ -258,13 +286,22 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 	if e != nil {
 		return result, e
 	}
+	if options.Mode == "snapshot" {
+		spec := snapshotBuildSpec{Digest: snap.Digest, Worktree: selection.Worktree.Root, Project: snap.projectName, Service: selection.Service, CWD: snap.CWD, Artifact: snap.ArtifactDir, Config: snap.service, Dependencies: snap.dependencies}
+		if e = writeSnapshotSpec(dir, spec); e != nil {
+			return result, e
+		}
+	}
 	owner, e := procid.Observe(os.Getpid())
 	if e != nil {
 		return result, e
 	}
-	p := state.Publication{Owner: owner, ID: id, ProjectID: plan.ProjectID, RootID: plan.Root.InstanceID, RootRunID: plan.Root.RunID, Mode: "live", Phase: "preparing", PreviousID: prior.ID, Cloudflared: executable, Salt: credentials.Salt, Verifier: credentials.Verifier, SigningKey: credentials.SigningKey, RoutedRuns: map[string]string{}}
+	p := state.Publication{Owner: owner, ID: id, ProjectID: plan.ProjectID, RootID: plan.Root.InstanceID, RootRunID: plan.Root.RunID, Mode: options.Mode, Phase: "preparing", PreviousID: prior.ID, Cloudflared: executable, Salt: credentials.Salt, Verifier: credentials.Verifier, SigningKey: credentials.SigningKey, RoutedRuns: map[string]string{}}
 	for _, target := range plan.Routed {
 		p.RoutedRuns[target.InstanceID] = target.RunID
+	}
+	if options.Mode == "snapshot" {
+		p.BuildRuns = snap.buildRuns
 	}
 	lock, e := m.Store.LockPublicationRegistry()
 	if e != nil {
@@ -285,7 +322,16 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 		if retErr != nil && !activated {
 			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			retErr = errors.Join(retErr, runner.ClosePublication(cleanup, m.Store, id))
+			if cleanupErr := runner.ClosePublication(cleanup, m.Store, id); cleanupErr != nil {
+				retErr = errors.Join(cleanupErr, retErr)
+			}
+			result.Status = Status{ID: id, Mode: options.Mode, State: "failed", Root: plan.Root, Routed: plan.Routed}
+			for _, name := range []string{"tunnel.log", "build.log"} {
+				path := filepath.Join(dir, name)
+				if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+					result.LogPaths = append(result.LogPaths, path)
+				}
+			}
 		}
 	}()
 	binary := m.Executable
@@ -301,7 +347,15 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 		return result, e
 	}
 	go func() { _ = cmd.Wait() }()
-	wait, cancel := context.WithTimeout(ctx, 30*time.Second)
+	waitBudget := 30 * time.Second
+	if options.Mode == "snapshot" {
+		duration, err := time.ParseDuration(snap.service.BuildTimeout)
+		if err != nil {
+			return result, err
+		}
+		waitBudget += duration
+	}
+	wait, cancel := context.WithTimeout(ctx, waitBudget)
 	defer cancel()
 	var rt state.PublicationRuntime
 	for {
@@ -310,7 +364,15 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 			break
 		}
 		if e == nil && (rt.State == "failed" || rt.State == "stopped") {
-			return result, &runner.Error{Code: "TUNNEL_FAILED", Err: errors.New("publication supervisor failed")}
+			code := rt.ErrorCode
+			if code != "BUILD_FAILED" && code != "READINESS_TIMEOUT" {
+				code = "TUNNEL_FAILED"
+			}
+			message := rt.ErrorMessage
+			if message == "" {
+				message = "publication preparation failed"
+			}
+			return result, &runner.Error{Code: code, Err: errors.New(message)}
 		}
 		if e != nil && !errors.Is(e, os.ErrNotExist) {
 			return result, e
@@ -397,6 +459,11 @@ func (m *Manager) Unshare(ctx context.Context, selection runner.Selection) (Resu
 			for target := range p.RoutedRuns {
 				locksSet[target] = true
 			}
+			if p.Phase == "preparing" {
+				for target := range p.BuildRuns {
+					locksSet[target] = true
+				}
+			}
 		}
 	}
 	if len(ids) == 0 {
@@ -421,6 +488,13 @@ func (m *Manager) Unshare(ctx context.Context, selection runner.Selection) (Resu
 			for target := range p.RoutedRuns {
 				if !locksSet[target] {
 					return Result{}, &runner.Error{Code: "STATE_CONFLICT", Err: errors.New("publication targets changed")}
+				}
+			}
+			if p.Phase == "preparing" {
+				for target := range p.BuildRuns {
+					if !locksSet[target] {
+						return Result{}, &runner.Error{Code: "STATE_CONFLICT", Err: errors.New("publication build targets changed")}
+					}
 				}
 			}
 			present := false

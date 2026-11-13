@@ -44,6 +44,7 @@ type SwitchPlan struct {
 	Preparations    []string          `json:"preparations"`
 	BindingRewrites []BindingRewrite  `json:"binding_rewrites"`
 	Steps           []SwitchStep      `json:"steps"`
+	Publications    []string          `json:"publications,omitempty"`
 }
 
 // PlanSwitch reads the complete affected graph without creating runtime state.
@@ -513,6 +514,14 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 		}
 		sort.Strings(deps)
 		out.Steps = append(out.Steps, SwitchStep{ID: "start:" + p.InstanceID, Action: "start", InstanceID: p.InstanceID, DependsOn: deps})
+	}
+	ids := make([]string, 0, len(out.OldStops))
+	for _, instance := range out.OldStops {
+		ids = append(ids, instance.InstanceID)
+	}
+	out.Publications, err = publicationIDsForInstances(r.Store, ids)
+	if err != nil {
+		return SwitchPlan{}, err
 	}
 	return out, nil
 }

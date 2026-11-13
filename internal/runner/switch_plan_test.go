@@ -113,6 +113,10 @@ env = { API = '{dependencies.api.url}' }
 	}); e != nil {
 		t.Fatal(e)
 	}
+	publication := state.Publication{ID: "pub-switch", ProjectID: p.ID, RootID: app, RootRunID: "app-run", Mode: "live", Phase: "active", Cloudflared: "/bin/true", Owner: ref, Salt: make([]byte, 16), Verifier: make([]byte, 32), SigningKey: make([]byte, 32), RoutedRuns: map[string]string{api: "api-run"}}
+	if e = store.WritePublications(state.PublicationRegistry{Version: 1, Publications: map[string]state.Publication{publication.ID: publication}}); e != nil {
+		t.Fatal(e)
+	}
 	before, e := os.ReadFile(filepath.Join(store.Root, "registry.json"))
 	if e != nil {
 		t.Fatal(e)
@@ -121,6 +125,9 @@ env = { API = '{dependencies.api.url}' }
 	plan, e := r.PlanSwitch(context.Background(), []SwitchMapping{{Selection{p, a, "api"}, Selection{p, b, "api"}}})
 	if e != nil {
 		t.Fatal(e)
+	}
+	if len(plan.Publications) != 1 || plan.Publications[0] != publication.ID {
+		t.Fatalf("switch publication plan: %+v", plan.Publications)
 	}
 	if len(plan.OldStops) != 2 || plan.OldStops[0].InstanceID != app || len(plan.NewStarts) != 2 || plan.NewStarts[0].InstanceID != target || plan.NewStarts[1].InstanceID != app || plan.NewStarts[1].Bindings["api"] != target {
 		t.Fatalf("unexpected graph: %+v", plan)

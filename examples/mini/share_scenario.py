@@ -95,13 +95,13 @@ def request(url, ca_file, mapping_dir, path="/", method="GET", headers=None, bod
     return status, response_headers, payload
 
 
-def websocket(url, ca_file, mapping_dir, cookie):
+def websocket(url, ca_file, mapping_dir, cookie, path="/socket"):
     host, port = endpoint(url, mapping_dir)
     context = ssl.create_default_context(cafile=str(ca_file))
     raw = socket.create_connection(("127.0.0.1", port), timeout=5)
     tls = context.wrap_socket(raw, server_hostname=host)
     key = base64.b64encode(os.urandom(16)).decode()
-    headers = [f"GET /socket HTTP/1.1", f"Host: {host}", "Connection: Upgrade",
+    headers = [f"GET {path} HTTP/1.1", f"Host: {host}", "Connection: Upgrade",
                "Upgrade: websocket", "Sec-WebSocket-Version: 13", f"Sec-WebSocket-Key: {key}",
                f"Cookie: {cookie}", "", ""]
     tls.sendall("\r\n".join(headers).encode())
@@ -186,7 +186,10 @@ def main():
             'depends_on = ["catalog"]\nhealth = { http = "/health" }',
             'depends_on = ["catalog"]\nroutes = [{ path = "/catalog", dependency = "catalog", strip_prefix = true }]\nhealth = { http = "/health" }',
         )
+        dev += '\n[services.reports.share]\nmode = "snapshot"\nbuild = "python3 build_snapshot.py"\ndir = "dist"\nenv = { SHARE_ONLY = "synthetic-share-override" }\n'
         (repo / "dev.toml").write_text(dev)
+        shutil.copyfile(HERE / "build_snapshot.py", repo / "build_snapshot.py")
+        (repo / "source-marker.txt").write_text("snapshot-source-A\n")
         template = temp / "empty-template"
         template.mkdir()
         git(repo, "init", "--initial-branch=main", f"--template={template}")
@@ -194,7 +197,7 @@ def main():
                             ("commit.gpgSign", "false"), ("user.name", "rdr offline share"),
                             ("user.email", "offline-share@invalid")):
             git(repo, "config", name, value)
-        git(repo, "add", "dev.toml", "service.py")
+        git(repo, "add", "dev.toml", "service.py", "build_snapshot.py", "source-marker.txt")
         git(repo, "commit", "-m", "synthetic live share fixture")
         registration = cli(repo, "register", ".")
         project, registered = registration["scope"]["project"], True
@@ -289,6 +292,104 @@ def main():
         if publications(repo, project) or run_ids(repo, project) != before_unshare:
             raise ScenarioError("unshare removed app processes or left a publication listed")
 
+        # Configured snapshot is the default, while the earlier live share proves explicit override.
+        snapshot = cli(repo, "share", "reports", "--project", project, "--worktree", str(repo))
+        snapshot_password = snapshot.get("credentials", {}).get("password", "")
+        snapshot_url = snapshot.get("results", [{}])[0].get("url", "")
+        if not snapshot_password or not snapshot_url.startswith("https://") or json.dumps(snapshot).count(snapshot_password) != 1:
+            raise ScenarioError("configured snapshot did not return its one-time password and HTTPS URL")
+        host, _ = endpoint(snapshot_url, mappings)
+        origin = "https://" + host
+        code, headers, _ = request(snapshot_url, ca_cert, mappings, "/")
+        if code != 303 or not headers.get("Location", "").startswith("/_rdr/login"):
+            raise ScenarioError("anonymous snapshot static request bypassed password authentication")
+        form = urlencode({"password": snapshot_password, "next": "/"})
+        code, login_headers, _ = request(snapshot_url, ca_cert, mappings, "/_rdr/login", "POST",
+                                         {"Origin": origin, "Content-Type": "application/x-www-form-urlencoded"}, form)
+        if code != 303 or "Secure" not in login_headers.get("Set-Cookie", ""):
+            raise ScenarioError("snapshot login did not set a Secure session cookie")
+        snapshot_cookie = http.cookies.SimpleCookie()
+        snapshot_cookie.load(login_headers.get("Set-Cookie", ""))
+        snapshot_auth = next(iter(snapshot_cookie.values()), None)
+        if snapshot_auth is None:
+            raise ScenarioError("snapshot login omitted its session cookie")
+        snapshot_auth_pair = f"{snapshot_auth.key}={snapshot_auth.value}"
+
+        def snapshot_page(url, cookie):
+            status, _, body = request(url, ca_cert, mappings, "/", headers={"Cookie": cookie})
+            if status != 200:
+                raise ScenarioError(f"authenticated snapshot returned HTTP {status}")
+            return json.loads(body), body
+
+        page_a, body_a = snapshot_page(snapshot_url, snapshot_auth_pair)
+        if page_a.get("marker") != "snapshot-source-A" or page_a.get("public_url") != snapshot_url or page_a.get("catalog_url") != snapshot_url + "/catalog" or page_a.get("share_override") != "synthetic-share-override":
+            raise ScenarioError(f"snapshot did not receive expected publication environment: {page_a}")
+        if "127.0.0.1" in body_a.decode() or "direct_url" in body_a.decode():
+            raise ScenarioError("snapshot artifact exposed a local dependency address")
+        code, _, _ = request(snapshot_url, ca_cert, mappings, "/identity")
+        if code != 303:
+            raise ScenarioError("anonymous snapshot API request bypassed authentication")
+        code, _, _ = request(snapshot_url, ca_cert, mappings, "/catalog/socket", headers={"Connection": "Upgrade", "Upgrade": "websocket"})
+        if code != 303:
+            raise ScenarioError("anonymous snapshot WebSocket bypassed authentication")
+        code, _, _ = request(snapshot_url, ca_cert, mappings, "/catalog/identity", headers={"Cookie": snapshot_auth_pair})
+        if code != 200:
+            raise ScenarioError("snapshot dependency route did not reach its pinned catalog")
+        websocket(snapshot_url, ca_cert, mappings, snapshot_auth_pair, path="/catalog/socket")
+
+        # Published bytes stay immutable after the source tree changes or disappears.
+        (repo / "source-marker.txt").write_text("snapshot-source-B\n")
+        shutil.rmtree(repo / "dist")
+        if snapshot_page(snapshot_url, snapshot_auth_pair)[1] != body_a:
+            raise ScenarioError("editing/deleting the source artifact changed the active snapshot")
+
+        (repo / "snapshot-fail-next").touch()
+        build_failure = cli(repo, "share", "reports", "--project", project, "--worktree", str(repo), "--recreate", ok=False)
+        if build_failure.get("status") != "error" or not build_failure.get("errors") or build_failure["errors"][0].get("code") != "BUILD_FAILED" or build_failure.get("credentials"):
+            raise ScenarioError(f"failed snapshot build returned unsafe/unexpected result: {build_failure}")
+        failed_result = build_failure.get("results", [{}])[0]
+        if failed_result.get("state") != "failed" or not any("build.log" in path for path in failed_result.get("log_paths", [])):
+            raise ScenarioError("failed snapshot did not preserve its safe build log path")
+        if len(publications(repo, project)) != 1 or publications(repo, project)[0].get("url") != snapshot_url:
+            raise ScenarioError("failed snapshot recreate displaced the active publication")
+        if run_ids(repo, project) != before_unshare:
+            raise ScenarioError("failed snapshot recreate changed application run IDs")
+        if snapshot_page(snapshot_url, snapshot_auth_pair)[1] != body_a:
+            raise ScenarioError("failed snapshot recreate changed the old session or artifact")
+
+        snapshot_b = cli(repo, "share", "reports", "--project", project, "--worktree", str(repo), "--recreate")
+        password_b = snapshot_b.get("credentials", {}).get("password", "")
+        url_b = snapshot_b.get("results", [{}])[0].get("url", "")
+        if not password_b or password_b == snapshot_password or url_b == snapshot_url or json.dumps(snapshot_b).count(password_b) != 1:
+            raise ScenarioError("successful snapshot recreate did not rotate URL and one-time password")
+        if request(url_b, ca_cert, mappings, "/", headers={"Cookie": snapshot_auth_pair})[0] != 303:
+            raise ScenarioError("recreated snapshot accepted the old session cookie")
+        host_b, _ = endpoint(url_b, mappings)
+        form = urlencode({"password": password_b, "next": "/"})
+        code, headers_b, _ = request(url_b, ca_cert, mappings, "/_rdr/login", "POST",
+                                     {"Origin": "https://" + host_b, "Content-Type": "application/x-www-form-urlencoded"}, form)
+        if code != 303:
+            raise ScenarioError("new snapshot password was rejected")
+        cookie_b = http.cookies.SimpleCookie()
+        cookie_b.load(headers_b.get("Set-Cookie", ""))
+        cookie_value_b = next(iter(cookie_b.values()), None)
+        if cookie_value_b is None:
+            raise ScenarioError("new snapshot login omitted its session cookie")
+        auth_b = f"{cookie_value_b.key}={cookie_value_b.value}"
+        page_b, body_b = snapshot_page(url_b, auth_b)
+        if page_b.get("marker") != "snapshot-source-B" or page_b.get("public_url") != url_b or page_b.get("catalog_url") != url_b + "/catalog" or page_b.get("share_override") != "synthetic-share-override":
+            raise ScenarioError(f"recreated snapshot did not use updated source/environment: {page_b}")
+        if "127.0.0.1" in body_b.decode() or "direct_url" in body_b.decode():
+            raise ScenarioError("recreated snapshot artifact exposed a local dependency address")
+        shutil.rmtree(repo / "dist")
+        if snapshot_page(url_b, auth_b)[1] != body_b:
+            raise ScenarioError("deleting the rebuilt source artifact changed the recreated snapshot")
+        check_publication_output(repo, project, password_b)
+        before_unshare = run_ids(repo, project)
+        cli(repo, "unshare", "reports", "--project", project, "--worktree", str(repo))
+        if publications(repo, project) or run_ids(repo, project) != before_unshare:
+            raise ScenarioError("snapshot unshare changed app runs or left a publication listed")
+
         cli(repo, "share", "reports", "--project", project, "--worktree", str(repo), "--mode", "live")
         cli(repo, "restart", "catalog", "--project", project, "--worktree", str(repo))
         if publications(repo, project):
@@ -311,7 +412,7 @@ def main():
                 raise SystemExit(3) from exc
         shutil.rmtree(temp)
     if passed:
-        print("PASS: offline public live-share auth, rotation, unshare, routed dependency restart and cleanup")
+        print("PASS: offline public live/snapshot shares, auth, artifact rotation, unshare, routed restart and cleanup")
         return 0
     return 2
 

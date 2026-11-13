@@ -53,7 +53,7 @@ Options may appear before or after the command:
   --all                   Global down scope; cannot combine with selectors.
   --retry-hooks           Retry a saved failed or interrupted stop hook.
   --no-proxy              Skip automatic proxy start/reload after up, restart, or switch.
-  --mode live             Select the live Quick Tunnel share mode.
+  --mode live|snapshot    Select a live link or configured static snapshot.
   --recreate              Replace an existing share after the new link is ready.
   --tail N                Show the last N log lines, default 100, maximum 10000.
   --follow                Follow application logs; cannot combine with --json.

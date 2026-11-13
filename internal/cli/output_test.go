@@ -118,3 +118,17 @@ func TestShareCleanupErrorPreservesActivePublicationWithoutCredentials(t *testin
 		t.Fatalf("share error exposed credentials: %s", out.String())
 	}
 }
+
+func TestSharePreparationErrorPreservesFailedStatusAsError(t *testing.T) {
+	e := result("share", options{json: true})
+	failShare(&e, publication.Result{Status: publication.Status{ID: "failed-share", State: "failed", URL: "https://fixture.trycloudflare.com"}, LogPaths: []string{"runs/share/tunnel.log"}},
+		&runner.Error{Code: "BUILD_FAILED", Err: errors.New("snapshot build failed")})
+	var out, errOut bytes.Buffer
+	if code := writeResult(&out, &errOut, e, true); code != 4 || e.Status != "error" || len(e.Results) != 1 || e.Credentials != nil {
+		t.Fatalf("share preparation failure: code=%d envelope=%+v", code, e)
+	}
+	item, ok := e.Results[0].(publicationResult)
+	if !ok || len(item.LogPaths) != 1 || item.LogPaths[0] != "runs/share/tunnel.log" || !bytes.Contains([]byte(item.String()), []byte("runs/share/tunnel.log")) {
+		t.Fatalf("failed share omitted safe log paths: %#v", e.Results)
+	}
+}

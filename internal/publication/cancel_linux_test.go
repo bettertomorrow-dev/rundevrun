@@ -56,7 +56,7 @@ exec sleep 60
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
-	cfg := "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n"
+	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n")
 	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}

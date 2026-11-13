@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -41,7 +43,8 @@ type Status struct {
 }
 type Result struct {
 	Status
-	Password string `json:"-"`
+	Password string   `json:"-"`
+	LogPaths []string `json:"log_paths,omitempty"`
 }
 
 // PlanLive verifies the exact active HTTP root and explicitly routed targets.
@@ -110,4 +113,49 @@ func (m *Manager) PlanLive(ctx context.Context, selection runner.Selection) (Liv
 	sort.Strings(out.Locks)
 	sort.Slice(out.Routed, func(i, j int) bool { return out.Routed[i].InstanceID < out.Routed[j].InstanceID })
 	return out, nil
+}
+
+// Plan is the public, secret-free plan for the selected publication mode.
+type Plan struct {
+	Mode     string        `json:"mode"`
+	Live     *LivePlan     `json:"live,omitempty"`
+	Snapshot *SnapshotPlan `json:"snapshot,omitempty"`
+}
+
+// Plan selects the configured mode unless the caller explicitly overrides it.
+func (m *Manager) Plan(ctx context.Context, selection runner.Selection, options Options) (Plan, error) {
+	mode := options.Mode
+	if mode == "" {
+		if selection.Worktree == nil {
+			return Plan{}, &runner.Error{Code: "USAGE", Err: errors.New("missing worktree")}
+		}
+		cfg, err := config.Load(filepath.Join(selection.Worktree.Root, "dev.toml"))
+		if err != nil {
+			return Plan{}, err
+		}
+		service, ok := cfg.Services[selection.Service]
+		if !ok {
+			return Plan{}, &runner.Error{Code: "CONFIG_INVALID", Err: errors.New("service is not configured")}
+		}
+		mode, _ = service.Share["mode"].(string)
+		if mode == "" {
+			mode = "live"
+		}
+	}
+	switch mode {
+	case "live":
+		plan, err := m.PlanLive(ctx, selection)
+		if err != nil {
+			return Plan{}, err
+		}
+		return Plan{Mode: mode, Live: &plan}, nil
+	case "snapshot":
+		plan, err := m.PlanSnapshot(ctx, selection)
+		if err != nil {
+			return Plan{}, err
+		}
+		return Plan{Mode: mode, Snapshot: &plan}, nil
+	default:
+		return Plan{}, &runner.Error{Code: "CONFIG_INVALID", Err: fmt.Errorf("invalid publication mode %q", mode)}
+	}
 }

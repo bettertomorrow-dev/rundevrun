@@ -4,9 +4,13 @@ package publication
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +59,7 @@ exec sleep 60
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
-	cfg := `version = 1
+	cfg := isolatedHTTPPorts(t, `version = 1
 [project]
 name = 'demo'
 [services.api]
@@ -65,8 +69,8 @@ port = 'auto'
 command = 'python3 -m http.server {port} --bind {host}'
 port = 'auto'
 depends_on = ['api']
-routes = [{ path = '/api', dependency = 'api' }]
-`
+routes = [{ path = '/api/', dependency = 'api', strip_prefix = true }]
+`)
 
 	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
@@ -102,12 +106,66 @@ routes = [{ path = '/api', dependency = 'api' }]
 		_, _ = r.Stop(cleanup, p, w, "web")
 		_, _ = r.Stop(cleanup, p, w, "api")
 	}()
-	created, e := m.Share(ctx, selection, Options{Mode: "live"})
+	snapshotConfig := cfg + `[services.web.share]
+mode = "snapshot"
+build = 'mkdir -p dist; printf %s "$RDR_DEP_API_URL" > dist/index.html'
+dir = "dist"
+`
+	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(snapshotConfig), 0600); e != nil {
+		t.Fatal(e)
+	}
+	created, e := m.Share(ctx, selection, Options{Mode: "snapshot"})
 	if e != nil {
 		t.Fatal(e)
 	}
 	if len(created.Routed) != 1 || created.Routed[0].InstanceID != apiID {
 		t.Fatalf("missing routed pin: %+v", created)
+	}
+	contents, e := os.ReadFile(filepath.Join(store.Root, "publications", created.ID, "snapshot", "index.html"))
+	if e != nil || string(contents) != "https://example.trycloudflare.com/api" {
+		t.Fatalf("snapshot public dependency URL: %q %v", contents, e)
+	}
+	gateway, e := os.ReadFile(gatewayFile)
+	if e != nil {
+		t.Fatal(e)
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	form := url.Values{"password": {created.Password}}
+	login, e := http.NewRequest("POST", string(gateway)+"/_rdr/login", strings.NewReader(form.Encode()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	login.Host = "example.trycloudflare.com"
+	login.Header.Set("X-Forwarded-Proto", "https")
+	login.Header.Set("Origin", "https://example.trycloudflare.com")
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, e := client.Do(login)
+	if e != nil {
+		t.Fatal(e)
+	}
+	response.Body.Close()
+	if len(response.Cookies()) == 0 {
+		t.Fatal("missing route auth cookie")
+	}
+	request, e := http.NewRequest("GET", string(gateway)+"/api/dev.toml", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	request.Host = "example.trycloudflare.com"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.AddCookie(response.Cookies()[0])
+	response, e = client.Do(request)
+	if e != nil {
+		t.Fatal(e)
+	}
+	body, e := io.ReadAll(response.Body)
+	response.Body.Close()
+	if e != nil || response.StatusCode != 200 || !strings.Contains(string(body), "name = 'demo'") {
+		t.Fatalf("snapshot route: %d %q %v", response.StatusCode, body, e)
+	}
+	plan, e := r.PlanGraph(ctx, "restart", []runner.Selection{{Project: p, Worktree: w, Service: "api"}}, false)
+	if e != nil || len(plan.Publications) != 1 || plan.Publications[0] != created.ID {
+		t.Fatalf("routed stop plan: %+v %v", plan.Publications, e)
 	}
 	if _, e = r.Restart(ctx, p, w, "api"); e != nil {
 		t.Fatal(e)

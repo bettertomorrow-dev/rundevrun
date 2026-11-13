@@ -153,11 +153,12 @@ func TestClaimedWithoutChildUnknownSurvivor(t *testing.T) {
 	}
 	// The recorded supervisor exits while a child remains in its session.
 	marker := filepath.Join(dir, "child")
-	leader := exec.Command("sh", "-c", "sleep 60 & echo $! > "+marker+"; sleep 0.4")
+	leader := exec.Command("sh", "-c", `sleep 60 & echo $! > "$1.tmp"; mv "$1.tmp" "$1"; sleep 0.4`, "sh", marker)
 	leader.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if e = leader.Start(); e != nil {
 		t.Fatal(e)
 	}
+	defer func() { _ = leader.Process.Kill(); _ = leader.Wait() }()
 	ref, e := procid.Observe(leader.Process.Pid)
 	if e != nil {
 		t.Fatal(e)
@@ -177,7 +178,11 @@ func TestClaimedWithoutChildUnknownSurvivor(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer syscall.Kill(pid, syscall.SIGKILL)
+	child, e := procid.Observe(pid)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer procid.Terminate([]procid.Ref{child}, time.Second)
 	if e = leader.Wait(); e != nil {
 		t.Fatal(e)
 	}

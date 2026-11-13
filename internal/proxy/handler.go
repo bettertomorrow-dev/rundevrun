@@ -237,6 +237,15 @@ func validForwardedFor(value string) bool {
 // NewPinnedHandler routes only the captured publication graph. It never resolves
 // a target from the incoming host and verifies both source and target before dial.
 func NewPinnedHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string) http.Handler {
+	return newPinnedHandler(store, projectID, rootID, rootRunID, routedRuns, nil)
+}
+
+// NewPinnedSnapshotHandler serves the private snapshot except for pinned routes.
+func NewPinnedSnapshotHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string, snapshotDir string) http.Handler {
+	return newPinnedHandler(store, projectID, rootID, rootRunID, routedRuns, http.FileServer(http.Dir(snapshotDir)))
+}
+
+func newPinnedHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string, fallback http.Handler) http.Handler {
 	pins := make(map[string]string, len(routedRuns))
 	for id, run := range routedRuns {
 		pins[id] = run
@@ -268,6 +277,14 @@ func NewPinnedHandler(store *state.Store, projectID, rootID, rootRunID string, r
 					best = route
 				}
 			}
+		}
+		if best == nil && fallback != nil {
+			if _, e := runner.VerifyProxyTarget(store, projectID, rootID, rootRunID); e != nil {
+				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			fallback.ServeHTTP(w, req)
+			return
 		}
 		if best != nil {
 			targetID = m.EffectiveBindings[best.Dependency]

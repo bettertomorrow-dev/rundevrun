@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
@@ -30,6 +34,46 @@ func invoke(t *testing.T, args ...string) (envelope, int) {
 		t.Fatalf("unexpected stderr: %s", &errOut)
 	}
 	return e, code
+}
+
+func cliRunIDs(t *testing.T, project string) map[string]string {
+	t.Helper()
+	e, code := invoke(t, "status", "--project", project, "--json")
+	if code != 0 {
+		t.Fatalf("status: %d %+v", code, e)
+	}
+	ids := map[string]string{}
+	for _, item := range e.Results {
+		row := item.(map[string]any)
+		id, _ := row["instance_id"].(string)
+		runID, _ := row["run_id"].(string)
+		ids[id] = runID
+	}
+	return ids
+}
+
+func invokeBinary(t *testing.T, binary string, args ...string) (envelope, int) {
+	t.Helper()
+	cmd := exec.Command(binary, append(args, "--json")...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			code = exit.ExitCode()
+		} else {
+			t.Fatalf("run %s: %v", binary, err)
+		}
+	}
+	var result envelope
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON from %s: stdout=%q stderr=%q: %v", binary, stdout.String(), stderr.String(), err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr from %s: %s", binary, stderr.String())
+	}
+	return result, code
 }
 
 func writeProject(t *testing.T, root string) {
@@ -591,14 +635,16 @@ func TestPublicationGrammarAndDryRunsDoNotCreatePublicationState(t *testing.T) {
 		args []string
 		code int
 	}{
-		{[]string{"share", "worker", "--project", project, "--worktree", root, "--mode", "snapshot", "--json"}, 2},
+		{[]string{"share", "worker", "--project", project, "--worktree", root, "--mode", "preview", "--json"}, 2},
 		{[]string{"unshare", "worker", "--project", project, "--worktree", root, "--recreate", "--json"}, 2},
-		{[]string{"share", "worker", "--project", project, "--worktree", root, "--dry-run", "--json"}, -1},
 	}
 	for _, tc := range flags {
 		if _, code := invoke(t, tc.args...); tc.code >= 0 && code != tc.code || tc.code < 0 && code == 0 {
 			t.Fatalf("%v exit=%d want %d", tc.args, code, tc.code)
 		}
+	}
+	if e, code := invoke(t, "share", "worker", "--project", project, "--worktree", root, "--mode", "snapshot", "--dry-run", "--json"); code == 0 || len(e.Errors) != 1 || e.Errors[0].Code == "USAGE" {
+		t.Fatalf("snapshot mode should reach the snapshot planner: %d %+v", code, e)
 	}
 	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications.json")); !os.IsNotExist(err) {
 		t.Fatalf("rejected/dry-run share wrote publication registry: %v", err)
@@ -612,6 +658,113 @@ func TestPublicationGrammarAndDryRunsDoNotCreatePublicationState(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications.json")); !os.IsNotExist(err) {
 		t.Fatalf("unshare dry-run wrote publication registry: %v", err)
+	}
+}
+
+func TestShareDryRunUsesConfiguredSnapshotAndExplicitLiveOverride(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	modFile, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		t.Fatalf("locate module: %v", err)
+	}
+	repoRoot := filepath.Dir(strings.TrimSpace(string(modFile)))
+	root := filepath.Join(base, "project")
+	runtimeRootPath := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtimeRootPath)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "server.py"), []byte(`import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ready")
+HTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serve_forever()
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(fmt.Sprintf(`version = 1
+[project]
+name = "example"
+[services.web]
+command = "python3 server.py"
+protocol = "http"
+port = %d
+health = { tcp = true }
+[services.web.share]
+mode = "snapshot"
+build = "touch snapshot-built"
+dir = "dist"
+`, port)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	registered, code := invoke(t, "register", ".", "--json")
+	if code != 0 {
+		t.Fatalf("register: %d %+v", code, registered)
+	}
+	project := registered.Scope.Project
+	binary := filepath.Join(base, "rdr")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/rdr")
+	build.Dir = repoRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build rdr binary: %v: %s", err, output)
+	}
+	t.Cleanup(func() {
+		_, _ = invokeBinary(t, binary, "down", "web", "--project", project, "--worktree", root)
+	})
+	if e, code := invokeBinary(t, binary, "up", "web", "--project", project, "--worktree", root); code != 0 {
+		logs, logCode := invokeBinary(t, binary, "logs", "web", "--project", project, "--worktree", root, "--tail", "30")
+		t.Fatalf("up: %d %+v; logs: %d %+v", code, e, logCode, logs)
+	}
+	before := cliRunIDs(t, project)
+	for _, tc := range []struct {
+		flags []string
+		mode  string
+	}{
+		{nil, "snapshot"},
+		{[]string{"--mode", "snapshot"}, "snapshot"},
+		{[]string{"--mode", "live"}, "live"},
+	} {
+		args := []string{"share", "web", "--project", project, "--worktree", root, "--dry-run", "--json"}
+		args = append(args, tc.flags...)
+		e, code := invoke(t, args...)
+		if code != 0 || e.Plan == nil {
+			t.Fatalf("dry-run %q: %d %+v", tc.flags, code, e)
+		}
+		plan := e.Plan.(map[string]any)["plan"].(map[string]any)
+		if plan["mode"] != tc.mode {
+			t.Fatalf("dry-run %q selected mode %v, want %s", tc.flags, plan["mode"], tc.mode)
+		}
+		if tc.mode == "snapshot" && plan["snapshot"] == nil || tc.mode == "live" && plan["live"] == nil {
+			t.Fatalf("dry-run %q omitted selected plan: %#v", tc.flags, plan)
+		}
+	}
+	if e, code := invoke(t, "share", "web", "--project", project, "--worktree", root, "--mode", "invalid", "--dry-run", "--json"); code != 2 || len(e.Errors) != 1 || e.Errors[0].Code != "USAGE" {
+		t.Fatalf("invalid mode: %d %+v", code, e)
+	}
+	if !reflect.DeepEqual(before, cliRunIDs(t, project)) {
+		t.Fatal("share dry-run changed application run IDs")
+	}
+	if _, err := os.Stat(filepath.Join(root, "snapshot-built")); !os.IsNotExist(err) {
+		t.Fatalf("snapshot dry-run executed build: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications.json")); !os.IsNotExist(err) {
+		t.Fatalf("share dry-run wrote publication state: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRootPath, "publications")); !os.IsNotExist(err) {
+		t.Fatalf("share dry-run created publication directory: %v", err)
 	}
 }
 
