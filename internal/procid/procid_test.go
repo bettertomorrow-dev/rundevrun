@@ -25,3 +25,11 @@ func TestIdentityMismatchNeverSignals(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminateRetainsUncertainIdentity(t *testing.T) {
+	ref := Ref{PID: os.Getpid()}
+	alive := Terminate([]Ref{ref}, 0)
+	if len(alive) != 1 || alive[0] != ref {
+		t.Fatalf("uncertain identity lost: %+v", alive)
+	}
+}

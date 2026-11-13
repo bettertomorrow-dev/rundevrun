@@ -18,6 +18,10 @@ Discovery and registration:
   rdr worktrees           List existing worktrees; never change Git state.
   rdr services            List configured services, including stopped instances.
   rdr config check        Validate configuration without running project code.
+  rdr up <service>        Build and start one service.
+  rdr down <service>      Stop one service.
+  rdr restart <service>   Restart one service.
+  rdr logs <service>      Show recent application output.
   rdr ls                  Show known instances across registered projects.
   rdr status              Show known instances, optionally scoped to a project.
 
@@ -25,15 +29,22 @@ Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
   --worktree ID|PATH|NAME Select an existing worktree.
   --json                  Write one versioned JSON result to stdout.
-  --dry-run               Plan registration without writing state.
+  --dry-run               Show a lifecycle plan without changing state.
+  --tail N                Show the last N log lines, default 100, maximum 10000.
+  --follow                Follow application logs; cannot combine with --json.
   --help, -h              Show this help.
 
 Examples:
   rdr register . --json
   rdr services --project example --worktree ./feature --json
   rdr config check --json
+  rdr up api --dry-run --json
+  rdr up api --json
+  rdr logs api --tail 50
+  rdr down api --json
 
-Lifecycle, proxy and publication commands are still being implemented.
+Lifecycle currently accepts one service and rejects dependencies and hooks.
+Proxy, sharing and graph operations remain in progress.
 Runtime state: RDR_HOME, else XDG_STATE_HOME/rundevrun,
 else ~/.local/state/rundevrun. Registration runs no project commands.`
 
@@ -75,7 +86,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		e.fail("CANCELLED", err.Error())
 		return writeResult(out, errOut, e, opts.json)
 	}
-	execute(ctx, positional, opts, &e)
+	execute(ctx, positional, opts, &e, out)
 	return writeResult(out, errOut, e, opts.json)
 }
 

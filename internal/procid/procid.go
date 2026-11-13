@@ -77,24 +77,37 @@ func Check(r Ref) (bool, error) {
 // is never hit. It returns the refs that are still alive afterwards.
 func Terminate(refs []Ref, grace time.Duration) (alive []Ref) {
 	signal := func(sig syscall.Signal) {
-		groups := map[int]bool{}
+		groups := map[int][]Ref{}
 		for _, r := range refs {
-			if !Matches(r) {
+			ok, err := Check(r)
+			if err != nil || !ok {
 				continue
 			}
-			if pg, err := syscall.Getpgid(r.PID); err == nil && pg > 1 && r.PGID == pg && Matches(r) {
-				groups[pg] = true
+			if r.PGID > 1 {
+				groups[r.PGID] = append(groups[r.PGID], r)
 			}
-			syscall.Kill(r.PID, sig)
 		}
-		for pg := range groups {
-			syscall.Kill(-pg, sig)
+		for pg, members := range groups {
+			for _, r := range members {
+				// The kernel can recycle an ID between this check and Kill.
+				// No portable atomic check-and-signal primitive exists.
+				if ok, err := Check(r); err == nil && ok {
+					syscall.Kill(-pg, sig)
+					break
+				}
+			}
+		}
+		for _, r := range refs {
+			if ok, err := Check(r); err == nil && ok {
+				syscall.Kill(r.PID, sig)
+			}
 		}
 	}
 	live := func() []Ref {
 		var out []Ref
 		for _, r := range refs {
-			if Matches(r) {
+			ok, err := Check(r)
+			if err != nil || ok {
 				out = append(out, r)
 			}
 		}

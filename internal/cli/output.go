@@ -28,6 +28,7 @@ type envelope struct {
 	DryRun  bool           `json:"dry_run"`
 	Results []any          `json:"results"`
 	Errors  []commandError `json:"errors"`
+	Plan    any            `json:"plan,omitempty"`
 }
 
 func result(command string, opts options) envelope {

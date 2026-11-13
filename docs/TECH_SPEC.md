@@ -374,6 +374,11 @@ Public command grammar follows the PRD examples. --json works before/after
 selectors. No prompts. No args prints help. Global flags --project, --worktree,
 --json, --dry-run; --all and --all-services have distinct scopes. logs --follow
 streams human log text; --json --follow is rejected to retain one-document stdout.
+logs --tail defaults to 100 and accepts 0..10000 lines. JSON log text is capped at
+1 MiB with logs_truncated=true when capped; text output is not capped by CLI.
+If run state cannot be verified, result sets state_unknown=true and omits state,
+with a corresponding error and nonzero exit code. No extra uncertain/stale state
+value is added to the six-state instance enum; verified stale runs display failed.
 All progress/build output goes to stderr. Exactly one JSON object on stdout:
 
 ```json

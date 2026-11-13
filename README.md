@@ -33,6 +33,11 @@ rdr projects --json
 rdr worktrees --project example --json
 rdr services --project example --json
 rdr status --project example --json
+rdr up api --dry-run --json
+rdr up api --json
+rdr logs api --tail 50
+rdr restart api --json
+rdr down api --json
 ```
 
 Registration records configured services as stopped. Independent clones receive
@@ -41,8 +46,12 @@ the IDs in JSON output. Discovery and status do not create runtime state;
 registration stores private state under `$RDR_HOME`, `$XDG_STATE_HOME/rundevrun`,
 or `~/.local/state/rundevrun`.
 
-Lifecycle, hooks, switching, proxy and publication remain in progress. The first
-release requires migration of MillDrum and acceptance on twikko, Linux and macOS.
+Single-service lifecycle is implemented and tested on Linux. Crash recovery is
+still incomplete for builds interrupted by SIGKILL and supervisor/group cleanup;
+stage 2 is not accepted. macOS listener/process inspection currently fails closed.
+Services with dependencies or hooks are rejected until graph/hook support lands.
+Switching, proxy and publication remain in progress. The first release requires
+migration of MillDrum and acceptance on twikko, Linux and macOS.
 See [technical contracts](docs/TECH_SPEC.md) and [review status](docs/REVIEWS.md).
 
 Checks:

@@ -64,6 +64,16 @@ type StopContract struct {
 	Hooks   map[string]string `json:"hooks,omitempty"`
 	RunDir  string            `json:"run_dir"`
 }
+type LaunchContract struct {
+	Command     string   `json:"command"`
+	Cwd         string   `json:"cwd"`
+	Env         []string `json:"env"`
+	Protocol    string   `json:"protocol"`
+	Port        int      `json:"port,omitempty"`
+	HealthPath  string   `json:"health_path,omitempty"`
+	HealthTCP   bool     `json:"health_tcp,omitempty"`
+	StopTimeout string   `json:"stop_timeout"`
+}
 type Manifest struct {
 	RunID             string            `json:"run_id"`
 	InstanceID        string            `json:"instance_id"`
@@ -72,6 +82,7 @@ type Manifest struct {
 	Addresses         map[string]string `json:"addresses,omitempty"`
 	EffectiveBindings map[string]string `json:"effective_bindings,omitempty"`
 	StopContract      StopContract      `json:"stop_contract"`
+	Launch            LaunchContract    `json:"launch"`
 }
 type RunRecord struct {
 	Claim      string       `json:"claim,omitempty"`

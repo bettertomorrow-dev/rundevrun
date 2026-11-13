@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
 func invoke(t *testing.T, args ...string) (envelope, int) {
@@ -102,5 +104,83 @@ func TestUsageAndVersionErrorsAreJSON(t *testing.T) {
 	e, code = invoke(t, "--unknown", "--json")
 	if code != 2 || len(e.Errors) != 1 || e.Errors[0].Code != "USAGE" {
 		t.Fatalf("usage: %d %+v", code, e)
+	}
+}
+
+func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if e, code := invoke(t, "register", ".", "--json"); code != 0 || e.Status != "ok" {
+		t.Fatalf("register: %d %+v", code, e)
+	}
+	e, code := invoke(t, "up", "worker", "--dry-run", "--json")
+	if code != 0 || e.Plan == nil || len(e.Results) != 0 {
+		t.Fatalf("dry run: %d %+v", code, e)
+	}
+	if _, code = invoke(t, "up", "--dry-run", "--json"); code != 2 {
+		t.Fatalf("missing service exit=%d", code)
+	}
+	if _, code = invoke(t, "down", "--all", "--json"); code != 2 {
+		t.Fatalf("broad down exit=%d", code)
+	}
+}
+
+func TestDownUsesRegisteredDescriptorWithoutConfig(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatalf("register exit=%d", code)
+	}
+	if err := os.Remove(filepath.Join(root, "dev.toml")); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "down", "worker", "--json")
+	if code != 0 || len(e.Results) != 1 {
+		t.Fatalf("down without config: %d %+v", code, e)
+	}
+}
+
+func TestStatusReportsUnreadableRunAsError(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatal(code)
+	}
+	s := &state.Store{Root: runtime}
+	if err := s.Update(func(r *state.Registry) error {
+		for id := range r.Projects {
+			p, err := r.Project(id)
+			if err != nil {
+				return err
+			}
+			for key, i := range p.Instances {
+				i.RunID, i.State = "missing-run", "starting"
+				p.Instances[key] = i
+			}
+			if err := r.SetProject(id, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "status", "--json")
+	if code != 5 || len(e.Errors) != 1 || e.Errors[0].Code != "OWNERSHIP_UNKNOWN" {
+		t.Fatalf("unverified status reported success: %d %+v", code, e)
+	}
+	i := e.Results[0].(map[string]any)
+	if i["state_unknown"] != true || i["state"] != nil {
+		t.Fatalf("invented process state: %+v", i)
 	}
 }
