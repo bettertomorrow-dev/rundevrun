@@ -7,14 +7,15 @@ import (
 )
 
 type options struct {
-	project  string
-	worktree string
-	json     bool
-	dryRun   bool
-	help     bool
-	follow   bool
-	tail     int
-	tailSet  bool
+	project    string
+	worktree   string
+	toWorktree string
+	json       bool
+	dryRun     bool
+	help       bool
+	follow     bool
+	tail       int
+	tailSet    bool
 }
 
 // Common flags may precede or follow the command and selectors.
@@ -52,7 +53,7 @@ func parseArgs(args []string) (options, []string, error) {
 			default:
 				opts.help = true
 			}
-		case "--project", "--worktree", "--tail":
+		case "--project", "--worktree", "--to-worktree", "--tail":
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 					return opts, positional, fmt.Errorf("%s requires a value", name)
@@ -69,6 +70,8 @@ func parseArgs(args []string) (options, []string, error) {
 					return opts, positional, fmt.Errorf("--tail requires an integer from 0 to 10000")
 				}
 				opts.tail, opts.tailSet = n, true
+			} else if name == "--to-worktree" {
+				opts.toWorktree = value
 			} else if name == "--project" {
 				opts.project = value
 			} else {

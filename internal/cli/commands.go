@@ -44,18 +44,22 @@ func (w worktreeInfo) String() string {
 }
 
 type instanceInfo struct {
-	ID              string           `json:"instance_id"`
-	ProjectID       string           `json:"project_id"`
-	WorktreeID      string           `json:"worktree_id"`
-	Service         string           `json:"service"`
-	State           string           `json:"state,omitempty"`
-	StateUnknown    bool             `json:"state_unknown,omitempty"`
-	Protocol        string           `json:"protocol,omitempty"`
-	RunID           string           `json:"run_id,omitempty"`
-	ConfigChanged   bool             `json:"config_changed"`
-	RestartRequired bool             `json:"restart_required"`
-	ConfigError     string           `json:"config_error,omitempty"`
-	Preparation     *preparationInfo `json:"preparation,omitempty"`
+	ID              string            `json:"instance_id"`
+	ProjectID       string            `json:"project_id"`
+	WorktreeID      string            `json:"worktree_id"`
+	Service         string            `json:"service"`
+	State           string            `json:"state,omitempty"`
+	StateUnknown    bool              `json:"state_unknown,omitempty"`
+	Protocol        string            `json:"protocol,omitempty"`
+	RunID           string            `json:"run_id,omitempty"`
+	ConfigChanged   bool              `json:"config_changed"`
+	RestartRequired bool              `json:"restart_required"`
+	ConfigError     string            `json:"config_error,omitempty"`
+	Preparation     *preparationInfo  `json:"preparation,omitempty"`
+	PID             int               `json:"pid,omitempty"`
+	DirectURL       string            `json:"direct_url,omitempty"`
+	URL             string            `json:"url,omitempty"`
+	LogPaths        map[string]string `json:"log_paths,omitempty"`
 }
 
 type preparationInfo struct {
@@ -67,6 +71,10 @@ type preparationInfo struct {
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
 func execute(ctx context.Context, args []string, opts options, e *envelope, out io.Writer) {
+	if opts.toWorktree != "" && e.Command != "bind" {
+		e.fail("USAGE", "--to-worktree is only supported by bind at this stage")
+		return
+	}
 	if (opts.follow || opts.tailSet) && e.Command != "logs" {
 		e.fail("USAGE", "--follow and --tail are only valid with logs")
 		return
@@ -82,6 +90,41 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	store := &state.Store{Root: root}
 	switch e.Command {
+	case "bind":
+		if !validArity(args, 3, 3, e) {
+			return
+		}
+		if opts.toWorktree == "" {
+			e.fail("USAGE", "bind requires --to-worktree", "see rdr --help")
+			return
+		}
+		d, w := resolveCommandSelection(store, opts, true, e)
+		if d == nil {
+			return
+		}
+		target, err := discovery.Resolve(d, opts.toWorktree)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		r := runner.New(store, executablePath())
+		consumer := runner.Selection{Project: d, Worktree: w, Service: args[1]}
+		dependency := runner.Selection{Project: d, Worktree: target, Service: args[2]}
+		var bound runner.BindResult
+		if opts.dryRun {
+			bound, err = r.PlanBind(ctx, consumer, args[2], dependency)
+		} else {
+			bound, err = r.Bind(ctx, consumer, args[2], dependency)
+		}
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		if opts.dryRun {
+			e.Plan = bound
+		} else {
+			e.Results = append(e.Results, bound)
+		}
 	case "up", "down", "restart", "logs":
 		if !validArity(args, 2, 2, e) {
 			return
@@ -143,77 +186,11 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 }
 
 func lifecycle(ctx context.Context, store *state.Store, service string, opts options, e *envelope, stdout io.Writer) {
-	r, err := store.Read()
-	if err != nil {
-		failError(e, err)
+	d, w := resolveCommandSelection(store, opts, e.Command == "up" || e.Command == "restart", e)
+	if d == nil {
 		return
 	}
-	var p state.Project
-	if opts.project != "" {
-		selected := selectProject(r, opts.project, e)
-		if selected == nil {
-			return
-		}
-		p = *selected
-	} else {
-		cwd, er := os.Getwd()
-		if er != nil {
-			failError(e, er)
-			return
-		}
-		var matches []state.Project
-		cwd, _ = filepath.EvalSymlinks(cwd)
-		for _, id := range sortedKeys(r.Projects) {
-			saved, er := r.Project(id)
-			if er != nil {
-				continue
-			}
-			inside := within(cwd, saved.Root)
-			for _, wt := range saved.Worktrees {
-				inside = inside || within(cwd, wt.Root)
-			}
-			if inside {
-				matches = append(matches, saved)
-			}
-		}
-		if len(matches) != 1 {
-			e.fail("NOT_FOUND", "current directory is not inside one registered project", "run rdr register explicitly or use --project")
-			return
-		}
-		p = matches[0]
-	}
-	e.Scope.Project = p.ID
-	d, err := discovery.Discover(p.Root)
-	if err != nil {
-		if e.Command != "down" && e.Command != "logs" {
-			failError(e, err)
-			return
-		}
-		d = descriptor(p)
-	}
-	worktreeSelector := opts.worktree
-	if worktreeSelector == "" {
-		cwd, er := os.Getwd()
-		if er != nil {
-			failError(e, er)
-			return
-		}
-		worktreeSelector = cwd
-	}
-	w, err := discovery.ResolveDescriptor(d, worktreeSelector)
-	if err != nil {
-		failError(e, err)
-		return
-	}
-	e.Scope.Worktree = w.ID
-	if (e.Command == "up" || e.Command == "restart") && w.Config == nil {
-		if w.ConfigError != nil {
-			failError(e, w.ConfigError)
-		} else {
-			e.fail("CONFIG_INVALID", "missing dev.toml in "+w.Root)
-		}
-		return
-	}
+	var err error
 	runnerInstance := runner.New(store, executablePath())
 	if e.Command == "logs" {
 		var logOut io.Writer = stdout
@@ -233,6 +210,15 @@ func lifecycle(ctx context.Context, store *state.Store, service string, opts opt
 	}
 	action := e.Command
 	if opts.dryRun {
+		if action != "restart" {
+			plan, er := runnerInstance.PlanGraph(ctx, action, []runner.Selection{{Project: d, Worktree: w, Service: service}}, false)
+			if er != nil {
+				failError(e, er)
+				return
+			}
+			e.Plan = plan
+			return
+		}
 		plan, er := runnerInstance.Plan(ctx, action, d, w, service)
 		if er != nil {
 			failError(e, er)
@@ -261,16 +247,16 @@ func lifecycle(ctx context.Context, store *state.Store, service string, opts opt
 		}
 		if result.InstanceID != "" {
 			fields := map[string]any{"instance_id": result.InstanceID, "state": result.State, "run_id": result.RunID, "status": result.Status, "urls": result.URLs, "log_paths": result.LogPaths}
-			if instance := instanceByID(store, p.ID, result.InstanceID); instance.Preparation != nil {
+			if instance := instanceByID(store, d.ID, result.InstanceID); instance.Preparation != nil {
 				fields["preparation"] = preparationView(store, instance)
 			}
 			e.Results = append(e.Results, fields)
 			return
 		}
-		id := p.ID + "/" + w.ID + "/" + service
+		id := d.ID + "/" + w.ID + "/" + service
 		stateName := ""
 		if reg, readErr := store.Read(); readErr == nil {
-			if saved, projectErr := reg.Project(p.ID); projectErr == nil {
+			if saved, projectErr := reg.Project(d.ID); projectErr == nil {
 				if instance, ok := saved.Instances[id]; ok {
 					if observed, inspectErr := store.Inspect(instance); inspectErr == nil {
 						stateName = observed
@@ -282,9 +268,9 @@ func lifecycle(ctx context.Context, store *state.Store, service string, opts opt
 			}
 		}
 		if stateName == "" {
-			e.Results = append(e.Results, map[string]any{"instance_id": id, "status": "failed", "state_unknown": true, "preparation": preparationView(store, instanceByID(store, p.ID, id))})
+			e.Results = append(e.Results, map[string]any{"instance_id": id, "status": "failed", "state_unknown": true, "preparation": preparationView(store, instanceByID(store, d.ID, id))})
 		} else {
-			e.Results = append(e.Results, map[string]any{"instance_id": id, "state": stateName, "status": "failed", "preparation": preparationView(store, instanceByID(store, p.ID, id))})
+			e.Results = append(e.Results, map[string]any{"instance_id": id, "state": stateName, "status": "failed", "preparation": preparationView(store, instanceByID(store, d.ID, id))})
 		}
 		return
 	}
@@ -498,6 +484,7 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 				instance.State = info.State
 				info.ConfigChanged, info.RestartRequired = configDrift(store, instance, w.Config.Digest, e)
 				info.Preparation = preparationView(store, instance)
+				addRunDetails(store, instance, &info)
 			}
 			e.Results = append(e.Results, info)
 		}
@@ -549,6 +536,7 @@ func listRegistry(store *state.Store, opts options, e *envelope) {
 			observed, unknown := inspectState(store, i, e)
 			info := instanceInfo{ID: i.ID, ProjectID: p.ID, WorktreeID: i.WorktreeID, Service: i.Service, State: observed, StateUnknown: unknown, RunID: i.RunID}
 			info.Preparation = preparationView(store, i)
+			addRunDetails(store, i, &info)
 			i.State = observed
 			if worktree, ok := findWorktree(p, i.WorktreeID); ok {
 				cfg, configErr := config.Load(filepath.Join(worktree.Root, "dev.toml"))
@@ -580,6 +568,24 @@ func preparationView(store *state.Store, i state.Instance) *preparationInfo {
 		return nil
 	}
 	return &preparationInfo{RunID: i.Preparation.RunID, Phase: i.Preparation.Phase, BuildLogPath: filepath.Join(store.Root, "runs", i.Preparation.RunID, "build.log")}
+}
+
+func addRunDetails(store *state.Store, instance state.Instance, info *instanceInfo) {
+	if instance.RunID == "" || info.StateUnknown {
+		return
+	}
+	manifest, err := store.ReadManifest(instance.RunID)
+	if err != nil {
+		return
+	} // inspectState already reports invalid run records.
+	info.DirectURL, info.URL = manifest.Addresses["direct_url"], manifest.Addresses["url"]
+	base := filepath.Join(store.Root, "runs", instance.RunID)
+	info.LogPaths = map[string]string{"build": filepath.Join(base, "build.log"), "application": filepath.Join(base, "application.log"), "supervisor": filepath.Join(base, "supervisor.log")}
+	if info.State == "starting" || info.State == "running" || info.State == "ready" || info.State == "unhealthy" {
+		if record, err := store.ReadRun(instance.RunID); err == nil {
+			info.PID = record.Child.PID
+		}
+	}
 }
 
 func instanceByID(store *state.Store, projectID, instanceID string) state.Instance {

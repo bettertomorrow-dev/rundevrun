@@ -1,0 +1,25 @@
+version = 1
+[project]
+name = "mini"
+
+[services.catalog]
+command = "python3 service.py catalog"
+protocol = "http"
+port = "auto"
+health = { http = "/health" }
+env = { ROLE = "{service}", WORKTREE = "{worktree}", PROJECT = "{project}" }
+
+[services.reports]
+command = "python3 service.py reports"
+protocol = "http"
+port = "auto"
+depends_on = ["catalog"]
+health = { http = "/health" }
+env = { CATALOG_URL = "{dependencies.catalog.direct_url}", ROLE = "{service}", WORKTREE = "{worktree}", PROJECT = "{project}" }
+
+[services.indexer]
+command = "python3 service.py indexer"
+protocol = "process"
+depends_on = ["catalog"]
+health = { process = true }
+env = { CATALOG_URL = "{dependencies.catalog.direct_url}", POLL_SECONDS = "2", ROLE = "{service}", WORKTREE = "{worktree}", PROJECT = "{project}" }

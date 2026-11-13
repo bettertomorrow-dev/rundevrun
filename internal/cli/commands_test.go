@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -146,6 +147,104 @@ func TestDownUsesRegisteredDescriptorWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestLifecycleSelectionFromSubdirectoryAndOutsideProject(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatal(code)
+	}
+	subdir := filepath.Join(root, "sub", "nested")
+	if err := os.MkdirAll(subdir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(subdir)
+	if e, code := invoke(t, "up", "worker", "--dry-run", "--json"); code != 0 {
+		t.Fatalf("subdirectory selection: %d %+v", code, e)
+	}
+	t.Chdir(base)
+	if e, code := invoke(t, "up", "worker", "--project", "example", "--dry-run", "--json"); code != 2 || e.Errors[0].Code != "USAGE" {
+		t.Fatalf("outside project inferred worktree: %d %+v", code, e)
+	}
+	if e, code := invoke(t, "up", "worker", "--project", "example", "--worktree", root, "--dry-run", "--json"); code != 0 {
+		t.Fatalf("explicit outside selection: %d %+v", code, e)
+	}
+}
+
+func TestBindDryRunUsesSharedValidationWithoutWritingState(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if err := os.WriteFile("dev.toml", []byte(`version=1
+[project]
+name="example"
+[services.api]
+command="touch executed"
+port="auto"
+[services.worker]
+command="touch executed"
+depends_on=["api"]
+env={API_URL="{dependencies.api.direct_url}"}
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatal(code)
+	}
+	before, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "bind", "worker", "api", "--to-worktree", root, "--dry-run", "--json")
+	if code != 0 || e.Plan == nil {
+		t.Fatalf("bind plan: %d %+v", code, e)
+	}
+	after, err := os.ReadFile(filepath.Join(runtime, "registry.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("bind dry-run wrote state: %v", err)
+	}
+	if _, err := os.Stat("executed"); !os.IsNotExist(err) {
+		t.Fatal("bind executed project code")
+	}
+	if e, code := invoke(t, "bind", "worker", "api", "--to-worktree", root, "--json"); code != 0 || len(e.Results) != 1 {
+		t.Fatalf("bind: %d %+v", code, e)
+	}
+	if e, code := invoke(t, "up", "worker", "--dry-run", "--json"); code != 0 || e.Plan == nil {
+		t.Fatalf("graph plan: %d %+v", code, e)
+	}
+}
+
+func TestLifecycleUsesCurrentBranchLabels(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RDR_HOME", filepath.Join(t.TempDir(), "state"))
+	writeProject(t, root)
+	t.Chdir(root)
+	git := func(args ...string) {
+		t.Helper()
+		prefix := []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "commit.gpgSign=false", "-c", "user.name=Fixture", "-c", "user.email=example@example.com"}
+		if out, err := exec.Command("git", append(prefix, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git: %s %v", out, err)
+		}
+	}
+	git("init", "-q", "-b", "before")
+	git("commit", "--allow-empty", "-qm", "fixture")
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatal(code)
+	}
+	git("branch", "-m", "after")
+	if e, code := invoke(t, "up", "worker", "--worktree", "after", "--dry-run", "--json"); code != 0 {
+		t.Fatalf("fresh branch selector: %d %+v", code, e)
+	}
+	if e, code := invoke(t, "up", "worker", "--worktree", "before", "--dry-run", "--json"); code != 2 {
+		t.Fatalf("stale branch selected a different checkout: %d %+v", code, e)
+	}
+}
+
 func TestConfigDriftAgainstRunManifest(t *testing.T) {
 	store, err := state.New(t.TempDir())
 	if err != nil {
@@ -253,5 +352,57 @@ func TestStatusReportsUnreadableRunAsError(t *testing.T) {
 	i := e.Results[0].(map[string]any)
 	if i["state_unknown"] != true || i["state"] != nil {
 		t.Fatalf("invented process state: %+v", i)
+	}
+}
+
+func TestStatusIncludesAddressesAndLogPathsWithoutPrivateEnvironment(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	runtime := filepath.Join(base, "state")
+	t.Setenv("RDR_HOME", runtime)
+	writeProject(t, root)
+	t.Chdir(root)
+	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
+		t.Fatal(code)
+	}
+	s := &state.Store{Root: runtime}
+	var instanceID string
+	if err := s.Update(func(r *state.Registry) error {
+		for id := range r.Projects {
+			p, err := r.Project(id)
+			if err != nil {
+				return err
+			}
+			for key, i := range p.Instances {
+				i.RunID = "saved-run"
+				instanceID = key
+				p.Instances[key] = i
+			}
+			return r.SetProject(id, p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteManifest("saved-run", state.Manifest{RunID: "saved-run", InstanceID: instanceID, Addresses: map[string]string{"direct_url": "http://127.0.0.1:32123", "url": "https://worker.example.com"}, StopContract: state.StopContract{Env: map[string]string{"TOKEN": "DO_NOT_DISCLOSE"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteRun("saved-run", state.RunRecord{State: "stopped"}); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "status", "--json")
+	if code != 0 || len(e.Results) != 1 {
+		t.Fatalf("%d %+v", code, e)
+	}
+	item := e.Results[0].(map[string]any)
+	if item["direct_url"] != "http://127.0.0.1:32123" || item["url"] != "https://worker.example.com" || item["log_paths"] == nil {
+		t.Fatal(item)
+	}
+	encoded, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("DO_NOT_DISCLOSE")) || item["env"] != nil {
+		t.Fatal("status disclosed private environment")
 	}
 }

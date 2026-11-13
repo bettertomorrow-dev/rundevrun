@@ -21,6 +21,8 @@ Discovery and registration:
   rdr up <service>        Build and start one service.
   rdr down <service>      Stop one service.
   rdr restart <service>   Restart one service.
+  rdr bind <service> <dependency> --to-worktree ID|PATH|NAME
+                          Set a desired dependency binding; live services need restart.
   rdr logs <service>      Show recent application output.
   rdr ls                  Show known instances across registered projects.
   rdr status              Show known instances, optionally scoped to a project.
@@ -28,6 +30,7 @@ Discovery and registration:
 Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
   --worktree ID|PATH|NAME Select an existing worktree.
+  --to-worktree ID|PATH|NAME Select the dependency worktree for bind.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
   --tail N                Show the last N log lines, default 100, maximum 10000.
