@@ -53,6 +53,35 @@ Unknown fields at every depth and unknown versions are errors with filename and
 field path. Service/project names match `[a-z][a-z0-9_-]*`. Empty services fail.
 Fields below are the complete schema; omitted optional tables are disabled.
 
+| Field | Type and requirement | Default and constraints |
+| --- | --- | --- |
+| version | required integer | Exactly 1. |
+| project | required table | Only required nonempty name. |
+| services | required table of service tables | At least one service. |
+| routing | optional table | Only domain, a nonempty DNS domain override. Machine listener/key settings forbidden here. |
+| service.command | required nonempty string | Whitespace-only rejected. |
+| service.cwd | optional nonempty string | '.', confined to existing worktree directory. |
+| service.build | optional nonempty string | No build if absent. |
+| service.protocol, port | optional string, integer or 'auto' | Rules below. |
+| service.depends_on | optional string array | [], unique existing service names. |
+| service.env | optional string map | {}, valid shell variable names, no RDR_* or __RDR_* keys. |
+| service.build_timeout/start_timeout/stop_timeout/hook_timeout | optional duration strings | 5m/30s/20s/60s, positive. |
+| service.health | optional table | Exactly one method, optional timeout defaulting to start_timeout, never greater. |
+| service.hooks | optional table | Only four hook names below, nonempty command values. |
+| service.routes | optional table array | [], required path and dependency strings, optional boolean strip_prefix=false. |
+| service.share | optional table | HTTP only; required mode=live or snapshot; auth defaults to password, no other auth accepted. |
+| share.build, share.dir | optional nonempty strings | Both required for snapshot and forbidden for live. dir relative to cwd. |
+| share.env | optional string map | {}, snapshot-only, same reserved-name restrictions as service.env. |
+
+All tables reject unknown keys. Service fields omit `services.<name>.` here.
+Absent share permits explicit live sharing of HTTP; snapshot requires configured
+build/dir. --mode live may override configured snapshot without using snapshot
+build/env/dir; --mode snapshot without snapshot config fails. Empty share, health
+or routing tables are invalid. Empty optional command strings are invalid, not
+omission. Empty hooks/env/routes are valid. Snapshot dir may not exist at config
+load: validate lexical confinement and closest existing ancestor now, revalidate
+full canonical confinement after build. cwd must exist at load.
+
 ```toml
 version = 1
 [project]
@@ -94,7 +123,11 @@ a port. Explicit protocols: process, tcp, http. process forbids port; tcp/http
 require one. Port is integer 1..65535 or string 'auto'; omission means no port.
 health has exactly one of http relative absolute-path string, tcp=true, or
 process=true, plus optional positive duration timeout. No health defaults to
-process liveness, reported running rather than ready. HTTP checks require http
+process liveness, reported running rather than ready. This satisfies dependency
+startup without claiming application health. Explicit health.process=true uses
+the same gate and reports running. HTTP without a healthcheck becomes routable
+once liveness and owned loopback listener are verified, still reported running.
+HTTP checks require http
 protocol and accept status 200..299 without following redirects. TCP checks
 require a port. Default timeouts are those above. All durations must be positive.
 Hooks allow before_start, after_start, before_stop, after_stop strings only.
@@ -114,17 +147,38 @@ Configuration digest is SHA-256 of raw dev.toml bytes; live digest is immutable.
 
 Command strings run as `/bin/sh -c` in cwd. This is trusted project code executed
 only for explicit lifecycle/share operations. Never execute a command to validate
-configuration, register, list, status or dry-run. Do not interpolate arbitrary
-values into shell source. Substitute each `{...}` with a generated environment
-variable expansion whose value is passed in env, with safe shell word semantics.
-The chosen implementation must support concatenation such as `{run_dir}/api` and
-values containing spaces, quotes, dollar signs and newlines without shell injection.
-Reject placeholders inside shell quotes or other syntactic contexts that cannot
-preserve these semantics; errors identify the field. Literal braces use `{{`/`}}`.
-Ordinary shell `$VAR` remains shell syntax. Config env strings substitute raw
-values without shell evaluation. Unknown or unavailable placeholders fail before
-any build. Valid names: host, port, direct_url, url, run_dir, worktree,
-project, service, dependencies.<declared-name>.{host,port,direct_url,url}.
+configuration, register, list, status or dry-run. Do not interpolate arbitrary values into shell source. Each placeholder becomes
+`"${__RDR_SUB_0}"`, incrementing its index, with raw value passed in environment.
+The entire __RDR_ prefix is reserved and stripped from inherited env. Thus
+`{run_dir}/api` becomes `"${__RDR_SUB_0}"/api`, preserving one word with spaces,
+quotes, dollars or newlines in the value. No recursive substitution.
+
+Commands containing runner placeholders use a restricted grammar: balanced shell
+single/double quotes may enclose ordinary text, but placeholders must be outside
+quotes. Reject unquoted backslash or '#', backticks, '$(' and '<<' outside single
+quotes, including inside double quotes. This excludes comments, command/arithmetic
+substitution, heredocs and ambiguous escapes. Reject a recognized placeholder in
+quotes. `$VAR` and `${VAR}` remain shell syntax, the latter consumed whole before
+brace scanning and allowing only plain variable names, no parameter operators.
+Literal {{ / }} yields a single brace; unmatched braces/unknown names fail.
+Commands with no runner placeholders may use ordinary trusted shell syntax.
+Env strings expand raw values without shell evaluation, with literal-brace
+escapes. Validate placeholders and syntax without executing shell.
+
+| Placeholder or example | Value or handling |
+| --- | --- |
+| host / port | 127.0.0.1 / decimal assigned port; latter absent without port. |
+| direct_url / url | Direct HTTP / named HTTPS or direct HTTP; absent for non-HTTP. |
+| run_dir | Absolute private directory of specific prepared or active run. |
+| worktree / project / service | Canonical worktree path / configured project name / service name. |
+| dependencies.<name>.host/port/direct_url/url | Exact selected declared dependency, same availability rules. |
+| `{run_dir}/api --port {port}` | Accepted, safe quoted env expansions. |
+| `PORT={port} ./app; echo ${HOME}` | Accepted, shell variable unchanged. |
+| `echo '{port}'` or `echo "{port}"` | Rejected, quoted placeholder. |
+| `echo $(cat file) {port}`, heredoc plus `{port}`, comment plus `{port}` | Rejected. |
+| `echo {{literal}} {port}` | Accepted, literal braces and one expansion. |
+
+Unknown/unavailable substitutions fail before any build.
 
 Environment order: inherited env excluding RDR_*, configured service env,
 then computed RDR_* and internal substitution variables. Config cannot assign
@@ -132,7 +186,14 @@ RDR_* or internal substitution names. No automatic PORT/API_URL mapping.
 RDR_HOST=127.0.0.1; RDR_PORT only for port services; RDR_DIRECT_URL only HTTP;
 RDR_URL is routed HTTPS URL or direct HTTP URL when routing is disabled.
 RDR_DEP_<NORMALIZED_NAME>_* follows the same availability rules.
-Build, start and hooks receive the same planned addresses. Hooks additionally
+Build and start receive the same new planned addresses. Stop-hooks use the
+stopping run's immutable stop contract: saved commands, cwd, run_dir, effective
+bindings and fully resolved environment captured when that run started, even if
+dev.toml or desired binds changed. Manifest privately stores this contract and
+never exposes environment in status. Missing old cwd/script fails explicitly;
+never use new version's stop contract. Start-hooks use new prepared values.
+Scripts remain project-owned and may change on disk: runner saves invocation,
+not a copy of all source. Hooks additionally
 receive RDR_REASON, RDR_INSTANCE_ID, RDR_OLD_WORKTREE, RDR_NEW_WORKTREE and
 RDR_OPERATION_ID. Snapshot env overrides service env and must explicitly provide
 publication-safe values for dependency URLs; reject local dependency URLs in
@@ -145,36 +206,56 @@ groups and wait for their descendants before returning.
 Runtime root: RDR_HOME override, otherwise XDG_STATE_HOME/rundevrun, otherwise
 ~/.local/state/rundevrun on both OSes. Private dirs 0700, files 0600, including
 existing paths, reject symlink state files. Never store application data here.
-registry.json schema=1 contains revision counter, projects, instances, desired
-bindings, reservations and operation intents. Each run has a random ID and
+registry.json schema=1 contains revision counter and projects keyed by ID, with
+instances, desired bindings, reservations and intents nested per project. Decode
+top-level schema/revision/projects strictly but retain each project as raw JSON
+and validate it independently. Syntactically corrupt registry is a global
+STATE_CORRUPT error, never overwritten. Semantically invalid project record is a
+per-project listing error; healthy reads/updates continue, preserving the invalid
+raw value. Corrupt manifest/supervisor state affects that run and is never treated
+as stopped. Each run has a random ID and
 runs/<id> containing manifest.json, supervisor.json and logs. Supervisor alone
 writes supervisor.json. CLI alone updates registry under its lock.
 
 Persist JSON by unique same-directory temporary file, chmod, write, fsync,
 close, rename and parent directory fsync. Decode errors fail closed with path,
 never replace corrupt state with empty state. Reads need no long operation lock.
-Separate project corruption must be reported per project when listing.
+Project/run corruption is isolated as above; global syntax damage is a global error.
 
 Nonblocking flock operation locks per instance, acquired in sorted ID order for
 the entire affected graph, including effective consumers and selected targets.
 Global registry lock is held only during read-modify-write and port assignment,
 never while building, waiting, invoking hooks or calling supervisors. Lock order:
-sorted instance locks, then registry lock; supervisor never takes instance locks.
+sorted instance locks, then sorted per-run spawn gates, then registry lock;
+supervisor never takes instance locks. Spawn gate is per-run flock shared by
+supervisor and recovery, held during authorization/spawn/identity persistence,
+not readiness or hooks.
 After locks, re-resolve graph and revisions, retry planning or report conflict.
 Locks release on process exit. Supervisor has its own per-run writer lock.
 
 States are stopped, starting, running, ready, unhealthy, failed. Intent phase is
 separate: preparing, prepared, spawning, started, stopping, stopped, hook_failed,
 complete, interrupted. Write intent with run ID and manifest BEFORE spawn.
-Manifest includes addresses, effective bindings, digest and operation ID.
+Manifest includes addresses, effective bindings, digest, operation ID and immutable stop contract.
 Spawn detached rdr internal supervisor with run ID and root, not shell code in
-argv. Child supervisor writes its own kernel identity before spawning application;
-it must check under registry lock that its intent is still authorized. Recovery
-can revoke an unacknowledged intent under that same lock, so late supervisors
-cannot spawn after a recovered stop. Supervisor records child identity before
-announcing startup. CLI handshake timeout triggers cleanup/revocation, never a
-second untracked spawn. Supervisor survives CLI exit, starts a separate session,
-handles TERM and child exit; it never automatically crash-restarts the service.
+argv. Supervisor acquires spawn gate, reads authorization under registry lock,
+releases registry lock but RETAINS gate, then durably writes its identity and
+claim=accepted to supervisor.json. This claim is the authorization linearization
+point; recovery cannot revoke while gate is held. Supervisor spawns a child rdr
+bootstrap with inherited acknowledgement pipe. Bootstrap runs no project code
+until supervisor durably records its kernel identity and sends a one-byte go.
+EOF before go exits without exec. On go bootstrap execs /bin/sh with same PID and
+start identity. Release gate only after identity is durable and go sent.
+Supervisor death before persistence closes pipe and bootstrap exits; after
+persistence recovery can find/stop child, even racing exec. Handshake timeout 5s.
+The supervisor.json writer lock is separate and short-lived; recovery never
+writes supervisor.json. CLI timeout acquires spawn gate while holding operation
+locks, then re-reads claim and child identity. Revoke only unclaimed intents;
+claimed ones require verified supervisor and child cleanup before clearing.
+A paused supervisor holding gate gives BUSY until resumed or explicitly stopped
+by verified identity. Successful down requires confirmed cleanup, never merely
+revocation. Supervisor survives CLI exit in a separate session, handles TERM and
+child exit, and never automatically crash-restarts the service.
 
 Identity requires PID, kernel start identity, PGID, SID and boot identity. Linux
 uses /proc start ticks plus boot_id, macOS start sec/usec plus kern.boottime.
@@ -186,10 +267,21 @@ the unavoidable check-to-signal race. Processes that intentionally daemonize out
 of the session are unsupported and must not be reported as safely contained.
 Readiness requires both live owned process and proof that the selected listener
 belongs to its tracked group, not merely a successful HTTP/TCP response. Platform
-inspection must fail closed if listener ownership cannot be established.
+inspection fails closed if listener ownership cannot be established. Verify bind
+address too: reject 0.0.0.0, :: including dual-stack, and all non-loopback addresses
+on configured port even with matching owner. Inspect other TCP/UDP listeners of
+tracked members too: any non-loopback listener fails startup and cleans run.
+Recheck while supervised. Guarantee covers tracked processes, not an unrelated
+daemon they contact or an intentionally escaped child. Daemonizing out of the
+session is unsupported. Test wildcard and dual-stack separately on both OSes.
 
 Recovery joins registry intent and per-run state, verifies OS identity and marks
-stale runs stopped/failed without signalling foreigners. Uncertain live ownership
+stale runs stopped/failed without signalling foreigners. Status is read-only;
+it may compute stale/in-progress warnings but never revoke intents, release
+reservations or run hooks. Mutating recovery obtains all affected instance locks,
+then spawn gates, re-reads under registry lock. Busy locks mean BUSY, never
+abandonment, even during a long build. Active owners stay untouched. Recovery
+writes registry results only, not supervisor files. Uncertain live ownership
 is an explicit error. No generic data rollback or replay of interrupted hooks.
 After interrupted switch, expose step journal and require a new explicit command.
 Do not silently re-run a migration or after_stop hook.
@@ -198,7 +290,9 @@ Port assignment occurs for the entire graph before any build, under registry
 lock, excluding all live/reserved ports across projects and checking loopback
 availability. Bind sockets may be released before external programs start;
 registry reservation protects only against rdr, not arbitrary programs. On bind
-conflict fail, clean owned new processes, preserve old runs, and report conflict.
+conflict fail, clean owned new processes and report conflict. Preparation failure
+preserves old processes. A conflict after confirmed stop leaves old runs stopped:
+retain artifacts/history, never promise automatic restoration.
 Restart preserves its port when possible; switch targets have their own address.
 
 Logs per run/stage: build, hook name, application, supervisor. Rotate at 10 MiB,
@@ -216,7 +310,9 @@ uses the same planner but only reads: no mkdir, locks written to disk, port
 reservation, alias registration, execution or network tunnel. Available ports
 in dry-run are tentative. Execution rebuilds/revalidates plan under locks.
 
-up starts dependencies in topological order, waits readiness before consumers;
+up starts dependencies topologically and waits successful startup gates before
+consumers: configured HTTP/TCP health success or verified process liveness, plus
+owned loopback listener for every port service;
 already-running instances are unchanged even if config changed. Report drift
 and restart_required. Partial successful dependencies remain after later failure.
 down stops only selected instances, rejects effective live consumers outside the
@@ -245,6 +341,26 @@ topologically: before_start -> spawn/readiness -> after_start. Commit desired
 bindings as journaled edges when their new dependencies are ready, then start
 consumers. A selected consumer starts only its target version. Do not change
 bindings of unrelated instances, including explicit target-side overrides.
+
+Switch edges follow these rules before preparation:
+
+| Consumer situation | Result |
+| --- | --- |
+| Live unselected consumer, desired equals effective | Rewrite mapped effective dependency A to B in desired and restart with B. |
+| Any live affected consumer, including selected source, with pending desired/effective difference | Reject BINDING_INVALID before build. Require explicit restart/rebind first. Never discard or implicitly apply pending bind. |
+| Stopped unselected consumer | No lifecycle; rewrite existing explicit desired edge A to B. Other desired/default edges unchanged. |
+| Selected consumer moving to target | Target explicit binds win. Otherwise inherit source explicit binds translated through mappings. Source defaults translate through mappings if selected; otherwise resolve in target worktree. |
+| Target explicit override points to a source that will stop | Reject BINDING_INVALID before build, require explicit target rebind. |
+
+Include stopped edge rewrites in plan. Validate resulting desired and effective
+restart graphs for cycles and configured same-project targets. No target override
+is silently discarded. Every stop step depends on confirmed death of all
+affected live consumers. A before_stop error or surviving child blocks stopping
+its dependency and transitive dependencies, marked not_run. An after_stop error
+blocks that instance replacement and dependent starts, but confirmed death may
+permit safe dependency stops. Start requires confirmed old stop, successful
+mandatory hooks and dependency startup gates. Independent branches may finish;
+failed consumer stop never permits dependency stop.
 
 after_start failure keeps the live process and blocks dependent steps. On any
 failure stop dependent execution, report completed/failed/not_run steps, retain
@@ -294,8 +410,9 @@ empty labels with an actionable alias error. Never resolve a hostname by parsing
 its pieces. Reserve full hostname to an exact instance; no alias takeover.
 
 Up with routing starts detached per-user proxy, except --no-proxy. Proxy only
-routes registry targets whose run ID, PID identity, listener ownership and ready
-state match; revalidate before dialing, invalidate route on process death. 404
+routes registry targets whose run ID, PID identity and loopback listener ownership
+match and startup gate succeeded: running without healthcheck or ready after
+HTTP/TCP health. Revalidate before dialing, invalidate route on process death. 404
 unknown Host, 503 stopped known instance. Bind only loopback. TLS requires valid
 key pair, dates and SAN coverage for every hostname. SNI chooses provided cert;
 Host must match accepted TLS name, no domain fronting. Reload validates complete
