@@ -3,7 +3,7 @@ package runner
 import (
 	"errors"
 	"fmt"
- "io"
+	"io"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
