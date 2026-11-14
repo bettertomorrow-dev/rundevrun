@@ -48,12 +48,16 @@ type shareCredentials struct {
 }
 
 type proxyInfoView struct {
-	State       string `json:"state"`
-	PID         int    `json:"pid,omitempty"`
-	HTTPListen  string `json:"http_listen,omitempty"`
-	HTTPSListen string `json:"https_listen,omitempty"`
-	TLSMode     string `json:"tls_mode,omitempty"`
-	ConfigPath  string `json:"config_path,omitempty"`
+	State                        string `json:"state"`
+	PID                          int    `json:"pid,omitempty"`
+	HTTPListen                   string `json:"http_listen,omitempty"`
+	HTTPSListen                  string `json:"https_listen,omitempty"`
+	TLSMode                      string `json:"tls_mode,omitempty"`
+	ConfigPath                   string `json:"config_path,omitempty"`
+	PreparedListen               string `json:"prepared_listen,omitempty"`
+	TLSError                     string `json:"tls_error,omitempty"`
+	RenewalError                 string `json:"renewal_error,omitempty"`
+	CertificateActivationPending bool   `json:"certificate_activation_pending,omitempty"`
 }
 
 func result(command string, opts options) envelope {

@@ -15,6 +15,10 @@ type Runner struct {
 	Executable string
 	RetryHooks bool
 	Routing    *routing.Config
+	// ExpectedRuns prevents a stale interactive selection stopping a replacement.
+	ExpectedRuns map[string]string
+	// SkipStopHooks is used when the worktree containing the hooks was removed.
+	SkipStopHooks bool
 }
 
 func New(store *state.Store, executable string) *Runner {

@@ -16,6 +16,24 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
+func TestDoctorDefaultsToLocalRouting(t *testing.T) {
+	root := t.TempDir()
+	store, err := state.New(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(func(reg *state.Registry) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Run(context.Background(), store, filepath.Join(root, "config.toml"), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Configuration.Status != "pass" || report.Proxy.Status.Status == "skip" {
+		t.Fatalf("local routing incorrectly disabled: %+v", report)
+	}
+}
+
 func TestLoopbackRestrictions(t *testing.T) {
 	if !loopbackAddresses([]net.IPAddr{{IP: net.ParseIP("127.0.0.1")}, {IP: net.ParseIP("::1")}}) {
 		t.Fatal("loopback rejected")
@@ -101,8 +119,8 @@ func TestGlobalReadOnlyAndInvalidTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Configuration.Status != "skip" || report.Proxy.Status.Status != "skip" || report.Proxy.HTTP.Status != "skip" || len(report.Projects) != 1 || report.Projects[0].Registry.Status != "pass" || len(report.Routes) != 1 || report.Routes[0].Application.Status != "pass" || report.Routes[0].Application.Message != "stopped" || report.Routes[0].DNS.Status != "skip" || report.Routes[0].Ownership.Status != "skip" {
-		t.Fatalf("disabled routing report: %+v", report)
+	if report.Configuration.Status != "pass" || report.Proxy.Status.Status != "fail" || report.Proxy.HTTP.Status != "skip" || len(report.Projects) != 1 || report.Projects[0].Registry.Status != "pass" || len(report.Routes) != 1 || report.Routes[0].Application.Status != "pass" || report.Routes[0].Application.Message != "stopped" || report.Routes[0].TLSSystem.Message != "local HTTP does not require TLS" || report.Routes[0].Ownership.Status != "fail" {
+		t.Fatalf("default local routing report: %+v", report)
 	}
 	server := httptest.NewTLSServer(nil)
 	defer server.Close()
@@ -122,7 +140,7 @@ func TestGlobalReadOnlyAndInvalidTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Configuration.Status != "fail" || len(report.Routes) != 1 || report.Routes[0].Application.Message != "stopped" {
+	if report.Configuration.Status != "pass" || report.LegacyTLS == nil || report.LegacyTLS.Status != "fail" || len(report.Routes) != 1 || report.Routes[0].Application.Message != "stopped" {
 		t.Fatalf("invalid TLS report: %+v", report)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -70,7 +70,7 @@ func (h *handler) trusted(remote string) bool {
 	}
 	return false
 }
-func (h *handler) selectRoute(host, path string) (selection, bool, error) {
+func (h *handler) selectRoute(host, path, scope string) (selection, bool, error) {
 	reg, err := h.store.Read()
 	if err != nil {
 		return selection{}, false, err
@@ -83,7 +83,22 @@ func (h *handler) selectRoute(host, path string) (selection, bool, error) {
 			return selection{}, false, e
 		}
 		for _, i := range p.Instances {
-			if i.Hostname != host {
+			matches := false
+			for _, ep := range i.Endpoints {
+				if ep.Scope == "tailnet" && (!h.cfg.LocalProjects[projectID].Tailnet || h.cfg.TailnetDomain == "" || !strings.HasSuffix(ep.Hostname, "."+h.cfg.TailnetDomain)) {
+					continue
+				}
+				if ep.Scope == scope && ep.Hostname == host && ep.InstanceID == i.ID {
+					matches = true
+				}
+			}
+			if !h.cfg.LocalOnly && i.Hostname == host {
+				matches = true
+			}
+			if h.cfg.LocalOnly && len(i.Endpoints) == 0 && scope == "local" && i.Hostname == host {
+				matches = true
+			}
+			if !matches {
 				continue
 			}
 			if found {
@@ -161,7 +176,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "host does not match TLS name", http.StatusMisdirectedRequest)
 		return
 	}
-	selected, known, err := h.selectRoute(host, r.URL.Path)
+	scope := "local"
+	if r.TLS != nil {
+		scope = "tailnet"
+	}
+	selected, known, err := h.selectRoute(host, r.URL.Path, scope)
 	if !known && err == nil {
 		http.NotFound(w, r)
 		return
@@ -183,7 +202,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		clientChain = r.Header.Get("X-Forwarded-For")
 	}
 	transport := &http.Transport{DisableKeepAlives: true, Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		current, ok, e := h.selectRoute(host, r.URL.Path)
+		current, ok, e := h.selectRoute(host, r.URL.Path, scope)
 		if e != nil || !ok || current.project != selected.project || current.source.ID != selected.source.ID || current.source.RunID != selected.source.RunID || current.target.ID != selected.target.ID || current.target.RunID != selected.target.RunID || current.strip != selected.strip {
 			return nil, errors.New("route changed")
 		}

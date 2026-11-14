@@ -245,15 +245,30 @@ func newGraph(r *Runner, reg state.Registry) *graphPlanner {
 	return &graphPlanner{r: r, reg: reg, nodes: map[string]*graphNode{}, projects: map[string]*discovery.Project{}, used: map[int]bool{}, marks: map[string]int{}}
 }
 func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Selection, cascade bool) (GraphPlan, error) {
+	return r.planGraph(ctx, action, selections, cascade, nil)
+}
+
+// PlanGraphWithRegistry plans against a caller-supplied snapshot without writing it.
+func (r *Runner) PlanGraphWithRegistry(ctx context.Context, action string, selections []Selection, cascade bool, snapshot state.Registry) (GraphPlan, error) {
+	return r.planGraph(ctx, action, selections, cascade, &snapshot)
+}
+
+func (r *Runner) planGraph(ctx context.Context, action string, selections []Selection, cascade bool, snapshot *state.Registry) (GraphPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return GraphPlan{}, &Error{"CANCELLED", err}
 	}
 	if r == nil || r.Store == nil || len(selections) == 0 || (action != "up" && action != "down" && action != "restart") {
 		return GraphPlan{}, &Error{"USAGE", errors.New("invalid graph request")}
 	}
-	reg, e := r.Store.Read()
-	if e != nil {
-		return GraphPlan{}, e
+	var reg state.Registry
+	var e error
+	if snapshot != nil {
+		reg = *snapshot
+	} else {
+		reg, e = r.Store.Read()
+		if e != nil {
+			return GraphPlan{}, e
+		}
 	}
 	g := newGraph(r, reg)
 	result := GraphPlan{Action: action, Revision: reg.Revision, Instances: []PlannedInstance{}}
@@ -371,7 +386,7 @@ func (g *graphPlanner) finalize() error {
 		n := g.nodes[id]
 		sel := n.selection
 		enabled := g.r.Routing != nil && g.r.Routing.Routing.Enabled
-		knownLiveRoute := n.live && !g.replace[id] && n.saved.Hostname != "" && n.plan.Addresses["direct_url"] != ""
+		knownLiveRoute := n.live && !g.replace[id] && n.saved.Hostname != "" && n.plan.Addresses["direct_url"] != "" && (g.r.Routing == nil || !g.r.Routing.LocalOnly || g.r.Routing.Legacy == nil || hasLocalEndpoint(n.saved))
 		if enabled && knownLiveRoute {
 			worktree := *sel.Worktree
 			worktree.Config = nil

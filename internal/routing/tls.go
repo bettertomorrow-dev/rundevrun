@@ -73,6 +73,14 @@ func LoadTLS(c Config, hostnames []string) (*tls.Config, error) {
 
 // ValidateHosts checks provided server credentials or public external chains.
 func ValidateHosts(c Config, hosts []string) error {
+	if c.LocalOnly {
+		for _, host := range hosts {
+			if _, err := validateDNS(host); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if err := c.validateTLSMode(); err != nil {
 		return err
 	}

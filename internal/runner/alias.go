@@ -108,7 +108,14 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 			return AliasPlan{}, e
 		}
 		for _, inst := range p.Instances {
-			if inst.Hostname != "" {
+			for _, ep := range inst.Endpoints {
+				host := strings.ToLower(ep.Hostname)
+				if other := owners[host]; other != "" && other != inst.ID {
+					return AliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", host)}
+				}
+				owners[host] = inst.ID
+			}
+			if inst.Hostname != "" && !(r.Routing.LocalOnly && r.Routing.Legacy != nil && !strings.HasSuffix(inst.Hostname, ".localhost")) {
 				host := strings.ToLower(inst.Hostname)
 				if other := owners[host]; other != "" && other != inst.ID {
 					return AliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", host)}
@@ -166,9 +173,17 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 			continue
 		}
 		host := inst.Hostname
+		if r.Routing.LocalOnly {
+			for _, ep := range inst.Endpoints {
+				if ep.Scope == "local" && !ep.Alias {
+					host = ep.Hostname
+					break
+				}
+			}
+		}
 		if aliasChanged || host == "" {
 			domain := ""
-			if cfg.Routing != nil {
+			if !r.Routing.LocalOnly && cfg.Routing != nil {
 				domain = cfg.Routing.Domain
 			}
 			host, e = r.Routing.Hostname(inst.Service, label, saved.Name, domain)
@@ -187,6 +202,12 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 		plan.Changes = append(plan.Changes, c)
 	}
 	for _, c := range plan.Changes {
+		if r.Routing.LocalOnly && r.Routing.TailnetDomain != "" && r.Routing.LocalProjects[project.ID].Tailnet {
+			tailHost := strings.TrimSuffix(c.NewHostname, ".localhost") + "." + r.Routing.TailnetDomain
+			if owner := owners[tailHost]; owner != "" && owner != c.InstanceID {
+				return AliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", tailHost)}
+			}
+		}
 		if owner := owners[strings.ToLower(c.NewHostname)]; owner != "" && owner != c.InstanceID {
 			return AliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved; choose another alias", c.NewHostname)}
 		}
@@ -266,8 +287,7 @@ func (r *Runner) SetAlias(ctx context.Context, project *discovery.Project, workt
 		}
 		for _, c := range next.Changes {
 			inst := saved.Instances[c.InstanceID]
-			inst.Hostname = c.NewHostname
-			inst.RouteURL = c.NewURL
+			r.setCanonicalEndpoint(&inst, project.ID, c.NewHostname, c.NewURL)
 			saved.Instances[c.InstanceID] = inst
 		}
 		return reg.SetProject(saved.ID, saved)

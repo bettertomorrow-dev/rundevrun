@@ -16,7 +16,7 @@ import (
 )
 
 func TestPlanSwitchSharedConsumer(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	main := filepath.Join(dir, "main")
 	other := filepath.Join(dir, "other")
 	third := filepath.Join(dir, "third")
@@ -305,7 +305,7 @@ env = { API = '{dependencies.api.url}' }
 }
 
 func TestPlanSwitchRejectsTransitiveDefaultToStoppingSource(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	main := filepath.Join(dir, "main")
 	other := filepath.Join(dir, "other")
 	if e := os.Mkdir(main, 0700); e != nil {

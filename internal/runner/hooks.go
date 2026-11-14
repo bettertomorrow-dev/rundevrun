@@ -198,6 +198,17 @@ func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, newWork
 	if e = gate.Close(); e != nil {
 		return e
 	}
+	if r.SkipStopHooks && strings.HasSuffix(h.Name, "_stop") {
+		// Cleanup above verified that no hook processes remain. The removed
+		// worktree cannot replay this hook, so discard its retry requirement.
+		return r.hookUpdate(projectID, id, func(i *state.Instance) error {
+			if i.Hook == nil || i.Hook.OperationID != h.OperationID || i.Hook.Name != h.Name {
+				return errors.New("hook journal changed")
+			}
+			i.Hook = nil
+			return nil
+		})
+	}
 	return r.resolveHook(ctx, projectID, id, h, reason, newWorktree, operationID)
 }
 
@@ -239,6 +250,9 @@ func (r *Runner) stopWithHooks(ctx context.Context, projectID, id, runID, reason
 	}
 	if manifest.InstanceID != id {
 		return fmt.Errorf("%w: manifest instance mismatch", state.ErrCorrupt)
+	}
+	if r.SkipStopHooks {
+		return r.stopLocked(ctx, projectID, id, runID)
 	}
 	reg, e := r.Store.Read()
 	if e != nil {
