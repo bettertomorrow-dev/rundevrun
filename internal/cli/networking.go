@@ -43,9 +43,9 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 			return
 		}
 		e.Results = append(e.Results, snapshot)
-	case "check":
+	case "check", "setup-check":
 		if path != "" || opts.dryRun {
-			e.fail("USAGE", "network check does not accept --file or --dry-run")
+			e.fail("USAGE", fmt.Sprintf("network %s does not accept --file or --dry-run", command))
 			return
 		}
 		status, err := service.Check(ctx)
@@ -144,17 +144,6 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 				e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "network settings and routes were saved, but proxy reload failed: " + err.Error(), Actions: []string{"run `rdr network check --json`, then `rdr proxy reload`"}})
 			}
 		}
-	case "setup-check":
-		if path != "" || opts.dryRun {
-			e.fail("USAGE", "network setup-check does not accept --file or --dry-run")
-			return
-		}
-		status, err := service.Check(ctx)
-		if err != nil {
-			failError(e, err)
-			return
-		}
-		e.Results = append(e.Results, status)
 	case "setup-plan":
 		if path != "" || opts.dryRun {
 			e.fail("USAGE", "network setup-plan does not accept --file or --dry-run")

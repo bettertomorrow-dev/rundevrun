@@ -33,6 +33,7 @@ type candidate struct {
 	config         routing.Config
 	tls            *tls.Config
 	legacyTLS      *tls.Config
+	legacyError    error
 	handler        http.Handler
 	managedHandler http.Handler
 	legacyHandler  http.Handler
@@ -130,6 +131,7 @@ func buildCandidate(store *state.Store, path string) (*candidate, error) {
 			next.legacyTLS, err = routing.LoadTLS(*cfg.Legacy, legacyHosts)
 		}
 		if err != nil {
+			next.legacyError = err
 			next.tlsError = "legacy TLS: " + err.Error()
 		}
 		localHandler, legacyHandler := next.handler, NewHandler(store, *cfg.Legacy)
@@ -385,6 +387,12 @@ func Serve(root, configPath string) (result error) {
 			if current.Routing.HTTPSListen != cfg.Routing.HTTPSListen {
 				return true
 			}
+			if (current.Legacy == nil) != (cfg.Legacy == nil) {
+				return true
+			}
+			if current.Legacy != nil && (current.Legacy.Routing.HTTPListen != cfg.Legacy.Routing.HTTPListen || current.Legacy.Routing.HTTPSListen != cfg.Legacy.Routing.HTTPSListen || current.Legacy.ExternalTLS() != cfg.Legacy.ExternalTLS()) {
+				return true
+			}
 			return (!cfg.LocalOnly || !current.LocalOnly) && (cfg.Routing.HTTPListen != current.Routing.HTTPListen || cfg.Routing.HTTPSListen != current.Routing.HTTPSListen || cfg.ExternalTLS() != current.ExternalTLS() || cfg.LocalOnly != current.LocalOnly)
 		}
 		cfg, e := localrouting.Load(configPath)
@@ -394,6 +402,9 @@ func Serve(root, configPath string) (result error) {
 		var next *candidate
 		if e == nil {
 			next, e = buildCandidate(store, configPath)
+		}
+		if e == nil && next.legacyError != nil {
+			e = next.legacyError
 		}
 		if e == nil && changed(next.config) {
 			e = &Error{Code: "CONFIG_INVALID", Message: "TLS mode or listener addresses changed; restart proxy"}

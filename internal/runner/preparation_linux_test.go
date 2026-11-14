@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +54,19 @@ func TestPublicCLIRecoversKilledBuild(t *testing.T) {
 		t.Run(fmt.Sprintf("restart=%v/recover=%s", restart, tc.recover), func(t *testing.T) {
 			dir := t.TempDir()
 			root := filepath.Join(dir, "runtime")
+			configRoot := filepath.Join(dir, "config")
+			if err := os.MkdirAll(filepath.Join(configRoot, "rundevrun"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			networking := fmt.Sprintf(`{"version":1,"local":{"listen":%q},"tailnet":{}}`, listener.Addr().String())
+			listener.Close()
+			if err := os.WriteFile(filepath.Join(configRoot, "rundevrun", "networking.json"), []byte(networking), 0600); err != nil {
+				t.Fatal(err)
+			}
 			configPath := filepath.Join(dir, "dev.toml")
 			writeConfig := func(build bool) {
 				text := "version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'python3 -m http.server {port} --bind 127.0.0.1'\nport = 'auto'\nstop_timeout = '1s'\nbuild_timeout = '30s'\n"
@@ -67,9 +81,10 @@ func TestPublicCLIRecoversKilledBuild(t *testing.T) {
 			cli := func(args ...string) *exec.Cmd {
 				c := exec.Command(binary, args...)
 				c.Dir = dir
-				c.Env = append(os.Environ(), "RDR_HOME="+root)
+				c.Env = append(os.Environ(), "RDR_HOME="+root, "XDG_CONFIG_HOME="+configRoot)
 				return c
 			}
+			t.Cleanup(func() { _ = cli("down", "--all").Run(); _ = cli("proxy", "stop").Run() })
 			if out, err := cli("register", ".", "--json").CombinedOutput(); err != nil {
 				t.Fatalf("register: %v %s", err, out)
 			}

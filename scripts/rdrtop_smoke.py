@@ -9,6 +9,7 @@ from pathlib import Path
 import pty
 import select
 import signal
+import socket
 import struct
 import subprocess
 import tempfile
@@ -32,7 +33,7 @@ def wait_for(fd, needle, process, timeout=10):
 
 def main():
     repo = Path(__file__).resolve().parents[1]
-    with tempfile.TemporaryDirectory(prefix="rdrtop-smoke-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="rdrtop-smoke-", dir="/tmp") as temporary:
         root = Path(temporary).resolve()
         rdr, top = root / "rdr", root / "rdrtop"
         for command, destination in [("rdr", rdr), ("rdrtop", top)]:
@@ -48,6 +49,14 @@ stop_timeout = "3s"
 hooks = { before_stop = "printf done > before-stopped", after_stop = "printf done > after-stopped" }
 ''')
         env = dict(os.environ, RDR_HOME=str(root / "state"), XDG_CONFIG_HOME=str(root / "config"))
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            proxy_port = listener.getsockname()[1]
+        config_root = root / "config" / "rundevrun"
+        config_root.mkdir(parents=True, mode=0o700)
+        (config_root / "networking.json").write_text(json.dumps({
+            "version": 1, "local": {"listen": f"127.0.0.1:{proxy_port}"}, "tailnet": {}
+        }))
 
         def cli(*args, cwd=project, check=True):
             result = subprocess.run([str(rdr), *args, "--json"], cwd=cwd, env=env,
@@ -133,13 +142,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
 http.server.HTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serve_forever()
 ''')
-            (web / "dev.toml").write_text('''version = 1
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                web_port = listener.getsockname()[1]
+            (web / "dev.toml").write_text(f'''version = 1
 [project]
 name = "http-fixture"
 [services.web]
 command = "exec python3 -u server.py"
 protocol = "http"
-port = "auto"
+port = {web_port}
 stop_timeout = "3s"
 ''')
             web_up = cli("up", "web", cwd=web)
@@ -165,7 +177,7 @@ stop_timeout = "3s"
                     time.sleep(0.1)
                 assert route and ".localhost" in route, f"missing canonical local URL: {candidate}"
                 parsed = urlsplit(route)
-                assert parsed.scheme == "http" and parsed.port == 8080, route
+                assert parsed.scheme == "http" and parsed.port == proxy_port, route
                 response = None
                 deadline = time.monotonic() + 15
                 while time.monotonic() < deadline:

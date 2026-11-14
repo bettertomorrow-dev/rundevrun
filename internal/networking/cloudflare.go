@@ -318,27 +318,5 @@ func (s Service) ReplaceCredential(ref string, token []byte) error {
 	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return errors.New("credentials directory must be private")
 	}
-	f, err := os.CreateTemp(dir, ".credential-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(token); err == nil {
-		err = f.Sync()
-	}
-	if e := f.Close(); err == nil {
-		err = e
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), filepath.Join(dir, ref)); err != nil {
-		return err
-	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return atomicWrite(filepath.Join(dir, ref), token)
 }

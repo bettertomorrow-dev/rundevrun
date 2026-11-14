@@ -211,6 +211,14 @@ func TestProjectSettingKeysPreservePreviewBaselineWithoutHTTPEndpoints(t *testin
 	snapshot.Config.Projects = map[string]networking.Project{
 		"p": {Tailnet: false, DefaultService: "old-service", PrimaryWorktree: "old-worktree"},
 	}
+	initial, err := service.Plan(context.Background(), snapshot.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = service.Apply(context.Background(), initial)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ui := newApp(context.Background(), store, root, io.Discard)
 	ui.network = service
 	ui.showNetwork = true
@@ -219,14 +227,18 @@ func TestProjectSettingKeysPreservePreviewBaselineWithoutHTTPEndpoints(t *testin
 		Name: "new-service", WorktreeID: "new-worktree", State: "running", Protocol: "tcp",
 	}}}, Selected: "p/new-worktree/new-service", Initialized: true}
 	_, _ = ui.Update(networkMsg{snapshot: snapshot})
-	baseline := ui.networkBaseConfig.Projects["p"]
+	baseline := snapshot.Config.Projects["p"]
 	if selected, ok := ui.SelectedService(); !ok || selected.Protocol == "http" || selected.LocalURL != "" || selected.TailnetURL != "" {
 		t.Fatalf("fixture unexpectedly has an HTTP endpoint: %+v", selected)
 	}
 	for _, key := range []rune{'t', 's', 'w'} {
 		_, _ = ui.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 	}
-	if got := ui.networkBaseConfig.Projects["p"]; got != baseline {
+	persisted, err := service.Inspect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := persisted.Config.Projects["p"]; got != baseline {
 		t.Fatalf("editing project settings changed the retained baseline: before=%+v after=%+v", baseline, got)
 	}
 	_, cmd := ui.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -238,7 +250,7 @@ func TestProjectSettingKeysPreservePreviewBaselineWithoutHTTPEndpoints(t *testin
 		t.Fatalf("settings preview missing: %s", ui.Status)
 	}
 	preview := ansi.Strip(ui.View())
-	for _, want := range []string{"tailnet: false → true", `default_service: "old-service" → "new-service"`, `primary_worktree: "old-worktree" → "new-worktree"`} {
+	for _, want := range []string{`tailnet: "false" -> "true"`, `default_service: "old-service" -> "new-service"`, `primary_worktree: "old-worktree" -> "new-worktree"`} {
 		if !strings.Contains(preview, want) {
 			t.Fatalf("preview missing %q: %s", want, preview)
 		}
@@ -325,7 +337,7 @@ func TestNetworkDraftRejectsManualEditBeforePreview(t *testing.T) {
 	ui := newApp(context.Background(), store, root, io.Discard)
 	ui.network = service
 	ui.showNetwork = true
-	ui.networkSnapshot, ui.networkBaseConfig = snapshot, snapshot.Config
+	ui.networkSnapshot = snapshot
 	draft := snapshot.Config
 	draft.Local.Listen = "127.0.0.1:8081"
 	ui.networkSnapshot.Config = draft

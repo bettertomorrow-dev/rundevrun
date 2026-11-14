@@ -89,36 +89,24 @@ func (a *Activation) Finish(ctx context.Context) error {
 		if err := proxy.Reload(ctx, a.store); err != nil {
 			return err
 		}
-		info, err := proxy.Status(a.store)
-		if err != nil {
-			return err
-		}
-		if tailnetEnabled(a.config) {
-			if info.TLSError != "" {
-				return fmt.Errorf("managed tailnet TLS did not activate: %s", info.TLSError)
-			}
-			if info.TLSMode != "managed" || info.HTTPSListen == "" {
-				return errors.New("managed tailnet TLS listener is not active")
-			}
-		}
-		succeeded = true
-		return nil
-	}
-	if hasLiveHTTP(a.store) {
+	} else if hasLiveHTTP(a.store) {
 		if err := proxy.Ensure(ctx, a.store, a.exe, a.path); err != nil {
 			return err
 		}
-		info, err := proxy.Status(a.store)
-		if err != nil {
-			return err
+	} else {
+		succeeded = true
+		return nil
+	}
+	info, err := proxy.Status(a.store)
+	if err != nil {
+		return err
+	}
+	if tailnetEnabled(a.config) {
+		if info.TLSError != "" {
+			return fmt.Errorf("managed tailnet TLS did not activate: %s", info.TLSError)
 		}
-		if tailnetEnabled(a.config) {
-			if info.TLSError != "" {
-				return fmt.Errorf("managed tailnet TLS did not activate: %s", info.TLSError)
-			}
-			if info.TLSMode != "managed" || info.HTTPSListen == "" {
-				return errors.New("managed tailnet TLS listener is not active")
-			}
+		if info.TLSMode != "managed" || info.HTTPSListen == "" {
+			return errors.New("managed tailnet TLS listener is not active")
 		}
 	}
 	succeeded = true

@@ -85,7 +85,6 @@ type app struct {
 	credentialInput               []byte
 	network                       networking.Service
 	networkSnapshot               networking.Snapshot
-	networkBaseConfig             networking.Config
 	networkPlan                   *networking.Plan
 	setupStatus                   networking.SetupStatus
 	proxyInfo                     proxy.Info
@@ -377,7 +376,6 @@ func (m *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			if !msg.planned {
 				m.networkSnapshot = msg.snapshot
-				m.networkBaseConfig = cloneNetworkConfig(msg.snapshot.Config)
 			}
 			if msg.planned {
 				m.networkPlan = &msg.plan
@@ -763,7 +761,12 @@ func networkLines(m *app) string {
 	}
 	if m.networkPlan != nil {
 		lines = append(lines, "", "Settings preview", "  Based on config revision: "+m.networkPlan.Baseline)
-		lines = append(lines, settingDiffLines(m.networkBaseConfig, m.networkPlan.Desired)...)
+		if len(m.networkPlan.Changes) == 0 {
+			lines = append(lines, "  No settings changes")
+		}
+		for _, change := range m.networkPlan.Changes {
+			lines = append(lines, "  "+change)
+		}
 		lines = append(lines, fmt.Sprintf("  Routes based on registry revision %d:", m.routeRevision))
 		if len(m.routePreview) == 0 {
 			lines = append(lines, "    No endpoint or alias changes")
@@ -832,63 +835,6 @@ func routeScheme(scope string) string {
 	return "http"
 }
 
-func settingDiffLines(before, after networking.Config) []string {
-	var lines []string
-	add := func(key, old, next string) {
-		if old != next {
-			lines = append(lines, fmt.Sprintf("  %s: %q → %q", key, old, next))
-		}
-	}
-	add("local.listen", before.Local.Listen, after.Local.Listen)
-	add("tailnet.domain", before.Tailnet.Domain, after.Tailnet.Domain)
-	add("tailnet.zone_id", before.Tailnet.ZoneID, after.Tailnet.ZoneID)
-	add("tailnet.credential_ref", before.Tailnet.CredentialRef, after.Tailnet.CredentialRef)
-	add("tailnet.email", before.Tailnet.Email, after.Tailnet.Email)
-	ids := map[string]bool{}
-	for id := range before.Projects {
-		ids[id] = true
-	}
-	for id := range after.Projects {
-		ids[id] = true
-	}
-	ordered := make([]string, 0, len(ids))
-	for id := range ids {
-		ordered = append(ordered, id)
-	}
-	sort.Strings(ordered)
-	for _, id := range ordered {
-		a, b := before.Projects[id], after.Projects[id]
-		if a != b {
-			prefix := "  projects[" + id + "]."
-			if a.Tailnet != b.Tailnet {
-				lines = append(lines, fmt.Sprintf("%stailnet: %t → %t", prefix, a.Tailnet, b.Tailnet))
-			}
-			if a.DefaultService != b.DefaultService {
-				lines = append(lines, fmt.Sprintf("%sdefault_service: %q → %q", prefix, a.DefaultService, b.DefaultService))
-			}
-			if a.PrimaryWorktree != b.PrimaryWorktree {
-				lines = append(lines, fmt.Sprintf("%sprimary_worktree: %q → %q", prefix, a.PrimaryWorktree, b.PrimaryWorktree))
-			}
-		}
-	}
-	if len(lines) == 0 {
-		return []string{"  No settings changes"}
-	}
-	return lines
-}
-
-func cloneNetworkConfig(config networking.Config) networking.Config {
-	if config.Projects == nil {
-		return config
-	}
-	projects := make(map[string]networking.Project, len(config.Projects))
-	for id, project := range config.Projects {
-		projects[id] = project
-	}
-	config.Projects = projects
-	return config
-}
-
 func (m *app) termsVisible() bool {
 	if m.setupPlan == nil || m.setupPlan.TermsURL == "" {
 		return true
@@ -928,10 +874,7 @@ func (m *app) setNetworkText(value string) {
 func (m *app) beginNetworkText(field, current, prompt string) {
 	m.textField = field
 	m.networkEdit = true
-	m.setNetworkText("")
-	for _, r := range current {
-		m.setNetworkText(m.networkText() + string(r))
-	}
+	m.setNetworkText(current)
 	m.Status = prompt + ", then Enter to keep it or Esc to cancel."
 }
 

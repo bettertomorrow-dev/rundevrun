@@ -101,27 +101,5 @@ func (s Service) publishCertificate(domain string, bundle []byte, roots *x509.Ce
 	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return errors.New("certificate directory must be private")
 	}
-	f, err := os.CreateTemp(dir, ".certificate-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(bundle); err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), filepath.Join(dir, "current.pem")); err != nil {
-		return err
-	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return atomicWrite(filepath.Join(dir, "current.pem"), bundle)
 }

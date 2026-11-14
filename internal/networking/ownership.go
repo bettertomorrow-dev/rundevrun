@@ -51,27 +51,5 @@ func (s Service) writeOwnership(owned ownedResources) error {
 		return err
 	}
 	data = append(data, "\n"...)
-	f, err := os.CreateTemp(s.Root, ".networking-owned-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(data); err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), filepath.Join(s.Root, "networking-owned.json")); err != nil {
-		return err
-	}
-	dir, err := os.Open(s.Root)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicWrite(filepath.Join(s.Root, "networking-owned.json"), data)
 }

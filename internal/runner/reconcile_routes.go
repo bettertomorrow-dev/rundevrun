@@ -2,8 +2,8 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 
@@ -74,10 +74,7 @@ func PlanLocalRoutes(ctx context.Context, store *state.Store, cfg routing.Config
 	r := New(store, "")
 	r.Routing = &cfg
 	candidate := before
-	candidate.Projects = make(map[string]json.RawMessage, len(before.Projects))
-	for id, data := range before.Projects {
-		candidate.Projects[id] = data
-	}
+	candidate.Projects = maps.Clone(before.Projects)
 	for _, project := range projects {
 		if err := ctx.Err(); err != nil {
 			return LocalRoutePlan{}, err
