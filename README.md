@@ -13,6 +13,23 @@ go build -trimpath -o /tmp/rdr ./cmd/rdr
 /tmp/rdr --help
 ```
 
+The separate `rdrtop` terminal app visualizes rdr-managed services:
+
+```sh
+go build -trimpath -o /tmp/rdrtop ./cmd/rdrtop
+/tmp/rdrtop
+```
+
+See [rdrtop usage](docs/RDRTOP.md).
+
+See [local and tailnet networking](docs/NETWORKING.md) for configuration,
+provider setup, credential handling, recovery, and migration.
+
+For guided setup with your own domain on macOS or Linux, use the explicit-only
+[`rundevrun-domain-setup-wizard`](skills/rundevrun-domain-setup-wizard/SKILL.md)
+agent skill. It checks prerequisites, guides Cloudflare onboarding, and previews
+the private Tailscale/DNS/certificate changes before applying them.
+
 Project configuration lives in `dev.toml`:
 
 ```toml

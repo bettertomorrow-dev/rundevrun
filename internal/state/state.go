@@ -44,6 +44,7 @@ type Project struct {
 	Instances    map[string]Instance `json:"instances,omitempty"`
 }
 type Instance struct {
+	Endpoints         []Endpoint        `json:"endpoints,omitempty"`
 	RouteURL          string            `json:"route_url,omitempty"`
 	Hostname          string            `json:"hostname,omitempty"`
 	ID                string            `json:"id"`
@@ -57,6 +58,15 @@ type Instance struct {
 	Intent            *Intent           `json:"intent,omitempty"`
 	Preparation       *Intent           `json:"preparation,omitempty"`
 	Hook              *HookIntent       `json:"hook,omitempty"`
+}
+
+// Endpoint identifies an entry route without changing the immutable launch URL.
+type Endpoint struct {
+	Scope      string `json:"scope"` // local, tailnet, or legacy
+	Hostname   string `json:"hostname"`
+	Port       int    `json:"port"`
+	InstanceID string `json:"instance_id"`
+	Alias      bool   `json:"alias,omitempty"`
 }
 type Intent struct {
 	OperationID string `json:"operation_id"`

@@ -62,6 +62,9 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 		if !expected[p.InstanceID] {
 			return out, &Error{"STATE_CONFLICT", errors.New("stop graph changed after locking")}
 		}
+		if runID, ok := r.ExpectedRuns[p.InstanceID]; ok && p.RunID != runID {
+			return out, &Error{"STATE_CONFLICT", errors.New("run changed before stop")}
+		}
 	}
 	// Capture preparation edges before cleanup so a failed cleanup blocks targets.
 	edges := map[string][]string{}
