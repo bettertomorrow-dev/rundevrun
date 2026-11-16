@@ -1,0 +1,5 @@
+#!/bin/sh
+# Updates the local rdr installation after a merge on main.
+set -eu
+[ "$(git symbolic-ref --short HEAD)" = main ] || exit 0
+./scripts/rdr-local update || echo "rdr update failed; the installed binary was kept. Retry: ./scripts/rdr-local update" >&2

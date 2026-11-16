@@ -1,3 +1,4 @@
+// Plans and reserves explicit service hostnames.
 package runner
 
 import (
@@ -28,7 +29,6 @@ type HostnameAliasPlan struct {
 	RestartRequired bool   `json:"restart_required"`
 }
 
-// PlanHostnameAlias validates one explicit hostname without registering it.
 func (r *Runner) PlanHostnameAlias(ctx context.Context, selection Selection, hostname string) (HostnameAliasPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return HostnameAliasPlan{}, &Error{"CANCELLED", err}
@@ -172,7 +172,6 @@ func (r *Runner) planHostnameAlias(ctx context.Context, reg state.Registry, sele
 	return plan, nil
 }
 
-// SetHostnameAlias locks the exact instance and atomically reserves its new name.
 func (r *Runner) SetHostnameAlias(ctx context.Context, selection Selection, hostname string) (HostnameAliasPlan, error) {
 	initial, err := r.PlanHostnameAlias(ctx, selection, hostname)
 	if err != nil {

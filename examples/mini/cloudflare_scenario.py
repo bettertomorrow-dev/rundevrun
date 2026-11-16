@@ -167,7 +167,7 @@ def main():
         end = dev.index("[services.indexer]")
         reports = dev[start:end].replace('depends_on = ["catalog"]', 'depends_on = ["catalog"]\nroutes = [{ path = "/catalog", dependency = "catalog", strip_prefix = true }]')
         reports += '[services.reports.share]\nmode = "snapshot"\nbuild = "python3 build_snapshot.py"\ndir = "dist"\n'
-        # Keep only the synthetic reports service and its catalog dependency.
+
         dev = dev[:start] + reports
         held = []
         try:

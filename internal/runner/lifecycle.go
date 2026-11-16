@@ -1,3 +1,4 @@
+// Prepares, starts, and stops supervised service runs.
 package runner
 
 import (
@@ -64,7 +65,6 @@ type preparedRun struct {
 	active      bool
 }
 
-// prepareLocked requires the instance lock and an existing preparation reservation.
 func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *discovery.Project, current *discovery.Worktree, service string, svc config.Service, plan Plan, runID, operationID string, port int, dependencies map[string]map[string]string, bindings map[string]string) (preparedRun, error) {
 	runDir := filepath.Join(r.Store.Root, "runs", runID)
 	values := map[string]string{"host": "127.0.0.1", "run_dir": runDir, "worktree": current.Root, "project": fresh.Name, "service": service}
@@ -184,7 +184,6 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 	return preparedRun{projectID: projectID, plan: plan, runID: runID, manifest: manifest, timeout: startTimeout, reserved: true}, nil
 }
 
-// activateLocked requires the same instance lock held during preparation.
 func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Result, error) {
 	plan := prepared.plan
 	runID := prepared.runID
@@ -269,8 +268,7 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 		log.Close()
 		return Result{}, err
 	}
-	// Reap detached supervisors while this frontend remains alive. The supervisor
-	// keeps running independently when the frontend itself exits.
+
 	go func() { _ = supervisor.Wait() }()
 	if err = log.Close(); err != nil {
 		return Result{}, err
@@ -397,7 +395,6 @@ func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) er
 	return r.stopUnderGate(ctx, projectID, id, runID)
 }
 
-// stopUnderGate requires the instance operation lock and the run spawn gate.
 func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string) error {
 	reg, err := r.Store.Read()
 	if err != nil {
@@ -446,8 +443,7 @@ func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string)
 			if live {
 				return &Error{"OWNERSHIP_UNKNOWN", errors.New("unspawned supervisor is still alive")}
 			}
-			// A detached supervisor can remain a zombie briefly after exit.
-			// Keep the gate until the kernel confirms the complete session is gone.
+
 			deadline := time.NewTimer(2 * time.Second)
 			defer deadline.Stop()
 			for {

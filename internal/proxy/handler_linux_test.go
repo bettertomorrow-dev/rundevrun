@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests proxy handler behavior on Linux.
 package proxy
 
 import (
@@ -212,7 +213,7 @@ func TestHandler(t *testing.T) {
 	if err = store.WriteRun("web-run", starting); err != nil {
 		t.Fatal(err)
 	}
-	// An unverified child must never be replaced by a listener on the same port.
+
 	original, err := store.ReadRun("api-run")
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +292,7 @@ func TestTLSHost(t *testing.T) {
 	store, cfg, _ := fixture(t)
 	server := httptest.NewTLSServer(NewHandler(store, cfg))
 	defer server.Close()
-	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "web.example.com"}} // ephemeral test certificate
+	transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "web.example.com"}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
 	request, _ := http.NewRequest("GET", server.URL+"/", nil)
@@ -336,7 +337,7 @@ func TestPinnedPublicationRoutesAndRunIdentity(t *testing.T) {
 	if body["path"] != "/hello" || body["host"] != "public.trycloudflare.com" || body["proto"] != "https" || body["cookie"] != "application=keep" || w.Header().Get("Set-Cookie") == "" {
 		t.Fatalf("forwarding: %+v", body)
 	}
-	// A changed routed run cannot reach the still-listening old process.
+
 	if e := store.Update(func(reg *state.Registry) error {
 		p, e := reg.Project("p")
 		if e != nil {

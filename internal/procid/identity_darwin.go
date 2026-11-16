@@ -1,3 +1,4 @@
+// Reads process and boot identities on macOS.
 package procid
 
 import (
@@ -7,10 +8,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const szomb = 5 // kinfo_proc p_stat for a zombie
+const szomb = 5
 
-// Identity is the process start time in microseconds, from the kernel's proc
-// table. It changes whenever a PID is recycled.
 func Identity(pid int) (string, error) {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {

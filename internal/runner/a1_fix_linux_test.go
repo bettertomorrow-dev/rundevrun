@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests missing supervisors and lifecycle hook retry behavior on Linux.
 package runner
 
 import (

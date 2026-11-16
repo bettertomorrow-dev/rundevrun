@@ -1,3 +1,4 @@
+// Runs the local proxy daemon and maintains its identity.
 package proxy
 
 import (
@@ -27,8 +28,6 @@ type candidate struct {
 	handler http.Handler
 }
 
-// ValidateConfiguration builds the same reload candidate without starting or
-// changing the daemon. It only reads registry, configuration and certificates.
 func ValidateConfiguration(store *state.Store, path string) (routing.Config, error) {
 	next, err := buildCandidate(store, path)
 	if err != nil {
@@ -79,8 +78,6 @@ func buildCandidate(store *state.Store, path string) (*candidate, error) {
 	return &candidate{config: cfg, tls: tlsConfig, handler: NewHandler(store, cfg)}, nil
 }
 
-// Serve runs one per-user proxy. Its identity is durable before any listener is
-// opened. The lifetime lock is never used as authority to signal a process.
 func Serve(root, configPath string) (result error) {
 	store, err := state.New(root)
 	if err != nil {
@@ -238,7 +235,6 @@ func Serve(root, configPath string) (result error) {
 	}
 }
 
-// removeSocket only removes a socket while the daemon holds its lifetime lock.
 func removeSocket(path string) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {

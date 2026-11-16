@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests publication cancel behavior on Linux.
 package publication
 
 import (

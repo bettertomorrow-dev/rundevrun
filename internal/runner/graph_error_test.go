@@ -1,3 +1,4 @@
+// Tests runner graph error behavior.
 package runner
 
 import (

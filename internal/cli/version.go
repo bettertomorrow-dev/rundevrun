@@ -1,11 +1,10 @@
+// Defines product and public API versions.
 package cli
 
 import "fmt"
 
-// Version may be set at build time with -ldflags -X.
 var Version = "0.1.0-dev"
 
-// APIVersion identifies the public command, JSON and configuration contract.
 const APIVersion = 1
 
 type versionInfo struct {

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner claim zero behavior on Linux.
 package runner
 
 import (
@@ -151,7 +152,7 @@ func TestClaimedWithoutChildUnknownSurvivor(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	// The recorded supervisor exits while a child remains in its session.
+
 	marker := filepath.Join(dir, "child")
 	leader := exec.Command("sh", "-c", `sleep 60 & echo $! > "$1.tmp"; mv "$1.tmp" "$1"; sleep 0.4`, "sh", marker)
 	leader.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -217,7 +218,7 @@ func TestClaimedWithoutChildUnknownSurvivor(t *testing.T) {
 	if _, e = os.Stat(filepath.Join(root, "hook-ran")); !os.IsNotExist(e) {
 		t.Fatalf("hook ran: %v", e)
 	}
-	// Partial identities are rejected, also before signalling or changing metadata.
+
 	if e = store.WriteRun("run", state.RunRecord{Claim: "accepted", Supervisor: procid.Ref{PID: ref.PID}, State: "starting"}); e != nil {
 		t.Fatal(e)
 	}

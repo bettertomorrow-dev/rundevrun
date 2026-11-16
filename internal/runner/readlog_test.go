@@ -1,3 +1,4 @@
+// Tests runner readlog behavior.
 package runner
 
 import (

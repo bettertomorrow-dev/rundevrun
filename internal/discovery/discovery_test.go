@@ -1,3 +1,4 @@
+// Tests discovery behavior.
 package discovery
 
 import (

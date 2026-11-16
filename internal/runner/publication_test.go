@@ -1,3 +1,4 @@
+// Tests runner publication behavior.
 package runner
 
 import (

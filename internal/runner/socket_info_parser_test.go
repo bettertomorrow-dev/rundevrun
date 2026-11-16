@@ -1,3 +1,4 @@
+// Tests runner socket info parser behavior.
 package runner
 
 import (

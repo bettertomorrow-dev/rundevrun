@@ -263,7 +263,7 @@ def main():
             raise ScenarioError("repeat share rotated the URL or returned the password again")
         check_publication_output(repo, project, password)
 
-        # A failed replacement must keep the original tunnel and app processes intact.
+
         ids_before_failure = run_ids(repo, project)
         Path(ENV["FAKE_CF_FAIL_NEXT"]).touch()
         failed = cli(repo, "share", "reports", "--project", project, "--worktree", str(repo), "--mode", "live", "--recreate", ok=False)
@@ -292,7 +292,7 @@ def main():
         if publications(repo, project) or run_ids(repo, project) != before_unshare:
             raise ScenarioError("unshare removed app processes or left a publication listed")
 
-        # Configured snapshot is the default, while the earlier live share proves explicit override.
+
         snapshot = cli(repo, "share", "reports", "--project", project, "--worktree", str(repo))
         snapshot_password = snapshot.get("credentials", {}).get("password", "")
         snapshot_url = snapshot.get("results", [{}])[0].get("url", "")
@@ -337,7 +337,7 @@ def main():
             raise ScenarioError("snapshot dependency route did not reach its pinned catalog")
         websocket(snapshot_url, ca_cert, mappings, snapshot_auth_pair, path="/catalog/socket")
 
-        # Published bytes stay immutable after the source tree changes or disappears.
+
         (repo / "source-marker.txt").write_text("snapshot-source-B\n")
         shutil.rmtree(repo / "dist")
         if snapshot_page(snapshot_url, snapshot_auth_pair)[1] != body_a:

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner switch crash behavior on Linux.
 package runner
 
 import (
@@ -15,7 +16,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// A separate frontend process lets SIGKILL interrupt real journal boundaries.
 func TestSwitchFrontendChild(t *testing.T) {
 	idx := -1
 	for i, arg := range os.Args {

@@ -50,7 +50,6 @@ type Result struct {
 	LogPaths     map[string]string `json:"log_paths,omitempty"`
 }
 
-// Plan returns the selected instance from the common graph plan.
 func (r *Runner) Plan(ctx context.Context, action string, project *discovery.Project, worktree *discovery.Worktree, service string) (Plan, error) {
 	selection := Selection{project, worktree, service}
 	id, e := selectionID(selection)

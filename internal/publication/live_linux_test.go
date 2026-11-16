@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests publication live behavior on Linux.
 package publication
 
 import (
@@ -419,8 +420,6 @@ exec sleep 60
 		t.Fatalf("app after unshare: %s %v", observed, e)
 	}
 
-	// Losing registry mutation access during old-tunnel shutdown must not lose the
-	// already prepared replacement. Its durable activation precedes old cleanup.
 	stopMarker, stopRelease := filepath.Join(dir, "old-stopping"), filepath.Join(dir, "old-stop-release")
 	t.Setenv("FAKE_OLD_STOP_MARKER", stopMarker)
 	t.Setenv("FAKE_OLD_STOP_RELEASE", stopRelease)

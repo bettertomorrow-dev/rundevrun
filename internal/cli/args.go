@@ -1,3 +1,4 @@
+// Parses command-line options and selectors.
 package cli
 
 import (
@@ -26,7 +27,6 @@ type options struct {
 	tailSet     bool
 }
 
-// Common flags may precede or follow the command and selectors.
 func parseArgs(args []string) (options, []string, error) {
 	opts := options{tail: 100}
 	var positional []string

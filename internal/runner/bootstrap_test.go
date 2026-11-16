@@ -1,3 +1,4 @@
+// Tests runner bootstrap behavior.
 package runner
 
 import (

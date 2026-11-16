@@ -1,3 +1,4 @@
+// Runs lifecycle hooks and records their recovery state.
 package runner
 
 import (
@@ -13,7 +14,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// hookUpdate changes only the journal for a locked instance.
 func (r *Runner) hookUpdate(projectID, id string, fn func(*state.Instance) error) error {
 	return r.Store.Update(func(reg *state.Registry) error {
 		p, e := reg.Project(projectID)
@@ -124,7 +124,6 @@ func (r *Runner) runHook(ctx context.Context, projectID string, manifest state.M
 	return journalErr
 }
 
-// recoverHook never replays an interrupted or failed hook.
 func (r *Runner) recoverHook(ctx context.Context, projectID, id, reason, newWorktree, operationID string) error {
 	reg, e := r.Store.Read()
 	if e != nil {

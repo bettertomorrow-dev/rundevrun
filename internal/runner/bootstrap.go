@@ -1,3 +1,4 @@
+// Bootstraps detached processes through the startup handshake.
 package runner
 
 import (
@@ -8,8 +9,6 @@ import (
 	"syscall"
 )
 
-// Bootstrap waits for the supervisor to persist this process's kernel identity
-// before running any project code. The pipe is fd 3 and EOF denies execution.
 func Bootstrap() error {
 	pipe := os.NewFile(3, "supervisor-ack")
 	if pipe == nil {

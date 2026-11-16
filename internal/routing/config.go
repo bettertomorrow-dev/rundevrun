@@ -68,7 +68,7 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	// Require version to be present even though absent files use defaults.
+
 	var raw map[string]any
 	if err = toml.Unmarshal(data, &raw); err != nil {
 		return Config{}, invalid(err)
@@ -168,7 +168,6 @@ func (c Config) URL(host string) (string, error) {
 	return "https://" + net.JoinHostPort(host, port), nil
 }
 
-// ExternalTLS indicates a separately managed local TLS terminator.
 func (c Config) ExternalTLS() bool { return c.Routing.TLS.Mode == "external" }
 func (c Config) validateTLSMode() error {
 	mode := c.Routing.TLS.Mode

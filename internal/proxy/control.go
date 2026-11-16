@@ -1,3 +1,4 @@
+// Starts and controls the local routing proxy.
 package proxy
 
 import (
@@ -19,7 +20,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Error provides stable machine-readable control errors.
 type Error struct {
 	Code    string
 	Message string
@@ -187,7 +187,6 @@ func acquire(ctx context.Context, path string) (*os.File, error) {
 }
 func release(f *os.File) { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN); _ = f.Close() }
 
-// Ensure starts one detached daemon or reloads the verified existing daemon.
 func Ensure(ctx context.Context, store *state.Store, exe, configPath string) error {
 	caller := ctx
 	if err := caller.Err(); err != nil {
@@ -255,8 +254,6 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 				if e == nil && info.Identity == current.Identity {
 					return nil
 				}
-				// The record can become ready just before the control accept loop.
-				// Retry until the caller's bounded startup deadline.
 
 			}
 		}

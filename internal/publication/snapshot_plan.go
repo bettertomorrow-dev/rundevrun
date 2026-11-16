@@ -1,3 +1,4 @@
+// Plans static snapshot builds and publication paths.
 package publication
 
 import (
@@ -15,7 +16,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// SnapshotPlan describes the pinned inputs without exposing build environment values.
 type SnapshotPlan struct {
 	LivePlan
 	Digest       string `json:"digest"`
@@ -27,8 +27,6 @@ type SnapshotPlan struct {
 	buildRuns    map[string]string
 }
 
-// PlanSnapshot checks the active graph and captures the fresh snapshot configuration.
-// It does not create publication state or execute the build.
 func (m *Manager) PlanSnapshot(ctx context.Context, selection runner.Selection) (SnapshotPlan, error) {
 	live, err := m.PlanLive(ctx, selection)
 	if err != nil {

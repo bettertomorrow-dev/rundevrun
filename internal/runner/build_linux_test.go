@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner build behavior on Linux.
 package runner
 
 import (
@@ -93,7 +94,7 @@ func TestBuildExitBeforeOutputDrainPreservesExitResult(t *testing.T) {
 				case <-time.After(5 * time.Millisecond):
 				}
 			}
-			// Force several member scans while Wait is blocked on log copying.
+
 			time.Sleep(100 * time.Millisecond)
 			log.mu.Unlock()
 			locked = false

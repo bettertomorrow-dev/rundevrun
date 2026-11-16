@@ -49,8 +49,6 @@ type Result struct {
 	Password string `json:"-"`
 }
 
-// PlanLive verifies the exact active HTTP root and explicitly routed targets.
-// It does not create locks, directories, reservations, listeners or processes.
 func (m *Manager) PlanLive(ctx context.Context, selection runner.Selection) (LivePlan, error) {
 	if e := ctx.Err(); e != nil {
 		return LivePlan{}, e
@@ -117,14 +115,12 @@ func (m *Manager) PlanLive(ctx context.Context, selection runner.Selection) (Liv
 	return out, nil
 }
 
-// Plan is the public, secret-free plan for the selected publication mode.
 type Plan struct {
 	Mode     string        `json:"mode"`
 	Live     *LivePlan     `json:"live,omitempty"`
 	Snapshot *SnapshotPlan `json:"snapshot,omitempty"`
 }
 
-// Plan selects the configured mode unless the caller explicitly overrides it.
 func (m *Manager) Plan(ctx context.Context, selection runner.Selection, options Options) (Plan, error) {
 	mode := options.Mode
 	if mode == "" {

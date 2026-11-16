@@ -101,7 +101,7 @@ def main():
         independent_ids = {name: independent_before[name].get("run_id") for name in ("catalog", "reports")}
         stopped_indexer_id = independent_before["indexer"]["instance_id"]
         initial = run_ids(repo, project)
-        # Unknown final selector must be rejected before any root is touched.
+
         run_cli(repo, "switch", "reports", "indexer", "missing", *scope(project, repo),
                 "--to-worktree", str(roots["a"]), ok=False)
         if run_ids(repo, project) != initial:
@@ -133,7 +133,7 @@ def main():
 
         run_cli(roots["main"], "switch", "reports", "indexer", *scope(project, roots["main"]), "--to-worktree", str(roots["b"]))
 
-        # A file can map services from one worktree to different targets.
+
         run_cli(roots["c"], "down", "reports", *scope(project, roots["c"]))
         mapping_file = temp / "mixed-switch.json"
         mapping_file.write_text(json.dumps({"version": 1, "mappings": [
@@ -145,12 +145,12 @@ def main():
         run_cli(repo, "switch", "--file", str(mapping_file))
         run_cli(roots["c"], "down", "reports", *scope(project, roots["c"]))
         run_cli(roots["c"], "down", "catalog", *scope(project, roots["c"]))
-        # The remaining live source services are moved by the explicit all-services selector.
+
         run_cli(roots["b"], "up", "catalog", *scope(project, roots["b"]))
         run_cli(roots["b"], "switch", "--all-services", *scope(project, roots["b"]),
                 "--to-worktree", str(roots["c"]))
 
-        # A failed target build must leave the old catalog run intact.
+
         before = public_instances(roots["c"], project)
         old_id = before["catalog"].get("run_id")
         if not old_id:
@@ -172,7 +172,7 @@ def main():
     finally:
         if registered:
             try:
-                # The isolated RDR_HOME makes this global stop safe for this fixture.
+
                 run_cli(repo, "down", "--all", ok=True)
                 data = run_cli(repo, "status", "--project", project)
                 bad = [x for x in data.get("results", []) if x.get("state_unknown") or

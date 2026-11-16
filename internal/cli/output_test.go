@@ -1,3 +1,4 @@
+// Tests cli output behavior.
 package cli
 
 import (

@@ -1,3 +1,4 @@
+// Tests state operation behavior.
 package state
 
 import (

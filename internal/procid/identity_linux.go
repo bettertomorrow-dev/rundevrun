@@ -1,3 +1,4 @@
+// Reads process and boot identities on Linux.
 package procid
 
 import (
@@ -8,19 +9,17 @@ import (
 	"syscall"
 )
 
-// Identity is field 22 of /proc/<pid>/stat (start time in clock ticks since
-// boot). It changes whenever a PID is recycled.
 func Identity(pid int) (string, error) {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
-		// A process can exit after procfs opens stat but before it reads it.
+
 		if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 			return "", ErrGone
 		}
 		return "", err
 	}
 	s := string(b)
-	i := strings.LastIndexByte(s, ')') // the command name may contain spaces and parentheses
+	i := strings.LastIndexByte(s, ')')
 	if i < 0 {
 		return "", fmt.Errorf("malformed process stat for %d", pid)
 	}

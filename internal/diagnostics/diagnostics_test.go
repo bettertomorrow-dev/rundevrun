@@ -1,3 +1,4 @@
+// Tests diagnostics behavior.
 package diagnostics
 
 import (
@@ -87,7 +88,7 @@ func TestGlobalReadOnlyAndInvalidTLS(t *testing.T) {
 	} else if e, ok := err.(*Error); !ok || e.Code != "NOT_FOUND" {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Remove the corrupt project so TLS validation can reach the invalid key.
+
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)

@@ -1,3 +1,4 @@
+// Plans and updates service aliases.
 package runner
 
 import (
@@ -48,7 +49,6 @@ func validAlias(value string) (string, error) {
 	return value, nil
 }
 
-// PlanAlias inspects the complete candidate without modifying registry or files.
 func (r *Runner) PlanAlias(ctx context.Context, project *discovery.Project, worktree *discovery.Worktree, label string) (AliasPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return AliasPlan{}, &Error{"CANCELLED", err}
@@ -191,8 +191,7 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 			return AliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved; choose another alias", c.NewHostname)}
 		}
 	}
-	// Release only names actually changing in this worktree, before reserving the
-	// complete new set. Other worktrees' names are never available for takeover.
+
 	for _, c := range plan.Changes {
 		if c.OldHostname != "" && !strings.EqualFold(c.OldHostname, c.NewHostname) {
 			delete(owners, strings.ToLower(c.OldHostname))
@@ -222,8 +221,6 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 	return plan, nil
 }
 
-// SetAlias serializes all worktree instances and commits the validated route
-// book in one revision-checked registry transaction. It never restarts apps.
 func (r *Runner) SetAlias(ctx context.Context, project *discovery.Project, worktree *discovery.Worktree, label string) (AliasPlan, error) {
 	initial, err := r.PlanAlias(ctx, project, worktree, label)
 	if err != nil {

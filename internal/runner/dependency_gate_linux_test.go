@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner dependency gate behavior on Linux.
 package runner
 
 import (

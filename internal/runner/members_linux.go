@@ -1,5 +1,6 @@
 //go:build linux
 
+// Discovers owned process groups and sessions on Linux.
 package runner
 
 import (
@@ -14,8 +15,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// groupMembers snapshots the original session and group, including surviving
-// descendants when the original leader has already exited.
 func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error) {
 	valid := false
 	for _, anchor := range anchors {

@@ -1,0 +1,56 @@
+#!/bin/sh
+# Checks local rdr update and rollback behavior in a disposable repository.
+set -eu
+source_repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/rdr-install-test.XXXXXXXX")
+trap 'rm -rf "$test_root"' EXIT
+trap 'exit 1' HUP INT TERM
+mkdir -p "$test_root/repo/scripts" "$test_root/bin"
+cp "$source_repo/scripts/rdr-local" "$test_root/repo/scripts/"
+cd "$test_root/repo"
+git init -q -b main
+git config user.name Test
+git config user.email test@example.invalid
+echo committed > marker
+git add .
+git commit -qm initial
+echo dirty > marker
+cat > "$test_root/bin/go" <<'EOF'
+#!/bin/sh
+set -eu
+[ "$(cat marker)" = committed ]
+[ "${FAIL_BUILD:-0}" = 0 ] || exit 1
+while [ "$1" != -o ]; do shift; done
+shift
+printf '#!/bin/sh\necho "%s"\n' "${BUILD_LABEL:-new}" > "$1"
+chmod +x "$1"
+if [ "${FAIL_SMOKE:-0}" = 1 ]; then
+    printf '#!/bin/sh\nexit 1\n' > "$1"
+fi
+EOF
+chmod +x "$test_root/bin/go"
+export PATH="$test_root/bin:$PATH"
+export RDR_INSTALL_DIR="$test_root/install"
+mkdir "$RDR_INSTALL_DIR"
+printf '#!/bin/sh\necho old\n' > "$RDR_INSTALL_DIR/rdr"
+chmod +x "$RDR_INSTALL_DIR/rdr"
+./scripts/rdr-local update
+[ "$("$RDR_INSTALL_DIR/rdr")" = new ]
+[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+./scripts/rdr-local update
+[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+if FAIL_BUILD=1 ./scripts/rdr-local update; then exit 1; fi
+if FAIL_SMOKE=1 ./scripts/rdr-local update; then exit 1; fi
+[ "$("$RDR_INSTALL_DIR/rdr")" = new ]
+[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+./scripts/rdr-local rollback
+./scripts/rdr-local rollback
+[ "$("$RDR_INSTALL_DIR/rdr")" = old ]
+mkdir "$RDR_INSTALL_DIR/.install-lock"
+if ./scripts/rdr-local update; then exit 1; fi
+rmdir "$RDR_INSTALL_DIR/.install-lock"
+git checkout -qb feature
+if ./scripts/rdr-local update; then exit 1; fi
+rm "$RDR_INSTALL_DIR/rdr.previous"
+if ./scripts/rdr-local rollback; then exit 1; fi
+echo 'PASS: committed source, update, unchanged update, build/smoke failure, rollback, lock, branch guard, missing backup'

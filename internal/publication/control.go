@@ -1,3 +1,4 @@
+// Lists, starts, and stops public gateways.
 package publication
 
 import (
@@ -54,7 +55,6 @@ func (m *Manager) publicStatus(p state.Publication, rt state.PublicationRuntime)
 	return s
 }
 
-// List returns only public-safe fields and does not create state.
 func (m *Manager) List(ctx context.Context) ([]Status, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
@@ -437,8 +437,7 @@ func (m *Manager) Share(ctx context.Context, selection runner.Selection, options
 	}
 	lock.Close()
 	if e != nil {
-		// Rename may have succeeded before a directory sync failed. Retain an
-		// observed active candidate and report it instead of rolling it back.
+
 		if observed, readErr := m.Store.ReadPublications(); readErr == nil && observed.Publications[id].Phase == "active" {
 			activated = true
 			result = Result{Status: m.publicStatus(p, rt)}

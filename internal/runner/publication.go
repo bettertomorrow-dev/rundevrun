@@ -1,3 +1,4 @@
+// Revokes publications before stopping their service instances.
 package runner
 
 import (
@@ -13,8 +14,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// ClosePublication revokes one publication under its gate and verifies cleanup.
-// The caller holds operation locks for its pinned instances.
 func ClosePublication(ctx context.Context, store *state.Store, id string) error {
 	var gate *state.Locks
 	var e error
@@ -180,8 +179,6 @@ func ClosePublication(ctx context.Context, store *state.Store, id string) error 
 	return setPhase("closed", false)
 }
 
-// ClosePublicationsForInstances closes roots and explicitly routed targets before app stop.
-// The caller holds locks for all affected instance IDs.
 func ClosePublicationsForInstances(ctx context.Context, store *state.Store, ids []string) error {
 	selected := map[string]bool{}
 	for _, id := range ids {
@@ -213,7 +210,6 @@ func ClosePublicationsForInstances(ctx context.Context, store *state.Store, ids 
 	return nil
 }
 
-// publicationIDsForInstances lists private-record identifiers only; no credentials.
 func publicationIDsForInstances(store *state.Store, ids []string) ([]string, error) {
 	selected := map[string]bool{}
 	for _, id := range ids {

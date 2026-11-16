@@ -179,12 +179,10 @@ func (g *gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.next.ServeHTTP(privateResponse{w}, r)
-	// A handler may return without writing, leaving the server to send its implicit 200.
+
 	w.Header().Set("Cache-Control", "private, no-store")
 }
 
-// Authenticated responses must not be reused by a shared cache for another visitor.
-// Apply the header when it is written so an upstream's public cache policy cannot replace it.
 type privateResponse struct{ http.ResponseWriter }
 
 func (w privateResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter }

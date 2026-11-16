@@ -1,3 +1,4 @@
+// Tests cli commands behavior.
 package cli
 
 import (
@@ -97,7 +98,7 @@ func writeProject(t *testing.T, root string) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Execution would create a marker, including during discovery or dry-run.
+
 	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(`version = 1
 [project]
 name = "example"

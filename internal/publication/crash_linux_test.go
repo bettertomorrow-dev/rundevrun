@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests publication crash behavior on Linux.
 package publication
 
 import (

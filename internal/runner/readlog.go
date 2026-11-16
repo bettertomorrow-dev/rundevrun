@@ -1,3 +1,4 @@
+// Reads and tails service logs.
 package runner
 
 import (
@@ -13,7 +14,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Logs writes the last tail application log lines and optionally follows them.
 func (r *Runner) Logs(ctx context.Context, p *discovery.Project, w *discovery.Worktree, service string, tail int, follow bool, out io.Writer) error {
 	if r == nil || r.Store == nil || p == nil || w == nil || out == nil || tail < 0 || tail > 10000 {
 		return &Error{"USAGE", errors.New("invalid log request")}

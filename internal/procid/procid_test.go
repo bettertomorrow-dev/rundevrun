@@ -1,3 +1,4 @@
+// Tests procid behavior.
 package procid
 
 import (

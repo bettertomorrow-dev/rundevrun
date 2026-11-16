@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests publication failure behavior on Linux.
 package publication
 
 import (

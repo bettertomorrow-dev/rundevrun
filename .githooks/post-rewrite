@@ -1,0 +1,5 @@
+#!/bin/sh
+# Updates the local rdr installation after rebasing main.
+set -eu
+[ "${1:-}" = rebase ] || exit 0
+exec "$(git rev-parse --show-toplevel)/.githooks/post-merge"

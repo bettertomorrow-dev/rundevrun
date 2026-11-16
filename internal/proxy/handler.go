@@ -234,13 +234,10 @@ func validForwardedFor(value string) bool {
 	return true
 }
 
-// NewPinnedHandler routes only the captured publication graph. It never resolves
-// a target from the incoming host and verifies both source and target before dial.
 func NewPinnedHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string) http.Handler {
 	return newPinnedHandler(store, projectID, rootID, rootRunID, routedRuns, nil)
 }
 
-// NewPinnedSnapshotHandler serves the private snapshot except for pinned routes.
 func NewPinnedSnapshotHandler(store *state.Store, projectID, rootID, rootRunID string, routedRuns map[string]string, snapshotDir string) http.Handler {
 	return newPinnedHandler(store, projectID, rootID, rootRunID, routedRuns, http.FileServer(http.Dir(snapshotDir)))
 }

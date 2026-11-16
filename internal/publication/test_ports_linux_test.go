@@ -1,3 +1,4 @@
+// Allocates loopback ports for publication tests on Linux.
 package publication
 
 import (
@@ -9,7 +10,6 @@ import (
 
 var automaticTestPort = regexp.MustCompile(`(?m)^[ \t]*port[ \t]*=[ \t]*["']auto["']`)
 
-// Package tests run beside runner's allocator tests, which exercise port 20000.
 func isolatedHTTPPorts(t *testing.T, config string) string {
 	t.Helper()
 	var held []net.Listener
