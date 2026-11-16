@@ -83,17 +83,17 @@ depends_on=["api-v1","api_v1"]
 	}
 }
 func TestShellVariablesAndQuotedPlaceholder(t *testing.T) {
-	c := &Config{Services: map[string]Service{"api": {Protocol: "http"}}}
-	if e := ValidateCommand(`echo {{literal}}`, c); e != nil {
+	c := &Config{Services: map[string]Service{"api": {Protocol: "http", Port: "auto"}}}
+	if e := validateCommandFor(`echo {{literal}}`, c, "api"); e != nil {
 		t.Fatal(e)
 	}
-	if e := ValidateCommand(`echo ${HOME} {port}`, c); e != nil {
+	if e := validateCommandFor(`echo ${HOME} {port}`, c, "api"); e != nil {
 		t.Fatal(e)
 	}
-	if e := ValidateCommand(`echo '{port}'`, c); e == nil {
+	if e := validateCommandFor(`echo '{port}'`, c, "api"); e == nil {
 		t.Fatal("quoted placeholder accepted")
 	}
-	if e := ValidateEnv(`{{x}} ${HOME}`, c); e != nil {
+	if e := validateEnvFor(`{{x}} ${HOME}`, c, "api"); e != nil {
 		t.Fatal(e)
 	}
 }
