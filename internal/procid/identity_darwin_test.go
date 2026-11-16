@@ -4,6 +4,7 @@ package procid
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"testing"
 )
@@ -24,5 +25,25 @@ func TestReapedProcessIsGone(t *testing.T) {
 	}
 	if live, err := Check(ref); live || err != nil {
 		t.Fatalf("reaped process check: live=%t err=%v", live, err)
+	}
+}
+
+func TestIdentityReapedProcess(t *testing.T) {
+	cmd := exec.Command("/usr/bin/true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Identity(cmd.Process.Pid); !errors.Is(err, ErrGone) {
+		t.Fatalf("Identity(reaped pid %d) = %v, want ErrGone", cmd.Process.Pid, err)
+	}
+}
+
+func TestIdentityLiveProcess(t *testing.T) {
+	ref, err := Observe(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := Check(ref); err != nil || !ok {
+		t.Fatalf("Check(current process) = %v, %v", ok, err)
 	}
 }

@@ -12,8 +12,8 @@ const szomb = 5 // kinfo_proc p_stat for a zombie
 // Identity is the process start time in microseconds, from the kernel's proc
 // table. It changes whenever a PID is recycled.
 func Identity(pid int) (string, error) {
-	// The single-record helper reports EIO for the kernel's valid empty result
-	// after a process exits. A slice distinguishes that from a truncated record.
+	// A missing PID returns an empty table on Darwin. The single-record
+	// helper reports that successful empty response as EIO.
 	processes, err := unix.SysctlKinfoProcSlice("kern.proc.pid", pid)
 	if err != nil {
 		if errors.Is(err, unix.ESRCH) || errors.Is(err, unix.ENOENT) {
@@ -25,7 +25,7 @@ func Identity(pid int) (string, error) {
 		return "", ErrGone
 	}
 	if len(processes) != 1 {
-		return "", errors.New("unexpected process identity result")
+		return "", fmt.Errorf("unexpected process count for pid %d: %d", pid, len(processes))
 	}
 	kp := processes[0]
 	if kp.Proc.P_pid != int32(pid) {
