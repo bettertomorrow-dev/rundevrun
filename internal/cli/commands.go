@@ -2249,18 +2249,6 @@ func applyRouteView(store *state.Store, instance state.Instance, info *instanceI
 	}
 }
 
-func instanceByID(store *state.Store, projectID, instanceID string) state.Instance {
-	r, err := store.Read()
-	if err != nil {
-		return state.Instance{}
-	}
-	p, err := r.Project(projectID)
-	if err != nil {
-		return state.Instance{}
-	}
-	return p.Instances[instanceID]
-}
-
 func findWorktree(p state.Project, id string) (state.Worktree, bool) {
 	for _, w := range p.Worktrees {
 		if w.ID == id {
