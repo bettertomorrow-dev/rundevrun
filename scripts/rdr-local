@@ -1,0 +1,63 @@
+#!/bin/sh
+# Installs committed main or restores the previous local rdr binary.
+set -eu
+
+action=${1:-}
+case "$action" in
+    update|rollback) ;;
+    *) echo "Usage: $0 update|rollback" >&2; exit 2 ;;
+esac
+
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+dest=${RDR_INSTALL_DIR:-"$HOME/.local/opt/rundevrun"}
+mkdir -p "$dest"
+lock="$dest/.install-lock"
+if ! mkdir "$lock" 2>/dev/null; then
+    echo "Another install is active, or a stale lock exists: $lock" >&2
+    exit 1
+fi
+work=
+cleanup() {
+    [ -z "$work" ] || rm -rf "$work"
+    rm -rf "$lock"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+if [ "$action" = rollback ]; then
+    if [ ! -f "$dest/rdr.previous" ]; then
+        echo "No previous binary at $dest/rdr.previous" >&2
+        exit 1
+    fi
+    cp -p "$dest/rdr.previous" "$lock/rdr"
+    "$lock/rdr" version --json
+    mv -f "$lock/rdr" "$dest/rdr"
+    echo "Rolled back $dest/rdr"
+    exit 0
+fi
+
+if [ "$(git -C "$repo" symbolic-ref --short HEAD)" != main ]; then
+    echo "Update requires the main branch" >&2
+    exit 1
+fi
+revision=$(git -C "$repo" rev-parse HEAD)
+work=$(mktemp -d "${TMPDIR:-/tmp}/rdr-install.XXXXXXXX")
+git -C "$repo" archive --format=tar -o "$work/source.tar" "$revision"
+mkdir "$work/source"
+tar -xf "$work/source.tar" -C "$work/source"
+(
+    cd "$work/source"
+    go build -trimpath -ldflags "-X github.com/bettertomorrow-dev/rundevrun/internal/cli.Version=0.1.0-dev+$revision" -o "$lock/rdr" ./cmd/rdr
+)
+"$lock/rdr" version --json
+"$lock/rdr" --help >/dev/null
+if [ -f "$dest/rdr" ] && cmp -s "$dest/rdr" "$lock/rdr"; then
+    echo "Already installed: $revision"
+    exit 0
+fi
+if [ -f "$dest/rdr" ]; then
+    cp -p "$dest/rdr" "$lock/previous"
+    mv -f "$lock/previous" "$dest/rdr.previous"
+fi
+mv -f "$lock/rdr" "$dest/rdr"
+echo "Installed $revision at $dest/rdr"

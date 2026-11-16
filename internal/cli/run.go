@@ -101,7 +101,7 @@ else ~/.local/state/rundevrun. Registration runs no project commands.`
 
 func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	opts, positional, err := parseArgs(args)
-	// Even a usage error preceding --json must retain machine-readable output.
+
 	for _, arg := range args {
 		if arg == "--" {
 			break

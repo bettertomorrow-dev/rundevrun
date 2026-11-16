@@ -1,3 +1,4 @@
+// Tests runner graph behavior.
 package runner
 
 import (
@@ -261,7 +262,7 @@ depends_on = ['api']
 	if err != nil || len(down.Instances) != 2 || down.Instances[0].InstanceID != consumerID {
 		t.Fatalf("cascade: %+v %v", down, err)
 	}
-	// A preparation is an effective consumer even before its replacement starts.
+
 	if err = store.WriteManifest("preparing", state.Manifest{RunID: "preparing", InstanceID: consumerID, EffectiveBindings: map[string]string{"api": bound.TargetID}}); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +297,7 @@ depends_on = ['api']
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// The selected target's actual protocol must satisfy consumer placeholders.
+
 	withURL := strings.Replace(cfg, "depends_on = ['api']", "depends_on = ['api']\nenv = { API = '{dependencies.api.url}' }", 1)
 	if err = os.WriteFile(filepath.Join(main, "dev.toml"), []byte(withURL), 0600); err != nil {
 		t.Fatal(err)

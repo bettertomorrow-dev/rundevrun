@@ -1,3 +1,4 @@
+// Tests networking acme behavior.
 package networking
 
 import (
@@ -174,7 +175,7 @@ func TestACMEIssuanceAndChallengeCleanup(t *testing.T) {
 	if _, err = s.managedCertificate("dev.example.com", roots, now); err != nil {
 		t.Fatalf("published certificate: %v", err)
 	}
-	// Exercise a complete explicit setup in a fresh configuration as well.
+
 	s = Service{Root: filepath.Join(t.TempDir(), "fresh"), issuer: issuer, cloudflare: Cloudflare{BaseURL: cfserver.URL}}
 	serveStatus := `{}`
 	s.tailscale = tailscaleClient{run: func(_ context.Context, args ...string) ([]byte, error) {

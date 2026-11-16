@@ -165,7 +165,7 @@ def main():
             f"http_listen='127.0.0.1:{http_port}'\nhttps_listen='127.0.0.1:{https_port}'\n"
             f"[[routing.tls.certificates]]\ncert_file='{cert}'\nkey_file='{key}'\n"
         )
-        # Proxy dependency path is served by reports and pinned to its effective catalog.
+
         for root in roots.values():
             dev = root / "dev.toml"
             text = dev.read_text().replace(
@@ -195,7 +195,7 @@ def main():
         if Path(routed_catalog["worktree"]).resolve() != roots["main"].resolve():
             raise Incomplete("HTTPS dependency route did not follow A's shared main catalog binding")
 
-        # Secure cookie roundtrip remains scoped to this one synthetic HTTP service.
+
         code, headers, body = https(main_reports["url"], context, path="/session")
         if code != 200 or "Secure" not in headers.get("Set-Cookie", ""):
             raise Incomplete("HTTPS route did not set the secure fixture cookie")
@@ -229,7 +229,7 @@ def main():
             raise Incomplete("SSE did not flush the first event and stream the delayed second event")
         websocket(main_reports["url"], context)
 
-        # A hostname collision must fail without changing the existing route book.
+
         before = status_instances(repo, project)
         collision = "collision.mini.test"
         cli(repo, "alias", "reports", collision, "--project", project, "--worktree", str(repo))
@@ -241,7 +241,7 @@ def main():
             raise Incomplete("alias collision modified the other route")
         main_reports = after[f"reports@{main_id}"]
 
-        # Stopping A's report must produce an unavailable response, not route to main.
+
         cli(roots["a"], "down", "reports", "--project", project, "--worktree", str(roots["a"]))
         unavailable = https(a_reports["url"], context)[0]
         if unavailable != 503:

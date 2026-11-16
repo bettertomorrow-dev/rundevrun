@@ -1,3 +1,4 @@
+// Discovers Git projects and their worktrees.
 package discovery
 
 import (
@@ -154,8 +155,6 @@ func Resolve(p *Project, selector string) (*Worktree, error) {
 	return selected(w)
 }
 
-// ResolveDescriptor resolves identity without requiring usable configuration.
-// Stop and logs can use registered descriptors after configuration is removed.
 func ResolveDescriptor(p *Project, selector string) (*Worktree, error) {
 	for i := range p.Worktrees {
 		if p.Worktrees[i].ID == selector {

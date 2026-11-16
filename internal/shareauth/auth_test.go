@@ -1,3 +1,4 @@
+// Tests shareauth auth behavior.
 package shareauth
 
 import (

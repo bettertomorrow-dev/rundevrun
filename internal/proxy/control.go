@@ -1,3 +1,4 @@
+// Starts and controls the local routing proxy.
 package proxy
 
 import (
@@ -20,7 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Error provides stable machine-readable control errors.
 type Error struct {
 	Code    string
 	Message string
@@ -117,7 +117,6 @@ func Status(store *state.Store) (Info, error) {
 	return control(ctx, store, "status")
 }
 
-// PrepareReloadTo reserves a proposed listener before changing configuration.
 func PrepareReloadTo(ctx context.Context, store *state.Store, listen string) error {
 	info, err := control(ctx, store, "prepare?listen="+url.QueryEscape(listen))
 	if err != nil {
@@ -129,7 +128,6 @@ func PrepareReloadTo(ctx context.Context, store *state.Store, listen string) err
 	return nil
 }
 
-// PrepareReload reserves a new HTTP listener before route state is changed.
 func PrepareReload(ctx context.Context, store *state.Store) error {
 	info, err := control(ctx, store, "prepare")
 	if err != nil {
@@ -145,7 +143,6 @@ func AbortReload(ctx context.Context, store *state.Store) error {
 	return err
 }
 
-// reloadRenewal never consumes a reservation owned by another operation.
 func reloadRenewal(ctx context.Context, store *state.Store) error {
 	info, err := control(ctx, store, "reload-renewal")
 	if err != nil {
@@ -239,7 +236,6 @@ func acquire(ctx context.Context, path string) (*os.File, error) {
 }
 func release(f *os.File) { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN); _ = f.Close() }
 
-// Ensure starts one detached daemon or reloads the verified existing daemon.
 func Ensure(ctx context.Context, store *state.Store, exe, configPath string) error {
 	caller := ctx
 	if err := caller.Err(); err != nil {
@@ -307,8 +303,6 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 				if e == nil && info.Identity == current.Identity {
 					return nil
 				}
-				// The record can become ready just before the control accept loop.
-				// Retry until the caller's bounded startup deadline.
 
 			}
 		}

@@ -1,3 +1,4 @@
+// Supervises detached service processes and writes their run records.
 package runner
 
 import (
@@ -16,7 +17,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// Supervise runs in a detached rdr process. Only this process writes its run record.
 func Supervise(root, runID string) (result error) {
 	store := &state.Store{Root: root}
 	gate, err := store.LockSpawnGates(runID)
@@ -60,7 +60,7 @@ func Supervise(root, runID string) (result error) {
 	if err = write(); err != nil {
 		return err
 	}
-	// A claimed supervisor must leave a durable terminal record when startup fails.
+
 	startup := true
 	defer func() {
 		if startup && result != nil {
@@ -230,7 +230,7 @@ func superviseLoop(m state.Manifest, record *state.RunRecord, write func() error
 				}
 			}
 			if err = checkListeners(record.Members, m.Launch.Port); err != nil {
-				// During startup a listener may not yet exist. Non-loopback sockets fail closed.
+
 				if !strings.HasPrefix(err.Error(), "no owned loopback listener") {
 					return err
 				}

@@ -1,3 +1,4 @@
+// Formats command results and errors as text or JSON.
 package cli
 
 import (

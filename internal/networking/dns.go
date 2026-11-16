@@ -1,3 +1,4 @@
+// Check every authoritative server. Recursive negative caching can otherwise hide a newly created challenge for longer than the propagation timeout.
 package networking
 
 import (
@@ -9,8 +10,6 @@ import (
 	"time"
 )
 
-// Check every authoritative server. Recursive negative caching can otherwise
-// hide a newly created challenge for longer than the propagation timeout.
 func lookupAuthoritativeTXT(ctx context.Context, name string, servers []string) ([]string, error) {
 	var common map[string]bool
 	for _, server := range servers {

@@ -18,7 +18,6 @@ func inside(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// Copy creates a private independent copy. The artifact tree may not contain symlinks.
 func Copy(ctx context.Context, cwd, artifactDir, destination string) (err error) {
 	if err = ctx.Err(); err != nil {
 		return err
@@ -103,8 +102,7 @@ func copyDir(ctx context.Context, src *os.File, dest string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("artifact contains symlink: %s", entry.Name())
 		}
-		// Nested files come from descriptor-relative Openat. DirEntry.Info
-		// would resolve their display name against the process working directory.
+
 		if kind := entry.Type(); kind != 0 && !kind.IsDir() {
 			return fmt.Errorf("artifact contains unsupported file: %s", entry.Name())
 		}

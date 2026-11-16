@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests publication routed behavior on Linux.
 package publication
 
 import (

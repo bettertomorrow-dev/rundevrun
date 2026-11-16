@@ -52,7 +52,6 @@ type Report struct {
 	Routes        []RouteReport   `json:"routes"`
 }
 
-// Error identifies a registry-level failure without exposing registry contents.
 type Error struct {
 	Code string
 	Err  error
@@ -121,7 +120,6 @@ func configuredRoots(c routing.Config) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// Run only reads recorded state and probes loopback listeners. TLS checks do not prove forwarding identity.
 func Run(ctx context.Context, store *state.Store, configPath, projectID, worktreeID string) (Report, error) {
 	report := Report{Routes: []RouteReport{}, Projects: []ProjectReport{}}
 	if err := ctx.Err(); err != nil {

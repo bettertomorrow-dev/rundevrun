@@ -1,3 +1,4 @@
+// Tests cli auto register behavior.
 package cli
 
 import (

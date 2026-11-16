@@ -1,3 +1,4 @@
+// Implements tui model.
 package tui
 
 import (
@@ -8,7 +9,7 @@ import (
 
 type Model struct {
 	Snapshot    monitor.Snapshot
-	Tab         int // 0 is running, 1 is launch errors
+	Tab         int
 	AllProjects bool
 	Selected    string
 	Status      string

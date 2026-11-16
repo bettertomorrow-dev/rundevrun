@@ -1,5 +1,4 @@
-// Package state persists runner records. Project values are decoded separately
-// so one damaged project does not prevent access to the others.
+// Persists runner records while isolating damaged project entries.
 package state
 
 import (
@@ -60,9 +59,8 @@ type Instance struct {
 	Hook              *HookIntent       `json:"hook,omitempty"`
 }
 
-// Endpoint identifies an entry route without changing the immutable launch URL.
 type Endpoint struct {
-	Scope      string `json:"scope"` // local, tailnet, or legacy
+	Scope      string `json:"scope"`
 	Hostname   string `json:"hostname"`
 	Port       int    `json:"port"`
 	InstanceID string `json:"instance_id"`
@@ -398,8 +396,6 @@ func lockName(prefix, id string) string {
 	return fmt.Sprintf("%s-%x", prefix, sha256.Sum256([]byte(id)))
 }
 
-// LockInstances acquires all instance operation locks without waiting. Callers
-// acquire spawn gates afterwards, then update the registry.
 func (s *Store) LockInstances(ids ...string) (*Locks, error) {
 	names := make([]string, len(ids))
 	for i, id := range ids {
@@ -486,7 +482,6 @@ func (s *Store) ReadManifest(id string) (Manifest, error) {
 	return m, err
 }
 
-// WriteRun is reserved for the supervisor and should be protected by LockRunWriter.
 func (s *Store) WriteRun(id string, r RunRecord) error {
 	dir, err := s.runDir(id, true)
 	if err != nil {
@@ -495,7 +490,6 @@ func (s *Store) WriteRun(id string, r RunRecord) error {
 	return s.write(filepath.Join(dir, "supervisor.json"), r)
 }
 
-// PreparationRecord is written before build bootstrap receives permission to exec.
 type PreparationRecord struct {
 	Child    procid.Ref   `json:"child"`
 	Members  []procid.Ref `json:"members,omitempty"`
@@ -535,7 +529,6 @@ func (s *Store) readRun(id, name string, v any) error {
 	return nil
 }
 
-// Inspect reports liveness without changing an intent or reservation.
 func (s *Store) Inspect(i Instance) (string, error) {
 	if i.RunID == "" {
 		return i.State, nil
@@ -578,8 +571,6 @@ func (s *Store) Inspect(i Instance) (string, error) {
 	return "stale", nil
 }
 
-// Recover marks a verified dead run failed under its operation lock and gate.
-// A claimed run with incomplete identity is uncertain and is not changed.
 func (s *Store) Recover(projectID, instanceID string) error {
 	locks, err := s.LockInstances(instanceID)
 	if err != nil {

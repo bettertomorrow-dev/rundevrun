@@ -1,3 +1,4 @@
+// Loads and validates project configuration.
 package config
 
 import (

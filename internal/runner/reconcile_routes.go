@@ -1,3 +1,4 @@
+// LocalRoutePlan is an in-memory registry candidate tied to its source revision.
 package runner
 
 import (
@@ -12,7 +13,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// LocalRoutePlan is an in-memory registry candidate tied to its source revision.
 type LocalRouteChange struct {
 	Action     string `json:"action"`
 	ProjectID  string `json:"project_id"`
@@ -29,7 +29,6 @@ type LocalRoutePlan struct {
 	changed   bool
 }
 
-// PlanLocalRoutes builds and validates routes without writing registry state.
 func PlanLocalRoutes(ctx context.Context, store *state.Store, cfg routing.Config) (LocalRoutePlan, error) {
 	if err := ctx.Err(); err != nil {
 		return LocalRoutePlan{}, err
@@ -65,7 +64,7 @@ func PlanLocalRoutes(ctx context.Context, store *state.Store, cfg routing.Config
 		}
 		if fresh == nil {
 			continue
-		} // Deleted worktrees retain their owned, unavailable routes.
+		}
 		if fresh.ID != id {
 			return LocalRoutePlan{}, fmt.Errorf("project identity changed for %s", saved.Root)
 		}
@@ -111,7 +110,6 @@ func PlanLocalRoutes(ctx context.Context, store *state.Store, cfg routing.Config
 	return LocalRoutePlan{Revision: before.Revision, Changes: changes, candidate: candidate, changed: len(projects) > 0}, nil
 }
 
-// CommitLocalRoutes atomically installs a validated candidate if the registry is unchanged.
 func CommitLocalRoutes(ctx context.Context, store *state.Store, plan LocalRoutePlan) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -135,7 +133,6 @@ func CommitLocalRoutes(ctx context.Context, store *state.Store, plan LocalRouteP
 	})
 }
 
-// ReconcileLocalRoutes builds and commits a candidate, preserving existing runs.
 func ReconcileLocalRoutes(ctx context.Context, store *state.Store, cfg routing.Config) error {
 	plan, err := PlanLocalRoutes(ctx, store, cfg)
 	if err != nil {

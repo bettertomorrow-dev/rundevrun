@@ -1,3 +1,4 @@
+// Creates cancellation contexts for process signals.
 package runner
 
 import (

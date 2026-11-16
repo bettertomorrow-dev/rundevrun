@@ -1,3 +1,4 @@
+// Tests networking setup behavior.
 package networking
 
 import (

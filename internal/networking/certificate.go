@@ -1,3 +1,4 @@
+// ManagedCertificate returns a validated certificate loaded from the atomic bundle for this machine. A missing, expired or untrusted certificate does not affect local HTTP routing.
 package networking
 
 import (
@@ -11,9 +12,6 @@ import (
 	"time"
 )
 
-// ManagedCertificate returns a validated certificate loaded from the atomic
-// bundle for this machine. A missing, expired or untrusted certificate does not
-// affect local HTTP routing.
 func (s Service) ManagedCertificate(domain string) (*tls.Certificate, error) {
 	return s.managedCertificate(domain, nil, time.Now())
 }
@@ -74,8 +72,6 @@ func validateCertificate(bundle []byte, domain string, roots *x509.CertPool, now
 	return &pair, nil
 }
 
-// publishCertificate validates the complete replacement before atomically
-// swapping it. Callers serialize issuance under the networking operation lock.
 func (s Service) publishCertificate(domain string, bundle []byte, roots *x509.CertPool, now time.Time) error {
 	if _, err := validateCertificate(bundle, domain, roots, now); err != nil {
 		return err

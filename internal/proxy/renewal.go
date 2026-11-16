@@ -1,3 +1,4 @@
+// renewalCycle remembers a published certificate until its activation succeeds. While activation is pending it never initiates another issuance.
 package proxy
 
 import (
@@ -5,8 +6,6 @@ import (
 	"fmt"
 )
 
-// renewalCycle remembers a published certificate until its activation succeeds.
-// While activation is pending it never initiates another issuance.
 type renewalCycle struct{ activationPending bool }
 
 func (c *renewalCycle) step(ctx context.Context, renew func(context.Context) (bool, error), activate func(context.Context) error) error {

@@ -1,3 +1,4 @@
+// Resolves service dependency graphs and effective bindings.
 package runner
 
 import (
@@ -248,7 +249,6 @@ func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Sele
 	return r.planGraph(ctx, action, selections, cascade, nil)
 }
 
-// PlanGraphWithRegistry plans against a caller-supplied snapshot without writing it.
 func (r *Runner) PlanGraphWithRegistry(ctx context.Context, action string, selections []Selection, cascade bool, snapshot state.Registry) (GraphPlan, error) {
 	return r.planGraph(ctx, action, selections, cascade, &snapshot)
 }
@@ -619,7 +619,6 @@ func sortedNodes(m map[string]*graphNode) []string {
 	return ids
 }
 
-// PlanBind validates a binding without writing state or taking operation locks.
 func (r *Runner) PlanBind(ctx context.Context, consumer Selection, dependency string, target Selection) (BindResult, error) {
 	result, _, _, err := r.planBind(ctx, consumer, dependency, target)
 	return result, err
@@ -682,7 +681,6 @@ func (r *Runner) planBind(ctx context.Context, consumer Selection, dependency st
 	return BindResult{ConsumerID: cid, TargetID: tid, RestartRequired: n.live && effective != tid}, reg.Revision, n.saved.DesiredBindings[dependency] == tid, nil
 }
 
-// Bind serializes the consumer operation and retries if the registry changed.
 func (r *Runner) Bind(ctx context.Context, consumer Selection, dependency string, target Selection) (BindResult, error) {
 	cid, e := selectionID(consumer)
 	if e != nil {

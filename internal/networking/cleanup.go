@@ -1,3 +1,4 @@
+// CleanupPlan previews release of rdr-owned public DNS and tailnet forwarding. Credentials, certificates and other provider records are retained.
 package networking
 
 import (
@@ -9,8 +10,6 @@ import (
 	"net/url"
 )
 
-// CleanupPlan previews release of rdr-owned public DNS and tailnet forwarding.
-// Credentials, certificates and other provider records are retained.
 type CleanupPlan struct {
 	Baseline    string     `json:"baseline"`
 	DNS         *DNSRecord `json:"dns,omitempty"`
@@ -74,7 +73,6 @@ func (s Service) PlanCleanup(ctx context.Context) (CleanupPlan, error) {
 	return plan, nil
 }
 
-// ApplyCleanup rechecks the complete preview and journals each individual delete.
 func (s Service) ApplyCleanup(ctx context.Context, plan CleanupPlan) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -125,8 +123,7 @@ func (s Service) ApplyCleanup(ctx context.Context, plan CleanupPlan) (SetupStatu
 		if err != nil {
 			return SetupStatus{}, err
 		}
-		// Recheck immediately before deletion. Never delete a replacement or a
-		// manually edited record, even if its old ID is still present.
+
 		records, err := cf.ListRecords(ctx, plan.Zone, plan.DNS.Name, "")
 		if err != nil {
 			return SetupStatus{}, err

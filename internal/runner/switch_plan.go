@@ -1,3 +1,4 @@
+// Plans service worktree switches and affected dependency changes.
 package runner
 
 import (
@@ -47,7 +48,6 @@ type SwitchPlan struct {
 	Publications    []string          `json:"publications,omitempty"`
 }
 
-// PlanSwitch reads the complete affected graph without creating runtime state.
 func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (SwitchPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return SwitchPlan{}, &Error{"CANCELLED", err}
@@ -89,7 +89,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			return SwitchPlan{}, &Error{"BINDING_INVALID", errors.New("source and target sets overlap")}
 		}
 	}
-	// Read every registered instance in the affected projects, including stopped explicit bindings.
+
 	projects := map[string]state.Project{}
 	for pid := range projectIDs {
 		p, e := reg.Project(pid)
@@ -111,7 +111,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			}
 		}
 	}
-	// Validate exact source and target descriptors and their current configuration.
+
 	validate := newGraph(r, reg)
 	validate.desired = true
 	validate.replace = map[string]bool{}
@@ -155,7 +155,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			}
 		}
 	}
-	// Desired must agree with the immutable effective graph for every affected live run.
+
 	for id := range affected {
 		n, e := validate.load(selections[id], true)
 		if e != nil {
@@ -194,7 +194,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			replacements[id] = id
 		}
 	}
-	// Resolve replacement edges according to source/target explicit precedence.
+
 	overrides := map[string]map[string]string{}
 	for source, target := range replacements {
 		src := validate.nodes[source]
@@ -273,7 +273,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			}
 		}
 	}
-	// Plan replacement and desired rewrites together so cycles and unavailable addresses fail now.
+
 	g := newGraph(r, reg)
 	g.replace = map[string]bool{}
 	g.override = overrides
@@ -299,8 +299,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 	for _, id := range g.order {
 		needed[id] = true
 	}
-	// A new dependency cannot retain an effective edge to a source we will stop.
-	// In particular, never silently rewrite a stopped consumer's default edge.
+
 	for _, id := range g.order {
 		for name, target := range g.nodes[id].plan.Bindings {
 			if mapped[target] != "" {
@@ -344,7 +343,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 			return SwitchPlan{}, err
 		}
 	}
-	// Metadata-only stopped instances never reserve ports or get lifecycle steps.
+
 	var metadataOnly []*graphNode
 	for id, n := range g.nodes {
 		if !needed[id] && !n.live {

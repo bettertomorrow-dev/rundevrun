@@ -66,11 +66,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Upgrade", "websocket")
             self.send_header("Sec-WebSocket-Accept", accept)
             self.end_headers()
-            # One unmasked server text frame, representing a tiny HMR-ready event.
+
             self.wfile.write(b"\x81\x0aHMR:ready!")
             self.wfile.flush()
-            # Keep the upgrade alive until the client closes it. Immediate EOF
-            # can race a real tunnel edge before its handshake has completed.
+
+
             self.close_connection = True
             self.connection.settimeout(5)
             try:

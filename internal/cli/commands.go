@@ -1,3 +1,4 @@
+// Dispatches rdr commands and assembles their results.
 package cli
 
 import (
@@ -1236,8 +1237,6 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 	}
 }
 
-// discoverForUp refreshes registration after validating the selected worktree.
-// Dry runs build the same registration in memory and never write state.
 func discoverForUp(store *state.Store, opts options, e *envelope) (*discovery.Project, *discovery.Worktree, *state.Registry) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -1317,8 +1316,7 @@ func discoverForUp(store *state.Store, opts options, e *envelope) (*discovery.Pr
 			if alreadyRegistered {
 				return err
 			}
-			// Registration remains useful even when machine routing is broken;
-			// graph planning reports the routing error after the project is saved.
+
 			return nil
 		}
 		if cfg.Routing.Enabled {
@@ -1768,7 +1766,7 @@ func register(store *state.Store, path string, dryRun bool, e *envelope) {
 	routeCfg, _, routeCfgErr := machineRouting()
 	routeEnabled := routeCfgErr == nil && routeCfg.Routing.Enabled
 	e.Results = append(e.Results, projectInfo{p.ID, p.Name, p.Root})
-	// A sibling without usable configuration remains discoverable by its ID.
+
 	for _, w := range p.Worktrees {
 		info := worktreeInfo{ID: w.ID, ProjectID: p.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached, ConfigValid: w.Config != nil}
 		if w.ConfigError != nil {
@@ -2204,7 +2202,7 @@ func addRunDetails(store *state.Store, instance state.Instance, info *instanceIn
 	manifest, err := store.ReadManifest(instance.RunID)
 	if err != nil {
 		return
-	} // inspectState already reports invalid run records.
+	}
 	info.DirectURL, info.URL = manifest.Addresses["direct_url"], manifest.Addresses["url"]
 	base := filepath.Join(store.Root, "runs", instance.RunID)
 	info.LogPaths = map[string]string{"build": filepath.Join(base, "build.log"), "application": filepath.Join(base, "application.log"), "supervisor": filepath.Join(base, "supervisor.log")}

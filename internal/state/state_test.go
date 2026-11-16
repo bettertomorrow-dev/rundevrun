@@ -1,3 +1,4 @@
+// Tests state behavior.
 package state
 
 import (
@@ -136,7 +137,7 @@ func TestOrphanTempDoesNotReplacePublishedRegistry(t *testing.T) {
 	if err := s.Update(func(r *Registry) error { return r.SetProject("a", project("a")) }); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a writer killed after creating and partially writing its temp file.
+
 	f, err := os.CreateTemp(s.Root, ".tmp-*")
 	if err != nil {
 		t.Fatal(err)

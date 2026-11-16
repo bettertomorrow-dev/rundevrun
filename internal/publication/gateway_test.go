@@ -1,3 +1,4 @@
+// Tests publication gateway behavior.
 package publication
 
 import (

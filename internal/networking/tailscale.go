@@ -1,3 +1,4 @@
+// ManagedTLSTarget keeps the managed listener separate from legacy TLS.
 package networking
 
 import (
@@ -16,7 +17,6 @@ import (
 
 const managedTLSTarget = "127.0.0.1:8443"
 
-// ManagedTLSTarget keeps the managed listener separate from legacy TLS.
 func ManagedTLSTarget(legacy *routing.Config) string {
 	if legacy != nil && legacy.Routing.Enabled && !legacy.ExternalTLS() && legacy.Routing.HTTPSListen == managedTLSTarget {
 		return "127.0.0.1:8444"
@@ -70,8 +70,6 @@ func (t tailscaleClient) ip(ctx context.Context) (string, error) {
 	return "", errors.New("tailscale has no IPv4 address")
 }
 
-// serve443 returns the full 443 entry, not a lossy projection, so that an
-// unrelated or modified listener can never be mistaken for our forwarding.
 func (t tailscaleClient) serve443(ctx context.Context) (json.RawMessage, error) {
 	b, err := t.command(ctx, "serve", "status", "--json")
 	if err != nil {
@@ -113,7 +111,7 @@ func rawForward(raw json.RawMessage) (string, bool) {
 	if len(raw) == 0 || json.Unmarshal(raw, &m) != nil {
 		return "", false
 	}
-	// Any extra option alters semantics; never overwrite an unfamiliar entry.
+
 	if len(m) != 1 {
 		return "", false
 	}

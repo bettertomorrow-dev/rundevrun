@@ -1,3 +1,4 @@
+// DNSRecord is the non-secret subset used for reconciliation.
 package networking
 
 import (
@@ -18,7 +19,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// DNSRecord is the non-secret subset used for reconciliation.
 type DNSRecord struct {
 	ID      string `json:"id,omitempty"`
 	Type    string `json:"type"`
@@ -27,7 +27,6 @@ type DNSRecord struct {
 	Proxied bool   `json:"proxied"`
 }
 
-// Cloudflare performs bounded API requests. Token is never serialized.
 type Cloudflare struct {
 	BaseURL string
 	Client  *http.Client
@@ -77,7 +76,7 @@ func (c Cloudflare) call(ctx context.Context, method, path string, input, output
 	}
 	var envelope cfResponse
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || json.Unmarshal(b, &envelope) != nil || !envelope.Success {
-		// Cloudflare may echo input. Never copy the response body to logs or output.
+
 		return fmt.Errorf("cloudflare API rejected request (HTTP %d); check token permissions and retry", resp.StatusCode)
 	}
 	if output != nil {
@@ -88,7 +87,6 @@ func (c Cloudflare) call(ctx context.Context, method, path string, input, output
 	return nil
 }
 
-// ListRecords checks only the exact requested name and type.
 func (c Cloudflare) ListRecords(ctx context.Context, zone, name, recordType string) ([]DNSRecord, error) {
 	if zone == "" || name == "" {
 		return nil, errors.New("zone and record name are required")
@@ -99,7 +97,7 @@ func (c Cloudflare) ListRecords(ctx context.Context, zone, name, recordType stri
 		if recordType != "" {
 			path += "&type=" + url.QueryEscape(recordType)
 		}
-		// Use an envelope here to reject incomplete pagination rather than infer ownership.
+
 		base := c.BaseURL
 		if base == "" {
 			base = "https://api.cloudflare.com/client/v4"
@@ -142,8 +140,6 @@ func (c Cloudflare) ListRecords(ctx context.Context, zone, name, recordType stri
 	return nil, errors.New("Cloudflare DNS results exceed pagination limit")
 }
 
-// StoreCredential installs a user-supplied token via an in-memory secret. It is
-// never placed in a command argument, plan, or returned value.
 func (s Service) StoreCredential(ref string, token []byte) error {
 	if !refName.MatchString(ref) || len(token) > 4096 || len(bytes.TrimSpace(token)) == 0 {
 		return errors.New("invalid credential reference or empty token")
@@ -195,7 +191,7 @@ func (s Service) credential(ref string) (string, error) {
 		return "", errors.New("invalid credential reference")
 	}
 	path := filepath.Join(s.Root, "credentials", ref)
-	// Reject overly permissive files before using their contents.
+
 	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", err
@@ -222,15 +218,12 @@ func sameDNS(a, b DNSRecord) bool {
 	return a.ID == b.ID && strings.EqualFold(a.Name, b.Name) && a.Type == b.Type && a.Content == b.Content && a.Proxied == b.Proxied
 }
 
-// DNSChange describes a reviewed wildcard mutation and its observed baseline.
 type DNSChange struct {
 	Zone     string     `json:"zone"`
 	Desired  DNSRecord  `json:"desired"`
 	Previous *DNSRecord `json:"previous,omitempty"`
 }
 
-// PlanWildcard refuses unmanaged or externally modified records. The caller
-// supplies the last recorded owned value; nil means no record was created by rdr.
 func (c Cloudflare) PlanWildcard(ctx context.Context, zone, domain, ip string, owned *DNSRecord) (DNSChange, error) {
 	address := net.ParseIP(ip)
 	_, v4net, _ := net.ParseCIDR("100.64.0.0/10")
@@ -269,8 +262,6 @@ func (c Cloudflare) PlanWildcard(ctx context.Context, zone, domain, ip string, o
 	return DNSChange{Zone: zone, Desired: desired, Previous: &old}, nil
 }
 
-// ApplyWildcard rechecks the observed baseline immediately before mutation.
-// If a create response is lost, callers must resolve ownership manually.
 func (c Cloudflare) ApplyWildcard(ctx context.Context, change DNSChange) (DNSRecord, error) {
 	name := strings.TrimPrefix(change.Desired.Name, "*.")
 	next, err := c.PlanWildcard(ctx, change.Zone, name, change.Desired.Content, change.Previous)
@@ -301,8 +292,6 @@ func (c Cloudflare) ApplyWildcard(ctx context.Context, change DNSChange) (DNSRec
 	return result, nil
 }
 
-// ReplaceCredential explicitly rotates an existing token. The replacement is
-// written privately and atomically so a failed rotation leaves the old token.
 func (s Service) ReplaceCredential(ref string, token []byte) error {
 	if !refName.MatchString(ref) || len(token) == 0 || len(token) > 4096 || bytes.ContainsAny(token, "\r\n") || len(bytes.TrimSpace(token)) == 0 {
 		return errors.New("invalid credential reference or empty token")

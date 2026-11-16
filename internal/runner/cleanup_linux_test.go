@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner cleanup behavior on Linux.
 package runner
 
 import (
@@ -22,8 +23,7 @@ import (
 )
 
 func TestCleanupRefusesUnrecordedSessionSurvivor(t *testing.T) {
-	// Block the session leader until its identity is recorded, then leave a
-	// descendant that deliberately never appears in the simulated run record.
+
 	cmd := exec.Command("/bin/sh", "-c", "read go; sleep 60 & echo $!; exit")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	in, err := cmd.StdinPipe()
@@ -70,7 +70,7 @@ func TestCleanupRefusesUnrecordedSessionSurvivor(t *testing.T) {
 	if ok, err := procid.Check(child); err != nil || !ok {
 		t.Fatalf("verification signalled a process: %v %v", ok, err)
 	}
-	// A stale or forged owner must still never authorize a signal.
+
 	foreign := anchor
 	foreign.Identity += "foreign"
 	if err := verifySessionGone(foreign); err == nil {
@@ -95,8 +95,7 @@ func TestCleanupRefusesUnrecordedSessionSurvivor(t *testing.T) {
 func TestStopDoesNotConfirmCleanupOfLateFork(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "late-child")
-	// A valid but uncooperative supervisor forks after Stop has taken its
-	// pre-signal snapshot. The new child is absent from the durable run record.
+
 	cmd := exec.Command("python3", "-u", "-c", `
 import os, signal, subprocess, sys
 child = subprocess.Popen(["sleep", "60"], preexec_fn=os.setpgrp)

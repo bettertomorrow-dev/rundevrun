@@ -1,3 +1,4 @@
+// Stops selected services and their dependent consumers.
 package runner
 
 import (
@@ -11,7 +12,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// DownGraph stops selected instances and, when requested, their live consumers.
 func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade bool) (out GraphResult, retErr error) {
 	out = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
 	defer func() {
@@ -66,7 +66,7 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 			return out, &Error{"STATE_CONFLICT", errors.New("run changed before stop")}
 		}
 	}
-	// Capture preparation edges before cleanup so a failed cleanup blocks targets.
+
 	edges := map[string][]string{}
 	reg, err := r.Store.Read()
 	if err != nil {
@@ -99,14 +99,14 @@ func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade 
 					}
 				}
 			} else {
-				// No manifest means targets are unknown. Recover before any stop.
+
 				if e := r.recoverPreparation(ctx, parts[0], inst.ID); e != nil {
 					return out, e
 				}
 			}
 		}
 	}
-	// Preparation bindings can add edges to selected nodes, so include them in stop order.
+
 	plans := map[string]PlannedInstance{}
 	for _, p := range plan.Instances {
 		plans[p.InstanceID] = p

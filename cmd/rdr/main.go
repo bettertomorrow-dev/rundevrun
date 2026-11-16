@@ -1,4 +1,4 @@
-// rdr manages development processes described by dev.toml.
+// Runs rdr commands and internal supervisor entry points.
 package main
 
 import (

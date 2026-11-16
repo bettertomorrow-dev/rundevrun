@@ -1,3 +1,4 @@
+// Parses Darwin socket_fdinfo using the 64-bit XNU ABI from bsd/sys/proc_info.h.
 package runner
 
 import (
@@ -7,9 +8,6 @@ import (
 	"net"
 )
 
-// Darwin socket_fdinfo layout from xnu bsd/sys/proc_info.h. Both supported
-// Darwin architectures use the same 64-bit ABI.
-// https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h
 const darwinSocketInfoSize = 792
 
 func darwinSocketListener(b []byte, wanted int) (bool, error) {
@@ -60,7 +58,7 @@ func darwinSocketListener(b []byte, wanted int) (bool, error) {
 		return false, fmt.Errorf("tracked process has non-loopback socket on port %d", port)
 	}
 	match := protocol == 6 && port == wanted && ip.Equal(net.ParseIP("127.0.0.1"))
-	// XNU socket.h SO_REUSEPORT permits other sockets to share the endpoint.
+
 	if match && binary.LittleEndian.Uint16(b[188:])&0x0200 != 0 {
 		return false, &Error{Code: "OWNERSHIP_UNKNOWN", Err: errors.New("listener uses SO_REUSEPORT; disable port sharing")}
 	}

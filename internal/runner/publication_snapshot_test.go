@@ -1,3 +1,4 @@
+// Tests runner publication snapshot behavior.
 package runner
 
 import (

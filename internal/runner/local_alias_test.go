@@ -1,3 +1,4 @@
+// Tests runner local alias behavior.
 package runner
 
 import (

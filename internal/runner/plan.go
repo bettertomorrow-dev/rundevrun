@@ -15,9 +15,9 @@ type Runner struct {
 	Executable string
 	RetryHooks bool
 	Routing    *routing.Config
-	// ExpectedRuns prevents a stale interactive selection stopping a replacement.
+
 	ExpectedRuns map[string]string
-	// SkipStopHooks is used when the worktree containing the hooks was removed.
+
 	SkipStopHooks bool
 }
 
@@ -54,7 +54,6 @@ type Result struct {
 	LogPaths     map[string]string `json:"log_paths,omitempty"`
 }
 
-// Plan returns the selected instance from the common graph plan.
 func (r *Runner) Plan(ctx context.Context, action string, project *discovery.Project, worktree *discovery.Worktree, service string) (Plan, error) {
 	selection := Selection{project, worktree, service}
 	id, e := selectionID(selection)

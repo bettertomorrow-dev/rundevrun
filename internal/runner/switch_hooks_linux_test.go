@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner switch hooks behavior on Linux.
 package runner
 
 import (

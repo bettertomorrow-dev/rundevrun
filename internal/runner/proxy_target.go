@@ -1,3 +1,4 @@
+// Verifies service processes and listeners before proxy connections.
 package runner
 
 import (
@@ -9,8 +10,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// VerifyProxyTarget checks the recorded run and listener immediately before a
-// proxy dial. The expected run pins a request to the instance it resolved.
 func VerifyProxyTarget(store *state.Store, projectID, instanceID, expectedRunID string) (int, error) {
 	if expectedRunID == "" {
 		return 0, errors.New("no active run")
@@ -88,5 +87,4 @@ func VerifyProxyTarget(store *state.Store, projectID, instanceID, expectedRunID 
 	return m.Launch.Port, nil
 }
 
-// OpenProxyLog uses the same bounded rotating log as supervised processes.
 func OpenProxyLog(path string) (io.WriteCloser, error) { return openLog(path) }

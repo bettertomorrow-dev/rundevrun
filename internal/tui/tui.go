@@ -1,3 +1,4 @@
+// Implements tui tui.
 package tui
 
 import (

@@ -1,3 +1,4 @@
+// Validates and reserves routes for service instances.
 package runner
 
 import (
@@ -17,7 +18,6 @@ import (
 
 type routeAssignment struct{ host, url, alias string }
 
-// assignRoutes validates the whole candidate before changing reg.
 func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selection) (map[string]routeAssignment, error) {
 	projects := map[string]state.Project{}
 	owners := map[string]string{}
@@ -38,7 +38,7 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 				}
 				if ep.Alias && changedProjects[id] {
 					continue
-				} // touched project aliases are recalculated below
+				}
 				if other := owners[ep.Hostname]; other != "" && other != inst.ID {
 					return nil, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s already reserved", ep.Hostname)}
 				}
@@ -226,8 +226,6 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 	return changes, nil
 }
 
-// AssignProjectRoutes assigns registered HTTP instances from a fresh discovery
-// result. It only mutates reg after every hostname and certificate is validated.
 func (r *Runner) AssignProjectRoutes(reg *state.Registry, fresh *discovery.Project) error {
 	if r == nil || reg == nil || fresh == nil {
 		return &Error{"USAGE", errors.New("missing routing input")}
@@ -274,8 +272,6 @@ func (r *Runner) AssignProjectRoutes(reg *state.Registry, fresh *discovery.Proje
 	return err
 }
 
-// ReservePlannedRoutes must run inside the same registry update as port and
-// preparation reservations. The plan must come from this runner's planner.
 func (r *Runner) ReservePlannedRoutes(reg *state.Registry, plan GraphPlan) error {
 	selections := make(map[string]Selection, len(plan.Instances))
 	for _, p := range plan.Instances {

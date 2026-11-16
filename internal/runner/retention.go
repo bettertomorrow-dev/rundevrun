@@ -1,3 +1,4 @@
+// Prunes historical runs while retaining unverifiable records.
 package runner
 
 import (
@@ -20,8 +21,6 @@ type retainedCandidate struct {
 	dir   os.FileInfo
 }
 
-// pruneRuns is called with the instance operation lock held. Unverifiable
-// records are retained; they are never counted against the historical limit.
 func (r *Runner) pruneRuns(instanceID string) error {
 	reg, err := r.Store.Read()
 	if err != nil {

@@ -1,3 +1,4 @@
+// ReportedURL returns the latest explicit "app: url=..." announcement in this run's retained application logs. Ordinary URLs in log messages are ignored.
 package runner
 
 import (
@@ -15,16 +16,13 @@ import (
 	"unicode"
 )
 
-// ReportedURL returns the latest explicit "app: url=..." announcement in this
-// run's retained application logs. Ordinary URLs in log messages are ignored.
 func (r *Runner) ReportedURL(ctx context.Context, runID string) (string, error) {
-	// Validate the run path through the store before accessing its logs.
+
 	if _, err := r.Store.ReadManifest(runID); err != nil {
 		return "", err
 	}
 	var reported string
-	// ponytail: scans up to three retained 10 MiB segments per refresh. Persist
-	// announcements in the supervisor if high-volume logging makes this costly.
+
 	for _, suffix := range []string{".2", ".1", ""} {
 		f, err := openReadLog(filepath.Join(r.Store.Root, "runs", runID, "application.log") + suffix)
 		if errors.Is(err, os.ErrNotExist) {
@@ -59,8 +57,6 @@ func (r *Runner) ReportedURL(ctx context.Context, runID string) (string, error) 
 	return reported, nil
 }
 
-// TransferOwnedReportedURL applies a reported path/query/fragment only when the
-// announcement belongs to the verified listener of this exact running instance.
 func TransferOwnedReportedURL(store *state.Store, projectID string, instance state.Instance, destination, reported string) (string, bool) {
 	if destination == "" || reported == "" || instance.RunID == "" {
 		return destination, false

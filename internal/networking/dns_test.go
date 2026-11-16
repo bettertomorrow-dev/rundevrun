@@ -1,3 +1,4 @@
+// Tests networking dns behavior.
 package networking
 
 import (
@@ -28,13 +29,13 @@ func txtServer(t *testing.T, records *atomic.Value) string {
 			for end < n && packet[end] != 0 {
 				end += int(packet[end]) + 1
 			}
-			end += 5 // root label and question type/class
+			end += 5
 			if end > n {
 				continue
 			}
 			answer := append([]byte(nil), packet[:end]...)
 			values := records.Load().([]string)
-			binary.BigEndian.PutUint16(answer[2:4], 0x8500) // authoritative response
+			binary.BigEndian.PutUint16(answer[2:4], 0x8500)
 			binary.BigEndian.PutUint16(answer[6:8], uint16(len(values)))
 			binary.BigEndian.PutUint16(answer[8:10], 0)
 			binary.BigEndian.PutUint16(answer[10:12], 0)
@@ -54,7 +55,7 @@ func TestAuthoritativeTXTRequiresPropagationToEveryServer(t *testing.T) {
 	first.Store([]string{"proof", "unrelated"})
 	second.Store([]string{"unrelated"})
 	servers := []string{txtServer(t, &first), txtServer(t, &second)}
-	// This reserved name cannot succeed through a public recursive resolver.
+
 	name := "rdr-acme-fixture.invalid"
 	values, err := lookupAuthoritativeTXT(context.Background(), name, servers)
 	if err != nil {

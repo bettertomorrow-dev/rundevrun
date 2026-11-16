@@ -1,5 +1,6 @@
 //go:build darwin
 
+// Tests procid identity behavior on macOS.
 package procid
 
 import (

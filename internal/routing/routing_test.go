@@ -1,3 +1,4 @@
+// Tests routing behavior.
 package routing
 
 import (

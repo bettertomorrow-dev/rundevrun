@@ -1,3 +1,4 @@
+// Tests runner retention operation behavior.
 package runner
 
 import (

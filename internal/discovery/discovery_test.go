@@ -1,3 +1,4 @@
+// Tests discovery behavior.
 package discovery
 
 import (
@@ -148,7 +149,6 @@ func TestFindConfigPropagatesNonNotFound(t *testing.T) {
 	}
 }
 
-// Discovery returns physical paths, including on macOS where /var is a symlink.
 func canonicalTempDir(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())

@@ -1,3 +1,4 @@
+// Tests runner substitution behavior.
 package runner
 
 import (

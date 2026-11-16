@@ -1,3 +1,4 @@
+// Builds publication artifacts using service environments and verified dependencies.
 package runner
 
 import (
@@ -11,8 +12,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// SnapshotEnvironment renders a publication build with the same substitution
-// rules as a normal service build. Caller supplies the selected public addresses.
 func SnapshotEnvironment(service config.Service, values map[string]string, dependencies map[string]map[string]string) (string, []string, error) {
 	for dep, addresses := range dependencies {
 		for key, value := range addresses {
@@ -50,7 +49,6 @@ func SnapshotEnvironment(service config.Service, values map[string]string, depen
 	return command, mergeEnv(env, subs), nil
 }
 
-// RunPublicationBuild uses the same durable bootstrap and cleanup as service builds.
 func RunPublicationBuild(ctx context.Context, command, cwd string, env []string, logPath string, timeout time.Duration, binary string, persist func(procid.Ref) error, release func() error, persistMembers func([]procid.Ref) error) error {
 	log, err := openLog(logPath)
 	if err != nil {
@@ -60,7 +58,6 @@ func RunPublicationBuild(ctx context.Context, command, cwd string, env []string,
 	return runBuildCommand(ctx, command, cwd, env, log, timeout, binary, persist, release, persistMembers)
 }
 
-// VerifyPublicationDependency checks the exact run and its startup gate.
 func VerifyPublicationDependency(store *state.Store, projectID, id, runID string) error {
 	reg, err := store.Read()
 	if err != nil {

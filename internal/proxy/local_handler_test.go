@@ -1,3 +1,4 @@
+// Tests proxy local handler behavior.
 package proxy
 
 import (

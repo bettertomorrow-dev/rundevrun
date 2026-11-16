@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner switch exec behavior on Linux.
 package runner
 
 import (

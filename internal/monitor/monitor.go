@@ -67,7 +67,6 @@ func contains(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-// worktreePresence does not interpret inspection errors as deletion.
 func worktreePresence(ctx context.Context, p state.Project) (map[string]bool, []string) {
 	present := map[string]bool{}
 	var warnings []string
@@ -129,7 +128,6 @@ func worktreePresence(ctx context.Context, p state.Project) (map[string]bool, []
 	return present, warnings
 }
 
-// Read never changes registration or process state.
 func Read(ctx context.Context, store *state.Store, cwd string) (Snapshot, error) {
 	var out Snapshot
 	if store == nil {
@@ -162,7 +160,7 @@ func Read(ctx context.Context, store *state.Store, cwd string) (Snapshot, error)
 		}
 	}
 	if out.CurrentProjectID == "" {
-		// A newly created worktree is not in the saved descriptors until its first up.
+
 		if p, err := discovery.Discover(cwd); err == nil {
 			if _, ok := reg.Projects[p.ID]; ok {
 				out.CurrentProjectID = p.ID
@@ -332,8 +330,7 @@ func Stop(ctx context.Context, store *state.Store, s Service) error {
 	}
 	r := runner.New(store, "")
 	r.ExpectedRuns = map[string]string{s.ID: s.RunID}
-	// No stop hook can run from a removed working directory; still use the
-	// runner's normal process-identity and dependency checks.
+
 	if _, err := os.Stat(sel.Worktree.Root); errors.Is(err, os.ErrNotExist) {
 		r.SkipStopHooks = true
 	}
@@ -341,7 +338,6 @@ func Stop(ctx context.Context, store *state.Store, s Service) error {
 	return err
 }
 
-// Logs reads the current application log, or the latest failed build log.
 func Logs(ctx context.Context, store *state.Store, s Service, tail int) (string, error) {
 	if tail < 0 || tail > 10000 {
 		return "", errors.New("invalid log line count")
@@ -434,7 +430,6 @@ func tailLog(path string, count int) (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-// PortLabel formats allocated ports without claiming the service is ready.
 func PortLabel(ports []int) string {
 	var values []string
 	for _, p := range ports {

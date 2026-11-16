@@ -77,16 +77,16 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
         def close_tui(process, master, slave, original, key):
             try:
                 os.write(master, key)
-                # Keep consuming the final frame and alternate-screen cleanup;
-                # a PTY can otherwise fill while waiting for the renderer to exit.
+
+
                 deadline = time.monotonic() + 10
                 while process.poll() is None and time.monotonic() < deadline:
                     if select.select([master], [], [], 0.1)[0]:
                         os.read(master, 65536)
                 assert process.wait(timeout=10) == 0
                 restored = termios.tcgetattr(slave)
-                # PENDIN is kernel pending-input state, not a terminal setting.
-                # A cancelable reader may leave it set when canonical mode returns.
+
+
                 pending = getattr(termios, "PENDIN", 0)
                 restored[3] &= ~pending
                 original[3] &= ~pending
@@ -100,10 +100,10 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
 
         try:
             cli("up", "worker", "--no-proxy")
-            # Leaving the log view with Ctrl-C must restore the TTY and keep the service alive.
+
             process, master, slave, original = start_tui()
             try:
-                # The networking view is available without blocking service controls.
+
                 os.write(master, b"n")
                 wait_for(master, b"Local HTTP", process)
                 os.write(master, b"\x1b")
@@ -115,7 +115,7 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
             status = cli("status")
             assert status["results"][0]["state"] in {"running", "ready"}, status
             assert not (project / "before-stopped").exists()
-            # Stop must execute both hooks through rdrtop's bootstrap entrypoint.
+
             process, master, slave, original = start_tui()
             try:
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 14, 60, 0, 0))
@@ -127,8 +127,8 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
             finally:
                 close_tui(process, master, slave, original, b"q")
             assert cli("status")["results"][0]["state"] == "stopped"
-            # A4: launch the actual rdrtop binary with a live HTTP service and
-            # no proxy process. Its own __rdr_proxy entrypoint must restore local access.
+
+
             web = root / "http-project"
             web.mkdir()
             (web / "server.py").write_text('''import http.server, os

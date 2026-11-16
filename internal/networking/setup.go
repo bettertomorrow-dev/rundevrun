@@ -1,3 +1,4 @@
+// SetupPlan is a reviewable external operation. TermsAccepted is set only after the user has reviewed TermsURL.
 package networking
 
 import (
@@ -17,8 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// SetupPlan is a reviewable external operation. TermsAccepted is set only
-// after the user has reviewed TermsURL.
 type SetupPlan struct {
 	Baseline          string    `json:"baseline"`
 	Domain            string    `json:"domain"`
@@ -43,7 +42,6 @@ type SetupStatus struct {
 	Diagnostics []string  `json:"diagnostics,omitempty"`
 }
 
-// Check reads local setup status without contacting providers.
 func (s Service) Check(ctx context.Context) (SetupStatus, error) {
 	snap, err := s.Inspect(ctx)
 	if err != nil {
@@ -92,7 +90,6 @@ func (s Service) cf(ref string) (Cloudflare, error) {
 	return c, nil
 }
 
-// PlanSetup contacts providers to show exact changes but never mutates them.
 func (s Service) PlanSetup(ctx context.Context) (SetupPlan, error) {
 	snap, err := s.Inspect(ctx)
 	if err != nil {
@@ -232,9 +229,6 @@ func equalPlans(a, b SetupPlan) bool {
 	return bytes.Equal(x, y)
 }
 
-// ApplySetup verifies both config and remote state under the issuance lock. A
-// pending stage is recorded before each mutation; ambiguous failures require
-// explicit inspection rather than guessing ownership on retry.
 func (s Service) ApplySetup(ctx context.Context, plan SetupPlan) (result SetupResult, resultErr error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -342,9 +336,6 @@ func (s Service) ApplySetup(ctx context.Context, plan SetupPlan) (result SetupRe
 	return result, err
 }
 
-// RenewIfNeeded may run in the proxy after an explicit successful setup. It
-// never adopts DNS, changes Serve, or accepts new terms. The caller should use
-// a bounded context and retry with backoff after an error.
 func (s Service) RenewIfNeeded(ctx context.Context) (bool, error) {
 	owned, err := s.readOwnership()
 	if err != nil {

@@ -1,3 +1,4 @@
+// Implements networking ownership.
 package networking
 
 import (

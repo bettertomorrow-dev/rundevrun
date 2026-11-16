@@ -9,7 +9,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 )
 
-// Load preserves an enabled legacy configuration. New installations use local HTTP.
 func Load(path string) (routing.Config, error) {
 	cfg, err := routing.Load(path)
 	if err != nil {
@@ -27,7 +26,6 @@ func Load(path string) (routing.Config, error) {
 	return WithDesired(cfg, snap.Config), nil
 }
 
-// WithDesired derives routing settings for a candidate before it is saved.
 func WithDesired(cfg routing.Config, desired networking.Config) routing.Config {
 	cfg.LocalOnly = true
 	cfg.TailnetDomain = desired.Tailnet.Domain

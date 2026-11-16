@@ -1,3 +1,4 @@
+// Tests snapshot copy behavior.
 package snapshot
 
 import (
@@ -23,7 +24,7 @@ func TestCopyAndBoundaries(t *testing.T) {
 	if err := Copy(context.Background(), root, "src", dest); err != nil {
 		t.Fatal(err)
 	}
-	// The configured root may resolve inside cwd; links within that tree are forbidden.
+
 	if err := os.Symlink("src", filepath.Join(root, "artifact-root")); err != nil {
 		t.Fatal(err)
 	}

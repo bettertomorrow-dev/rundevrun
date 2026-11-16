@@ -1,3 +1,4 @@
+// Manages local TLS certificates and credentials.
 package routing
 
 import (
@@ -13,8 +14,6 @@ import (
 
 func tlsInvalid(message string) error { return &Error{Code: "TLS_INVALID", Err: errors.New(message)} }
 
-// LoadTLS validates every pair and planned hostname before returning a candidate
-// configuration. The caller can atomically install it only after this succeeds.
 func LoadTLS(c Config, hostnames []string) (*tls.Config, error) {
 	if c.ExternalTLS() {
 		return nil, tlsInvalid("external TLS does not provide a server certificate")
@@ -71,7 +70,6 @@ func LoadTLS(c Config, hostnames []string) (*tls.Config, error) {
 	}}, nil
 }
 
-// ValidateHosts checks provided server credentials or public external chains.
 func ValidateHosts(c Config, hosts []string) error {
 	if c.LocalOnly {
 		for _, host := range hosts {

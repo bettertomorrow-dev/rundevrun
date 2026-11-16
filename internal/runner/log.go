@@ -1,3 +1,4 @@
+// Writes bounded rotating logs for supervised processes.
 package runner
 
 import (
@@ -10,7 +11,6 @@ import (
 
 const logSegmentSize = 10 * 1024 * 1024
 
-// rotatingLog holds three segments, including the current file.
 type rotatingLog struct {
 	mu   sync.Mutex
 	path string
@@ -87,7 +87,6 @@ func (l *rotatingLog) rotate() error {
 }
 func (l *rotatingLog) Close() error { l.mu.Lock(); defer l.mu.Unlock(); return l.file.Close() }
 
-// logSink reports asynchronous copy failures to the process owner.
 type logSink struct {
 	log    *rotatingLog
 	errors chan error

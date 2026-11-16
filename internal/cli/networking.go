@@ -1,3 +1,4 @@
+// networkingCommand handles the settings-only network CLI. Provider checks and external reconciliation are supplied by the networking backend.
 package cli
 
 import (
@@ -17,8 +18,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// networkingCommand handles the settings-only network CLI. Provider checks and
-// external reconciliation are supplied by the networking backend.
 func networkingCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
 	if len(args) < 2 || len(args) > 4 || (len(args) > 2 && args[1] != "credential-store" && args[1] != "credential-replace" && args[1] != "adopt-dns" && args[1] != "adopt-existing-dns" && args[1] != "adopt-serve" && args[1] != "resolve-challenge") {
 		e.fail("USAGE", "usage: rdr network inspect|check|plan|apply|setup-check|setup-plan|setup-apply|credential-store")

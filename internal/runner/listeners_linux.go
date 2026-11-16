@@ -1,5 +1,6 @@
 //go:build linux
 
+// Verifies process-owned network listeners on Linux.
 package runner
 
 import (
@@ -17,8 +18,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// checkListeners verifies all TCP listeners and UDP sockets owned by the
-// tracked processes and, when port is nonzero, requires an owned TCP listener.
 func checkListeners(refs []procid.Ref, port int) error {
 	inodes := map[string]bool{}
 	for _, ref := range refs {
@@ -74,8 +73,7 @@ func checkListeners(refs []procid.Ref, port int) error {
 			if (tcp && fields[3] != "0A") || (!tcp && fields[3] != "07") {
 				continue
 			}
-			// Check every TCP listener on the requested endpoint, including
-			// sockets outside the tracked group sharing it with SO_REUSEPORT.
+
 			if !inodes[fields[9]] && (!tcp || port == 0) {
 				continue
 			}

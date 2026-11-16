@@ -1,5 +1,6 @@
 //go:build darwin || linux
 
+// Tests acceptance poc behavior.
 package acceptance
 
 import (
@@ -26,7 +27,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// TestPoCHTTPHelper runs only in a separate rdr-owned service process.
 func TestPoCHTTPHelper(t *testing.T) {
 	if os.Getenv("POC_HTTP_HELPER") != "1" {
 		return
@@ -42,7 +42,6 @@ func TestPoCHTTPHelper(t *testing.T) {
 	t.Fatal(err)
 }
 
-// TestLaunchURLHelper is invoked as the owned HTTP process by TestLocalLaunchURLs.
 func TestLaunchURLHelper(t *testing.T) {
 	if os.Getenv("POC_LAUNCH_TEST") != "1" {
 		return
@@ -71,8 +70,6 @@ func TestLaunchURLHelper(t *testing.T) {
 	}
 }
 
-// reservePort gives each real-process fixture a kernel-selected port rather
-// than racing another isolated registry's auto allocator at port 20000.
 func reservePort(t *testing.T) (net.Listener, int) {
 	t.Helper()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -87,7 +84,7 @@ func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs real rdr service processes")
 	}
-	// Keep the control socket path short enough for Darwin's sockaddr_un.
+
 	tmp, err := os.MkdirTemp("", "rdr-accept-")
 	if err != nil {
 		t.Fatal(err)
@@ -178,12 +175,12 @@ build = "printf 'poc build failure\\n'; exit 1"
 	git(first, "-c", "user.name=PoC", "-c", "user.email=poc@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	git(first, "worktree", "add", "-b", "feature", feature)
 	writeConfig(feature, "first", featurePort)
-	// Dry-run works before registration without creating a registry or running code.
+
 	invoke(first, true, "up", "web", "--dry-run", "--no-proxy")
 	if _, err := os.Stat(store.Root); !os.IsNotExist(err) {
 		t.Fatalf("dry-run wrote state: %v", err)
 	}
-	// Always clean up verified fixture processes, even if an assertion fails.
+
 	t.Cleanup(func() {
 		cmd := exec.Command(binary, "down", "--all", "--json")
 		cmd.Dir = base
@@ -258,7 +255,7 @@ build = "printf 'poc build failure\\n'; exit 1"
 			mainService = svc
 		}
 	}
-	// The short project alias must select the main worktree, never its feature sibling.
+
 	alias, err := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/alias", proxyPort), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -498,8 +495,7 @@ build = "printf 'poc build failure\\n'; exit 1"
 	if response.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("stopped known service returned %d, want 503", response.StatusCode)
 	}
-	// A different checkout with the same project name and directory basename
-	// must not take over either the existing canonical name or its alias.
+
 	clone := filepath.Join(base, "clone", "first")
 	if err := os.MkdirAll(clone, 0700); err != nil {
 		t.Fatal(err)
@@ -515,7 +511,7 @@ build = "printf 'poc build failure\\n'; exit 1"
 	if err != nil || response.StatusCode != http.StatusOK || string(aliasBody) != "poc ready first "+first+" /alias\n" {
 		t.Fatalf("clone collision changed existing route: status=%d body=%q err=%v", response.StatusCode, aliasBody, err)
 	}
-	// A conflicting initial listen port is reported without stopping a live app.
+
 	invoke(first, true, "proxy", "stop")
 	blocker, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", proxyPort))
 	if err != nil {

@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Never let ambient Git selectors/config redirect commands or run configured hooks.
+
 FIXTURE_ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 FIXTURE_ENV.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
 CLI_ENV = FIXTURE_ENV.copy()
@@ -68,7 +68,7 @@ def main():
             cli(path, "config", "check", "--project", project, "--worktree", str(path))
         config_checked = True
 
-        # Share the main catalog between reports in A and indexer in A, plus reports in B.
+
         cli(roots["consumer-a"], "bind", "reports", "catalog", *scope(project, roots["consumer-a"]), "--to-worktree", str(roots["main"]))
         cli(roots["consumer-a"], "bind", "indexer", "catalog", *scope(project, roots["consumer-a"]), "--to-worktree", str(roots["main"]))
         cli(roots["consumer-b"], "bind", "reports", "catalog", *scope(project, roots["consumer-b"]), "--to-worktree", str(roots["main"]))
@@ -76,7 +76,7 @@ def main():
         cli(roots["consumer-a"], "up", "reports", "indexer", *scope(project, roots["consumer-a"]))
         cli(roots["consumer-b"], "up", "reports", *scope(project, roots["consumer-b"]))
 
-        # The third checkout has its own catalog. Rebind only A's reports and restart it.
+
         cli(roots["catalog-c"], "up", "catalog", *scope(project, roots["catalog-c"]))
         cli(roots["consumer-a"], "bind", "reports", "catalog", *scope(project, roots["consumer-a"]), "--to-worktree", str(roots["catalog-c"]))
         cli(roots["consumer-a"], "restart", "reports", *scope(project, roots["consumer-a"]))
@@ -145,7 +145,7 @@ def one_instance(result, service):
 
 
 def public_url(instance):
-    # Service checks use direct_url, never the routed browser URL.
+
     urls = instance.get("urls", {})
     address = instance.get("address", {})
     url = instance.get("direct_url")
@@ -172,7 +172,7 @@ def assert_http(url):
 
 
 def cleanup(repo, project, roots):
-    # Stop consumers first. Each action goes through the public CLI, never a saved PID.
+
     for root, services in (
         (roots["consumer-b"], ("reports",)),
         (roots["consumer-a"], ("reports", "indexer")),

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests proxy daemon behavior on Linux.
 package proxy
 
 import (
@@ -271,7 +272,7 @@ func TestDaemonParentExitAndForeignIdentity(t *testing.T) {
 	if e != nil || !live {
 		t.Fatalf("foreign process affected: %v %v", live, e)
 	}
-	// Leave no live foreign record for cleanup to contact.
+
 	if e = os.Remove(filepath.Join(store.Root, "proxy.json")); e != nil {
 		t.Fatal(e)
 	}

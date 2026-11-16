@@ -1,3 +1,4 @@
+// LaunchResult records the latest completed up attempt for one service.
 package state
 
 import (
@@ -7,7 +8,6 @@ import (
 	"time"
 )
 
-// LaunchResult records the latest completed up attempt for one service.
 type LaunchResult struct {
 	Attempt    string    `json:"attempt"`
 	ProjectID  string    `json:"project_id"`
@@ -23,7 +23,7 @@ type LaunchHistory struct {
 
 func (s *Store) ReadLaunchHistory() (LaunchHistory, error) {
 	h := LaunchHistory{Services: map[string]LaunchResult{}, Projects: map[string]LaunchResult{}}
-	// Read() validates the root and also permits an as-yet absent state directory.
+
 	if _, err := s.Read(); err != nil {
 		return h, err
 	}
@@ -40,7 +40,6 @@ func (s *Store) ReadLaunchHistory() (LaunchHistory, error) {
 	return h, nil
 }
 
-// RecordLaunch serializes concurrent completions and keeps the newest start per service.
 func (s *Store) RecordLaunch(results []LaunchResult) error {
 	if len(results) == 0 {
 		return nil

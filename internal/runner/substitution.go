@@ -1,3 +1,4 @@
+// Expands service placeholders through shell environment variables.
 package runner
 
 import (
@@ -5,8 +6,6 @@ import (
 	"strings"
 )
 
-// substitute expands placeholders once. Command values travel in environment
-// variables rather than being interpolated into shell source.
 func substitute(input string, values map[string]string, command bool) (string, map[string]string, error) {
 	if command && !hasPlaceholder(input, values) {
 		return strings.ReplaceAll(strings.ReplaceAll(input, "{{", "{"), "}}", "}"), map[string]string{}, nil

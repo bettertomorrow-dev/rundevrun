@@ -1,3 +1,4 @@
+// Tests private Cloudflare token delivery and cleanup in the domain setup helper.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs';

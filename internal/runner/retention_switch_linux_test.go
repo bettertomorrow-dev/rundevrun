@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner retention switch behavior on Linux.
 package runner
 
 import (

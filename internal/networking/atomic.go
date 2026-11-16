@@ -1,3 +1,4 @@
+// atomicWrite publishes a mode-0600 file inside an already validated private directory.
 package networking
 
 import (
@@ -5,7 +6,6 @@ import (
 	"path/filepath"
 )
 
-// atomicWrite publishes a mode-0600 file inside an already validated private directory.
 func atomicWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*")

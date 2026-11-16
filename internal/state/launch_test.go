@@ -1,3 +1,4 @@
+// Tests state launch behavior.
 package state
 
 import (

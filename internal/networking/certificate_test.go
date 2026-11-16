@@ -1,3 +1,4 @@
+// Tests networking certificate behavior.
 package networking
 
 import (

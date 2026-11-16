@@ -14,9 +14,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// Activation holds one validated route candidate and, when needed, one proxy
-// listener reservation. Call Abort immediately after Prepare and Finish once
-// the corresponding desired settings have been committed.
 type Activation struct {
 	store      *state.Store
 	exe        string
@@ -33,7 +30,6 @@ func (a *Activation) RouteChanges() []runner.LocalRouteChange {
 	return append([]runner.LocalRouteChange(nil), a.routes.Changes...)
 }
 
-// Prepare validates candidate routes before any config or provider mutation.
 func Prepare(ctx context.Context, store *state.Store, exe, configPath string, desired networking.Config) (*Activation, error) {
 	cfg, err := localrouting.Load(configPath)
 	if err != nil {
@@ -62,7 +58,6 @@ func Prepare(ctx context.Context, store *state.Store, exe, configPath string, de
 	return a, nil
 }
 
-// Commit installs the route candidate only if its registry revision is current.
 func (a *Activation) Commit(ctx context.Context) error {
 	if a.finished {
 		return errors.New("network activation already finished")
@@ -70,7 +65,6 @@ func (a *Activation) Commit(ctx context.Context) error {
 	return runner.CommitLocalRoutes(ctx, a.store, a.routes)
 }
 
-// Finish reloads the running proxy or starts it for existing live HTTP runs.
 func (a *Activation) Finish(ctx context.Context) error {
 	if a.finished {
 		return errors.New("network activation already finished")
@@ -113,7 +107,6 @@ func (a *Activation) Finish(ctx context.Context) error {
 	return nil
 }
 
-// Abort releases the listener reservation on every path that skips Finish.
 func (a *Activation) Abort() {
 	if a != nil && a.prepared && !a.finished {
 		_ = proxy.AbortReload(context.Background(), a.store)

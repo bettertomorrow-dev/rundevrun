@@ -1,3 +1,4 @@
+// Persists lifecycle operation journals and locks.
 package state
 
 import (
@@ -10,7 +11,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// Operation records public-safe switch progress, never command environments.
 type Operation struct {
 	ID     string            `json:"id"`
 	Kind   string            `json:"kind"`
@@ -111,7 +111,6 @@ func (s *Store) ReadOperation(id string) (Operation, error) {
 	return op, nil
 }
 
-// ListOperations reads public-safe journals without modifying interrupted work.
 func (s *Store) ListOperations() ([]Operation, error) {
 	dir, e := s.operationDir(false)
 	if errors.Is(e, os.ErrNotExist) {
@@ -139,7 +138,6 @@ func (s *Store) ListOperations() ([]Operation, error) {
 	return out, nil
 }
 
-// OperationRunReferences protects runs referenced by unfinished journals.
 func (s *Store) OperationRunReferences() (map[string]bool, error) {
 	refs := map[string]bool{}
 	operations, e := s.ListOperations()

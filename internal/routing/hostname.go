@@ -1,3 +1,4 @@
+// Validates and constructs local hostnames.
 package routing
 
 import (

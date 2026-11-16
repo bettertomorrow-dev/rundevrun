@@ -1,3 +1,4 @@
+// Persists publication registries and supervisor runtime records.
 package state
 
 import (
@@ -10,8 +11,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// PublicationRegistry is written by the CLI under the publication registry lock.
-// The daemon writes only its own per-publication runtime record.
 type PublicationRegistry struct {
 	Version      int                    `json:"version"`
 	Revision     uint64                 `json:"revision"`
@@ -34,7 +33,6 @@ type Publication struct {
 	SigningKey  []byte            `json:"signing_key"`
 }
 
-// PublicationRuntime is exclusively written by the publication supervisor.
 type PublicationRuntime struct {
 	ID           string       `json:"id"`
 	State        string       `json:"state"`
@@ -155,7 +153,6 @@ func validatePublications(reg PublicationRegistry) error {
 	return nil
 }
 
-// WritePublications requires LockPublicationRegistry. It never exposes plaintext passwords.
 func (s *Store) WritePublications(reg PublicationRegistry) error {
 	if e := validatePublications(reg); e != nil {
 		return e
@@ -191,7 +188,6 @@ func (s *Store) ReadPublicationRuntime(id string) (PublicationRuntime, error) {
 	return record, nil
 }
 
-// PublicationDir returns the private per-publication directory.
 func (s *Store) PublicationDir(id string, create bool) (string, error) {
 	return s.publicationDir(id, create)
 }

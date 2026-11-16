@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests service plan refresh, restart rebuilding, and stale process recovery on Linux.
 package runner
 
 import (

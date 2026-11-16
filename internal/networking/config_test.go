@@ -1,3 +1,4 @@
+// Tests networking config behavior.
 package networking
 
 import (
@@ -93,8 +94,7 @@ func TestStaleDraftAndRollbackNeverOverwriteManualEdit(t *testing.T) {
 	if _, err = s.PlanAtRevision(ctx, stale, original.Revision); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale preview accepted: %v", err)
 	}
-	// A second writer changes the file after the rollback caller obtained its
-	// expected revision. The write lock must reject the exact old revision.
+
 	second := changed.Config
 	second.Local.Listen = "127.0.0.1:9090"
 	p, err = s.PlanAtRevision(ctx, second, changed.Revision)

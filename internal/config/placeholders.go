@@ -1,3 +1,4 @@
+// Parses and validates command placeholders.
 package config
 
 import (

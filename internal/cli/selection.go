@@ -1,3 +1,4 @@
+// Resolves registered projects and worktrees for commands.
 package cli
 
 import (
@@ -8,8 +9,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// resolveCommandSelection uses registered metadata first. Reading an unrelated
-// worktree's broken configuration must not prevent stopping a saved run.
 func resolveCommandSelection(store *state.Store, opts options, requireConfig bool, e *envelope) (*discovery.Project, *discovery.Worktree) {
 	r, err := store.Read()
 	if err != nil {
@@ -60,7 +59,7 @@ func resolveCommandSelection(store *state.Store, opts options, requireConfig boo
 	d := descriptor(*p)
 	selector := opts.worktree
 	if selector == "" {
-		// Commands invoked below the root still select the containing worktree.
+
 		for _, w := range p.Worktrees {
 			if within(cwd, w.Root) && (selector == "" || len(w.Root) > len(selector)) {
 				selector = w.Root
@@ -72,8 +71,7 @@ func resolveCommandSelection(store *state.Store, opts options, requireConfig boo
 		}
 	}
 	if requireConfig {
-		// Refresh branch labels and find a usable configuration without requiring
-		// an unrelated registered worktree's current dev.toml to be valid.
+
 		roots := []string{p.Root}
 		for _, w := range p.Worktrees {
 			roots = append(roots, w.Root)

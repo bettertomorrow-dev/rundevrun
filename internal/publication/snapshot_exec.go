@@ -1,3 +1,4 @@
+// Builds and publishes static snapshots.
 package publication
 
 import (
@@ -39,7 +40,6 @@ func writeSnapshotSpec(dir string, spec snapshotBuildSpec) error {
 	return errors.Join(err, f.Close())
 }
 
-// buildSnapshot is called by the publication supervisor, which is the sole runtime writer.
 func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication, record *state.PublicationRuntime, public, dir string, lease func() (bool, error), tunnelDone <-chan error) (result error) {
 	defer func() {
 		if result == nil {

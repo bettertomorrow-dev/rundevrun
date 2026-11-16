@@ -1,3 +1,4 @@
+// Tests runner switch plan behavior.
 package runner
 
 import (

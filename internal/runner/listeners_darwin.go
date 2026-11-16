@@ -1,5 +1,6 @@
 //go:build darwin
 
+// Verifies process-owned network listeners on macOS.
 package runner
 
 import (
@@ -14,9 +15,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// proc_info and its flavors are defined in xnu proc_info_private.h and
-// proc_info.h. Each result is checked for truncation and syscall errors.
-// https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h
 func darwinProcInfo(call, pid, flavor, arg int, buf []byte) (int, error) {
 	n, _, errno := syscall.Syscall6(syscall.SYS_PROC_INFO, uintptr(call), uintptr(pid), uintptr(flavor), uintptr(arg), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	if errno != 0 {
@@ -44,8 +42,7 @@ func darwinDescriptors(pid, flavor int) ([]byte, error) {
 
 func checkListeners(refs []procid.Ref, port int) error {
 	var err error
-	// Normal requests open/close descriptors during inspection. Retry the full
-	// inspection rather than accepting a partial snapshot or killing on one race.
+
 	for attempt := 0; attempt < 3; attempt++ {
 		if err = checkDarwinListeners(refs, port); err == nil {
 			return nil
@@ -85,8 +82,7 @@ func checkDarwinListeners(refs []procid.Ref, port int) error {
 				if n != len(buf) {
 					return errors.New("incomplete Darwin socket inspection")
 				}
-				// A descriptor can be closed and reused between list snapshots.
-				// Re-read its identity and relevant socket state before accepting it.
+
 				again := make([]byte, darwinSocketInfoSize)
 				n, err = darwinProcInfo(list.call, ref.PID, 3, int(descriptor), again)
 				if err != nil || n != len(again) {

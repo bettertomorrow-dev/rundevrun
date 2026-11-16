@@ -1,3 +1,4 @@
+// Implements rdrtop main.
 package main
 
 import (

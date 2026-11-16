@@ -1,3 +1,4 @@
+// Tests proxy export behavior.
 package proxy
 
 import (
@@ -7,7 +8,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// SetCertificateLoaderForTest is available only to external tests.
 func SetCertificateLoaderForTest(loader func(networking.Service, string) (*tls.Certificate, error)) func() {
 	previous := loadManagedCertificate
 	loadManagedCertificate = loader

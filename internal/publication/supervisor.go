@@ -1,3 +1,4 @@
+// Supervises public gateways and their runtime records.
 package publication
 
 import (
@@ -67,7 +68,6 @@ func (s *urlSink) Write(data []byte) (int, error) {
 	return n, e
 }
 
-// Bootstrap waits for the supervisor's identity record before executing cloudflared.
 func Bootstrap(args []string) error {
 	if len(args) == 0 || !filepath.IsAbs(args[0]) {
 		return errors.New("invalid tunnel command")
@@ -97,7 +97,6 @@ func cleanTunnelEnv() []string {
 	return out
 }
 
-// Supervise owns a single loopback gateway and its cloudflared child.
 func Supervise(root, id string) (result error) {
 	store := &state.Store{Root: root}
 	gate, e := store.LockPublicationGate(id)
@@ -345,9 +344,6 @@ func Supervise(root, id string) (result error) {
 	}
 }
 
-// ReadTimeout bounds body reads and net/http's unread-body drain on rejected
-// requests. No write deadline: streamed responses may outlive a request body.
-// The standard HTTP hijack path clears deadlines for WebSocket connections.
 func newGatewayServer(handler http.Handler) *http.Server {
 	return &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second}
 }

@@ -1,3 +1,4 @@
+// Executes service worktree switches and recovers interrupted switches.
 package runner
 
 import (
@@ -36,7 +37,6 @@ type switchWork struct {
 	pending  bool
 }
 
-// SwitchGraph executes the single and batch switch plan under the same graph locks.
 func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out SwitchResult, retErr error) {
 	out.GraphResult = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
 	out.Steps = []SwitchStepResult{}
@@ -345,7 +345,6 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		return out, e
 	}
 
-	// All route assignments, ports and preparation intents are committed together.
 	e = r.Store.Update(func(current *state.Registry) error {
 		if current.Revision != plan.Revision {
 			return &Error{"STATE_CONFLICT", errors.New("registry changed")}

@@ -1,3 +1,4 @@
+// Tests runner hostname alias behavior.
 package runner
 
 import (

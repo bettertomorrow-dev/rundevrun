@@ -1,3 +1,4 @@
+// Tests runner alias behavior.
 package runner
 
 import (
@@ -28,7 +29,7 @@ func aliasFixture(t *testing.T) (*Runner, *discovery.Project, *discovery.Worktre
 	if err := os.Mkdir(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// The running API was HTTP when launched, although its current config is process-only.
+
 	content := `version=1
 [project]
 name='demo'
@@ -151,7 +152,7 @@ func TestAliasPlanAndCommit(t *testing.T) {
 	if err != nil || manifest.Addresses["url"] != "https://api-old-demo.dev.example.com:8443" {
 		t.Fatalf("active manifest changed: %+v %v", manifest, err)
 	}
-	// Same alias must not silently rename because the machine template changed.
+
 	r.Routing.Routing.Hostname = "{service}-new-{worktree}.{domain}"
 	again, err := r.PlanAlias(context.Background(), p, w, "feature")
 	if err != nil || again.Changes[0].NewHostname != "api-feature-demo.dev.example.com" {

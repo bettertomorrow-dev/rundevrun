@@ -1,3 +1,4 @@
+// Tests networking cleanup behavior.
 package networking
 
 import (

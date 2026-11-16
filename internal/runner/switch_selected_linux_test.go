@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner switch selected behavior on Linux.
 package runner
 
 import (

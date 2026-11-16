@@ -1,5 +1,6 @@
 //go:build darwin
 
+// Discovers owned process groups and sessions on macOS.
 package runner
 
 import (

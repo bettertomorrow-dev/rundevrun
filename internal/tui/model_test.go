@@ -1,3 +1,4 @@
+// Tests tui model behavior.
 package tui
 
 import (

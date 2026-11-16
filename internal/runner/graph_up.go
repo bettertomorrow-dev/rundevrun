@@ -1,3 +1,4 @@
+// Starts and restarts services in dependency order.
 package runner
 
 import (
@@ -37,7 +38,6 @@ type upWork struct {
 	oldPort            int
 }
 
-// UpGraph plans and starts each exact dependency before its consumers.
 func (r *Runner) UpGraph(ctx context.Context, selections []Selection) (out GraphResult, retErr error) {
 	return r.startGraph(ctx, "up", selections)
 }
@@ -125,7 +125,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			return out, &Error{"STATE_CONFLICT", errors.New("graph changed after locking")}
 		}
 	}
-	// Wait for an already-authorized supervisor rather than starting a duplicate.
+
 	for _, p := range plan.Instances {
 		if p.State != "starting" {
 			continue
@@ -372,8 +372,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		}
 		addresses[x.plan.InstanceID] = a
 	}
-	// Prepare every selected replacement before stopping any old run. New dependencies
-	// with no old run can start immediately and satisfy downstream startup gates.
+
 	for i := range work {
 		x := &work[i]
 		p := x.plan

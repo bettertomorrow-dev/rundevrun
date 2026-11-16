@@ -1,3 +1,4 @@
+// Tests runner path behavior.
 package runner
 
 import (
@@ -5,7 +6,6 @@ import (
 	"testing"
 )
 
-// Worktree discovery returns physical paths, including through macOS /var.
 func canonicalTempDir(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())

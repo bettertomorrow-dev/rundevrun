@@ -1,3 +1,4 @@
+// Tests runner log behavior.
 package runner
 
 import (

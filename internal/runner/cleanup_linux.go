@@ -1,5 +1,6 @@
 //go:build linux
 
+// Verifies and cleans up owned processes on Linux.
 package runner
 
 import (
@@ -14,8 +15,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// verifySessionGone proves absence, never ownership. A reused session ID or an
-// unrecorded survivor causes refusal; this function never signals any process.
 func verifySessionGone(anchor procid.Ref) error {
 	unknown := func(err error) error { return &Error{Code: "OWNERSHIP_UNKNOWN", Err: err} }
 	if anchor.PID <= 0 || anchor.PGID <= 0 || anchor.SID <= 1 || anchor.Identity == "" || anchor.BootID == "" {
@@ -26,7 +25,7 @@ func verifySessionGone(anchor procid.Ref) error {
 		return unknown(err)
 	}
 	if self.BootID != anchor.BootID {
-		return nil // Processes from the recorded OS boot cannot still exist.
+		return nil
 	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -53,7 +52,7 @@ func verifySessionGone(anchor procid.Ref) error {
 			return unknown(fmt.Errorf("short process stat for %d", pid))
 		}
 		if fields[0] == "Z" || fields[0] == "X" {
-			continue // Zombies cannot fork, listen or execute project commands.
+			continue
 		}
 		sid, err := strconv.Atoi(fields[3])
 		if err != nil {
@@ -63,9 +62,7 @@ func verifySessionGone(anchor procid.Ref) error {
 			return unknown(fmt.Errorf("live process %d remains in recorded session %d; cleanup is unconfirmed", pid, sid))
 		}
 	}
-	// The kernel group probe catches a same-group child forked after ReadDir's
-	// snapshot, even when its parent exited before we read the parent's stat.
-	// Allow a short bounded interval for already-dead children to be reaped.
+
 	deadline := time.Now().Add(250 * time.Millisecond)
 	for {
 		err := syscall.Kill(-anchor.PGID, 0)

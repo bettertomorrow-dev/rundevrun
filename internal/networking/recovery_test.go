@@ -1,3 +1,4 @@
+// Tests networking recovery behavior.
 package networking
 
 import (

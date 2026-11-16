@@ -1,3 +1,4 @@
+// Tests cli networking behavior.
 package cli
 
 import (

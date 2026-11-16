@@ -1,3 +1,4 @@
+// Recovers interrupted service preparation.
 package runner
 
 import (
@@ -10,7 +11,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// recoverPreparation is called with the instance operation lock held.
 func (r *Runner) recoverPreparation(ctx context.Context, projectID, instanceID string) error {
 	reg, err := r.Store.Read()
 	if err != nil {

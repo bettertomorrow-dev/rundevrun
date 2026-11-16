@@ -1,3 +1,4 @@
+// Persists local proxy identity and routing state.
 package state
 
 import (
@@ -7,7 +8,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-// ProxyRecord identifies a daemon without trusting a reusable PID.
 type ProxyRecord struct {
 	Identity     procid.Ref `json:"identity"`
 	State        string     `json:"state"`

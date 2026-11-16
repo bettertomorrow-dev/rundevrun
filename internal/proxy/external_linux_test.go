@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests proxy external behavior on Linux.
 package proxy
 
 import (

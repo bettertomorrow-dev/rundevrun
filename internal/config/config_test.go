@@ -1,3 +1,4 @@
+// Tests config behavior.
 package config
 
 import (

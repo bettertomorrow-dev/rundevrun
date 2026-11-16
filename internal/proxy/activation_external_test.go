@@ -1,3 +1,4 @@
+// Tests proxy activation external behavior.
 package proxy_test
 
 import (
@@ -47,8 +48,7 @@ func TestActivationTargetHelper(t *testing.T) {
 }
 
 func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
-	// This tests the shared activation operation against a running daemon. The
-	// certificate loader simulates completed issuance without changing system trust.
+
 	tcp, err := net.Listen("tcp", "127.0.0.1:8443")
 	if err != nil {
 		t.Skipf("managed test port unavailable: %v", err)
@@ -206,7 +206,7 @@ func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
 	if err != nil || info.PreparedListen != localAddress {
 		t.Fatalf("reservation missing: %+v %v", info, err)
 	}
-	// Simulate the provider publishing a validated certificate after setup.
+
 	mu.Lock()
 	published = true
 	mu.Unlock()

@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner graph restart behavior on Linux.
 package runner
 
 import (

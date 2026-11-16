@@ -1,3 +1,4 @@
+// certificateIssuer has bounded seams for a staging server and DNS fixture. It is used only after explicit setup or by renewal of an existing setup.
 package networking
 
 import (
@@ -23,8 +24,6 @@ import (
 
 const productionACME = "https://acme-v02.api.letsencrypt.org/directory"
 
-// certificateIssuer has bounded seams for a staging server and DNS fixture.
-// It is used only after explicit setup or by renewal of an existing setup.
 type certificateIssuer struct {
 	directory       string
 	httpClient      *http.Client
@@ -104,8 +103,6 @@ func (i certificateIssuer) client(key *ecdsa.PrivateKey) *acme.Client {
 	return &acme.Client{Key: key, DirectoryURL: directory, HTTPClient: client}
 }
 
-// issueCertificate assumes the caller holds the cross-process issuance lock.
-// approvedTerms must be the exact terms URL shown in the setup preview.
 func (i certificateIssuer) issueCertificate(ctx context.Context, s Service, cf Cloudflare, cfg Tailnet, approvedTerms string) (_ *tls.Certificate, resultErr error) {
 	if cfg.Domain == "" || cfg.ZoneID == "" || cfg.Email == "" {
 		return nil, errors.New("domain, zone and ACME email are required")

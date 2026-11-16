@@ -74,7 +74,6 @@ func DefaultService() (Service, error) {
 
 func (s Service) path() string { return filepath.Join(s.Root, "networking.json") }
 
-// Inspect is read-only and does not contact external services or create files.
 func (s Service) Inspect(ctx context.Context) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
@@ -151,9 +150,6 @@ func validate(c Config) error {
 	return nil
 }
 
-// Plan computes desired local settings only. Provider operations are added by the
-// provider implementation; a plan never carries secret material.
-// PlanAtRevision rejects a stale draft before preparing its preview.
 func (s Service) PlanAtRevision(ctx context.Context, desired Config, expected string) (Plan, error) {
 	plan, err := s.Plan(ctx, desired)
 	if err != nil {
@@ -211,8 +207,6 @@ func (s Service) Plan(ctx context.Context, desired Config) (Plan, error) {
 	return Plan{Baseline: snap.Revision, Desired: desired, Changes: changes}, nil
 }
 
-// Apply serializes writers and rejects stale plans. External changes are not
-// performed here until the provider reconciler is integrated.
 func (s Service) Apply(ctx context.Context, plan Plan) (Snapshot, error) {
 	if err := validate(plan.Desired); err != nil {
 		return Snapshot{}, err

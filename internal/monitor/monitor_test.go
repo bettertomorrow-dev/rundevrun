@@ -1,3 +1,4 @@
+// Tests monitor monitor behavior.
 package monitor
 
 import (

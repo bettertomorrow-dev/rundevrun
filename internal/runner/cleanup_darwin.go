@@ -1,5 +1,6 @@
 //go:build darwin
 
+// Verifies and cleans up owned processes on macOS.
 package runner
 
 import (

@@ -1,3 +1,4 @@
+// Tests networking cloudflare behavior.
 package networking
 
 import (

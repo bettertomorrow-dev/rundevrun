@@ -17,7 +17,6 @@ function run(program, args, label, input) {
     env: { ...process.env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}` },
   });
   if (result.error || result.status !== 0) {
-    // CLI error output can echo a response or stdin. Report only safe metadata.
     throw new Error(`${label} failed (${result.error?.code || result.signal || result.status}). Output withheld; inspect authentication/permissions before retrying.`);
   }
   let data;

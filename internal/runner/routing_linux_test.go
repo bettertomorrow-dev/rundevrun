@@ -1,5 +1,6 @@
 //go:build linux
 
+// Tests runner routing behavior on Linux.
 package runner
 
 import (

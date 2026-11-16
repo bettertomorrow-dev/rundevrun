@@ -1,3 +1,4 @@
+// Tests cli commands behavior.
 package cli
 
 import (
@@ -97,7 +98,7 @@ func writeProject(t *testing.T, root string) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Execution would create a marker, including during discovery or dry-run.
+
 	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(`version = 1
 [project]
 name = "example"
@@ -686,7 +687,7 @@ func TestShareDryRunUsesConfiguredSnapshotAndExplicitLiveOverride(t *testing.T) 
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// The proxy control socket must fit in Darwin's sockaddr_un path limit.
+
 	base, err := os.MkdirTemp("", "rdr-cli-")
 	if err != nil {
 		t.Fatal(err)

@@ -1,3 +1,4 @@
+// Tests proxy managed integration behavior.
 package proxy
 
 import (
@@ -25,7 +26,7 @@ import (
 )
 
 func TestManagedTLSReloadAndAdmission(t *testing.T) {
-	// The loader seam avoids changing machine trust; the real daemon/control and TLS listener run below.
+
 	probe, err := net.Listen("tcp", "127.0.0.1:8443")
 	if err != nil {
 		t.Skipf("TLS fixture port unavailable: %v", err)
@@ -195,11 +196,7 @@ func TestManagedTLSReloadAndAdmission(t *testing.T) {
 	if status, serial := request("p.dev.example.com", "127.0.0.1:8443"); status != 503 || serial != 1 {
 		t.Fatalf("legacy listener: status=%d serial=%d", status, serial)
 	}
-	// A real outstanding listener reservation forces the first certificate
-	// activation to fail after a replacement was published. The retry must
-	// activate that replacement without calling issuance again.
-	// Even a reservation for the currently active address belongs to the
-	// interactive operation and must not be consumed by background renewal.
+
 	reserved := address
 	if err = PrepareReloadTo(context.Background(), store, reserved); err != nil {
 		t.Fatal(err)

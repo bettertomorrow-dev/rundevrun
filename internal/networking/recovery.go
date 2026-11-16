@@ -1,3 +1,4 @@
+// RecoverSetup inspects interrupted operations without assuming ownership of ambiguous newly created records or listeners. Such cases need explicit adoption after the user inspects the resource.
 package networking
 
 import (
@@ -25,9 +26,6 @@ func clearPending(o *ownedResources) {
 	o.PendingFinalization = false
 }
 
-// RecoverSetup inspects interrupted operations without assuming ownership of
-// ambiguous newly created records or listeners. Such cases need explicit
-// adoption after the user inspects the resource.
 func (s Service) RecoverSetup(ctx context.Context) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -179,7 +177,6 @@ func (s Service) RecoverSetup(ctx context.Context) (SetupStatus, error) {
 	return s.Check(ctx)
 }
 
-// AdoptPendingDNS explicitly claims one exact record after ambiguous creation.
 func (s Service) AdoptPendingDNS(ctx context.Context, id string) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -216,7 +213,6 @@ func (s Service) AdoptPendingDNS(ctx context.Context, id string) (SetupStatus, e
 	return s.Check(ctx)
 }
 
-// AdoptPendingServe explicitly claims the exact pending raw forwarder.
 func (s Service) AdoptPendingServe(ctx context.Context) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -246,8 +242,6 @@ func (s Service) AdoptPendingServe(ctx context.Context) (SetupStatus, error) {
 	return s.Check(ctx)
 }
 
-// ResolvePendingChallenge explicitly removes a matching challenge when the
-// create response was lost before its ID could be stored.
 func (s Service) ResolvePendingChallenge(ctx context.Context, id string) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -293,8 +287,6 @@ func (s Service) ResolvePendingChallenge(ctx context.Context, id string) (SetupS
 	return s.Check(ctx)
 }
 
-// AdoptExistingDNS records explicit ownership of an existing wildcard only when
-// its exact value matches the selected machine and the reviewed configuration.
 func (s Service) AdoptExistingDNS(ctx context.Context, id string) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {
@@ -341,9 +333,6 @@ func (s Service) AdoptExistingDNS(ctx context.Context, id string) (SetupStatus, 
 	return s.Check(ctx)
 }
 
-// ResolvePendingFinalization clears an ambiguous ACME finalization only after
-// an explicit user decision. A CA may already have issued a certificate, so a
-// subsequent order may count against issuer rate limits.
 func (s Service) ResolvePendingFinalization(ctx context.Context) (SetupStatus, error) {
 	unlock, err := s.setupLock(ctx)
 	if err != nil {

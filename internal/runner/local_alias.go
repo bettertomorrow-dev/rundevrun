@@ -1,3 +1,4 @@
+// assignLocalAliases reserves the short project hostname only when both the main/master worktree and its HTTP service are unambiguous or explicitly set.
 package runner
 
 import (
@@ -9,8 +10,6 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
-// assignLocalAliases reserves the short project hostname only when both the
-// main/master worktree and its HTTP service are unambiguous or explicitly set.
 func (r *Runner) assignLocalAliases(projects map[string]state.Project, selections map[string]Selection, owners map[string]string) error {
 	processed := map[string]bool{}
 	for _, sel := range selections {
@@ -61,7 +60,7 @@ func (r *Runner) assignLocalAliases(projects map[string]state.Project, selection
 		}
 		targetID := projectID + "/" + worktreeID + "/" + service
 		target, exists := p.Instances[targetID]
-		// Always remove stale aliases from this project before deriving a new one.
+
 		for id, inst := range p.Instances {
 			endpoints := inst.Endpoints[:0]
 			for _, ep := range inst.Endpoints {
@@ -73,7 +72,7 @@ func (r *Runner) assignLocalAliases(projects map[string]state.Project, selection
 			p.Instances[id] = inst
 		}
 		if validWorktree && validService && exists {
-			// The hostname helper validates normalization and prevents dotted labels.
+
 			hostname, err := r.Routing.Hostname("x", "x", p.Name, "localhost")
 			if err != nil {
 				return err
@@ -102,7 +101,6 @@ func (r *Runner) assignLocalAliases(projects map[string]state.Project, selection
 	return nil
 }
 
-// setCanonicalEndpoint changes entry routes without modifying an existing run manifest.
 func (r *Runner) setCanonicalEndpoint(inst *state.Instance, projectID, host, url string) {
 	if !r.Routing.LocalOnly || r.Routing.Legacy == nil || inst.Hostname == "" || strings.HasSuffix(inst.Hostname, ".localhost") {
 		inst.Hostname, inst.RouteURL = host, url
