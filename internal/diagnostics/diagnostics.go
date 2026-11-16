@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/localrouting"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
@@ -45,6 +47,7 @@ type ProjectReport struct {
 type Report struct {
 	Projects      []ProjectReport `json:"projects"`
 	Configuration Check           `json:"configuration"`
+	LegacyTLS     *Check          `json:"legacy_tls,omitempty"`
 	Proxy         ProxyReport     `json:"proxy"`
 	Routes        []RouteReport   `json:"routes"`
 }
@@ -156,13 +159,22 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 			report.Projects = append(report.Projects, ProjectReport{ID: id, Registry: pass("project registry loaded")})
 		}
 		for _, i := range project.Instances {
+			names := map[string]bool{}
 			if i.Hostname != "" {
-				counts[i.Hostname]++
-				hosts = append(hosts, i.Hostname)
+				names[i.Hostname] = true
+			}
+			for _, ep := range i.Endpoints {
+				if ep.Scope == "local" && !ep.Alias && ep.InstanceID == i.ID {
+					names[ep.Hostname] = true
+				}
+			}
+			for host := range names {
+				counts[host]++
+				hosts = append(hosts, host)
 			}
 		}
 	}
-	cfg, cfgErr := routing.Load(configPath)
+	cfg, cfgErr := localrouting.Load(configPath)
 	if cfgErr != nil {
 		report.Configuration = fail("routing configuration is invalid or unavailable")
 	} else if !cfg.Routing.Enabled {
@@ -173,8 +185,21 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 		} else if err := routing.ValidateHosts(cfg, hosts); err != nil {
 			report.Configuration = fail("routing certificates or hostnames are invalid")
 		} else {
-			report.Configuration = pass("routing configuration and certificates validated")
+			report.Configuration = pass("local HTTP routing configuration validated")
 		}
+	}
+	if cfgErr == nil && cfg.Legacy != nil {
+		legacyHosts := []string{}
+		for _, host := range hosts {
+			if !strings.HasSuffix(host, ".localhost") {
+				legacyHosts = append(legacyHosts, host)
+			}
+		}
+		check := pass("legacy TLS configuration validated")
+		if err := routing.ValidateHosts(*cfg.Legacy, legacyHosts); err != nil {
+			check = fail("legacy TLS certificates or hostnames are invalid")
+		}
+		report.LegacyTLS = &check
 	}
 	var info proxy.Info
 	var e error
@@ -199,7 +224,7 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 			mode = "external"
 			https = ""
 		}
-		if err != nil || info.ConfigPath != abs || info.HTTPListen != cfg.Routing.HTTPListen || info.HTTPSListen != https || info.TLSMode != mode {
+		if err != nil || info.ConfigPath != abs || info.HTTPListen != cfg.Routing.HTTPListen || (!cfg.LocalOnly && (info.HTTPSListen != https || info.TLSMode != mode)) {
 			drift = true
 			report.Proxy.Status = fail("running proxy configuration path or listeners differ from configuration file")
 		}
@@ -207,7 +232,7 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 	report.Proxy.HTTP = skip("routing configuration unavailable or disabled")
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if cfgErr == nil && cfg.Routing.Enabled && !drift {
+	if cfgErr == nil && cfg.Routing.Enabled && !drift && info.State == "ready" {
 		conn, e := dial(ctx, cfg.Routing.HTTPListen)
 		if e != nil {
 			report.Proxy.HTTP = fail("HTTP listener unavailable")
@@ -215,6 +240,9 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 			conn.Close()
 			report.Proxy.HTTP = pass("TCP listener reachable; forwarding identity not verified")
 		}
+	}
+	if cfgErr == nil && info.State != "ready" {
+		report.Proxy.HTTP = skip("proxy is not ready")
 	}
 	if drift {
 		report.Proxy.HTTP = skip("running proxy configuration differs from file")
@@ -233,6 +261,13 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 		sort.Strings(ids)
 		for _, id := range ids {
 			i := p.Instances[id]
+			for _, ep := range i.Endpoints {
+				if ep.Scope == "local" && !ep.Alias && ep.InstanceID == i.ID {
+					i.Hostname = ep.Hostname
+					i.RouteURL = "http://" + net.JoinHostPort(ep.Hostname, strconv.Itoa(ep.Port))
+					break
+				}
+			}
 			rr := RouteReport{InstanceID: id, Service: i.Service, Hostname: i.Hostname, URL: i.RouteURL, DNS: skip("no registered hostname"), TLSSystem: skip("no registered hostname"), TLSConfigured: skip("no registered hostname"), Ownership: skip("no registered hostname")}
 			actual, e := store.Inspect(i)
 			if e != nil {
@@ -262,7 +297,9 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 				}
 				rr.TLSSystem = skip("routing configuration unavailable or disabled")
 				rr.TLSConfigured = rr.TLSSystem
-				if cfgErr == nil && cfg.Routing.Enabled && !drift {
+				if cfgErr == nil && cfg.LocalOnly {
+					rr.TLSSystem, rr.TLSConfigured = skip("local HTTP does not require TLS"), skip("local HTTP does not require TLS")
+				} else if cfgErr == nil && cfg.Routing.Enabled && !drift {
 					addr := cfg.Routing.HTTPSListen
 					if cfg.ExternalTLS() {
 						addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(*cfg.Routing.ExternalHTTPSPort))

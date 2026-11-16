@@ -82,12 +82,20 @@ func certPair(t *testing.T, dir string, serial int64) (string, string) {
 }
 func configFile(t *testing.T, dir, httpAddr, httpsAddr, cert, key string) string {
 	t.Helper()
+	writeLocalConfig(t, dir, httpAddr)
 	path := filepath.Join(dir, "config.toml")
 	text := fmt.Sprintf("version = 1\n[routing]\nenabled = true\ndomain = \"example.com\"\nhttp_listen = %q\nhttps_listen = %q\n[[routing.tls.certificates]]\ncert_file = %q\nkey_file = %q\n", httpAddr, httpsAddr, cert, key)
 	if e := os.WriteFile(path, []byte(text), 0600); e != nil {
 		t.Fatal(e)
 	}
 	return path
+}
+func writeLocalConfig(t *testing.T, dir, address string) {
+	t.Helper()
+	data := fmt.Sprintf(`{"version":1,"local":{"listen":%q},"tailnet":{}}`, address)
+	if err := os.WriteFile(filepath.Join(dir, "networking.json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
 }
 func proxyCert(t *testing.T, addr string) int64 {
 	t.Helper()
@@ -270,7 +278,7 @@ func TestDaemonParentExitAndForeignIdentity(t *testing.T) {
 	}
 }
 
-func TestTLSInvalidDoesNotStartListeners(t *testing.T) {
+func TestInvalidLegacyTLSKeepsLocalHTTPAvailable(t *testing.T) {
 	store, _, _ := fixture(t)
 	dir := t.TempDir()
 	a, b := freeAddress(t), freeAddress(t)
@@ -283,18 +291,32 @@ func TestTLSInvalidDoesNotStartListeners(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	e = Ensure(ctx, store, exe, path)
-	var ce *Error
-	if !errors.As(e, &ce) || ce.Code != "TLS_INVALID" {
-		t.Fatalf("invalid startup: %v", e)
+	t.Cleanup(func() { _ = Stop(context.Background(), store); waitProxyStop(t, store) })
+	if e = Ensure(ctx, store, exe, path); e != nil {
+		t.Fatal(e)
 	}
-	for _, address := range []string{a, b} {
-		ln, e := net.Listen("tcp", address)
-		if e != nil {
-			t.Fatalf("failed TLS left listener open at %s: %v", address, e)
-		}
-		_ = ln.Close()
+	info, e := Status(store)
+	if e != nil || info.State != "ready" || info.TLSError == "" || info.HTTPListen != a {
+		t.Fatalf("local proxy with invalid legacy TLS: %+v %v", info, e)
 	}
+	req, e := http.NewRequest("GET", "http://"+a+"/", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	req.Host = "web.example.com"
+	res, e := http.DefaultClient.Do(req)
+	if e != nil {
+		t.Fatal(e)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP route unavailable: %d", res.StatusCode)
+	}
+	ln, e := net.Listen("tcp", b)
+	if e != nil {
+		t.Fatalf("failed TLS left HTTPS listener open: %v", e)
+	}
+	ln.Close()
 }
 func TestStatusMissingIsReadOnly(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "absent")

@@ -1,0 +1,16 @@
+// Tests runner path behavior.
+package runner
+
+import (
+	"path/filepath"
+	"testing"
+)
+
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}

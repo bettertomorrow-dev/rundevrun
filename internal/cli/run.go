@@ -33,9 +33,22 @@ Discovery and registration:
   rdr alias LABEL         Name each service route in one worktree.
   rdr alias SERVICE HOST  Assign one HTTP service a full hostname.
   rdr open <service>     Open a registered route from the current worktree.
-  rdr proxy status|reload|stop
-                          Inspect or control the local routing proxy.
+  rdr proxy status|reload|stop|abort
+                          Inspect or control the local routing proxy. abort releases a pending listener reservation.
   rdr doctor             Diagnose routes, TLS, proxy, and application state.
+  rdr network inspect|check|plan|apply
+                          Inspect or change networking settings.
+  rdr network setup-check|setup-plan|setup-apply|credential-store
+                          Check and configure tailnet access. setup-plan contacts providers
+                          without changes; setup-apply applies the reviewed plan.
+  rdr network cleanup-plan
+                          Preview release of owned DNS and Serve resources.
+  rdr network cleanup-apply --file PLAN.json
+                          Release the resources described by a reviewed plan.
+  rdr network setup-recover|resolve-finalization|adopt-dns|adopt-existing-dns|adopt-serve|resolve-challenge
+                          Recover owned resources or explicitly adopt conflicts.
+  rdr network credential-replace REF
+                          Replace a stored Cloudflare credential using stdin.
   rdr share <service>    Create a live public link for one HTTP service.
   rdr unshare <service>  Remove its public link without stopping the service.
   rdr logs <service>      Show recent application output.
@@ -46,14 +59,14 @@ Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
   --worktree ID|PATH|NAME Select an existing worktree.
   --to-worktree ID|PATH|NAME Select bind target or switch destination.
-  --file PATH              Read switch mappings from a JSON file.
+  --file PATH              Read switch mappings or networking settings/plan from JSON.
   --all-services           Select live source services for switch.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
   --cascade               Include live consumers in a down plan.
   --all                   Global down scope; cannot combine with selectors.
   --retry-hooks           Retry a saved failed or interrupted stop hook.
-  --no-proxy              Skip automatic proxy start/reload after up, restart, or switch.
+  --no-proxy              Deprecated; local routing remains enabled.
   --mode live|snapshot    Select a live link or configured static snapshot.
   --recreate              Replace an existing share after the new link is ready.
   --tail N                Show the last N log lines, default 100, maximum 10000.
@@ -74,7 +87,9 @@ Examples:
 Graph dry-runs support service lists, default down, and global down. Retry uses
 the original stopped run's hook record; a new consumer does not retry a failed
 after_start hook.
---no-proxy skips only automatic proxy startup; routed addresses remain planned and direct URLs stay available.
+--no-proxy is deprecated. Local routing remains enabled.
+If proxy reload reports a TLS mode or listener change requires restart, run
+rdr proxy stop, then rdr up or reopen rdrtop to start the proxy again.
 Sharing requires a running HTTP service. The password is shown once at creation;
 recreate replaces an existing link. rdr does not open the URL automatically.
 Quick Tunnels do not support server-sent events (SSE).
@@ -101,7 +116,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		if command == "config" && len(positional) > 1 {
 			command += " " + positional[1]
 		}
-		if command == "proxy" && len(positional) > 1 {
+		if (command == "proxy" || command == "network") && len(positional) > 1 {
 			command += " " + positional[1]
 		}
 	}

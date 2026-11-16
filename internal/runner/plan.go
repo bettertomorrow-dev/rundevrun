@@ -15,6 +15,10 @@ type Runner struct {
 	Executable string
 	RetryHooks bool
 	Routing    *routing.Config
+
+	ExpectedRuns map[string]string
+
+	SkipStopHooks bool
 }
 
 func New(store *state.Store, executable string) *Runner {

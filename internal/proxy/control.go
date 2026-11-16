@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,12 +36,16 @@ func contextOrBusy(ctx context.Context, message string) error {
 }
 
 type Info struct {
-	State       string     `json:"state"`
-	Identity    procid.Ref `json:"identity"`
-	ConfigPath  string     `json:"config_path"`
-	HTTPListen  string     `json:"http_listen,omitempty"`
-	HTTPSListen string     `json:"https_listen,omitempty"`
-	TLSMode     string     `json:"tls_mode,omitempty"`
+	State                        string     `json:"state"`
+	Identity                     procid.Ref `json:"identity"`
+	ConfigPath                   string     `json:"config_path"`
+	HTTPListen                   string     `json:"http_listen,omitempty"`
+	HTTPSListen                  string     `json:"https_listen,omitempty"`
+	TLSMode                      string     `json:"tls_mode,omitempty"`
+	TLSError                     string     `json:"tls_error,omitempty"`
+	PreparedListen               string     `json:"prepared_listen,omitempty"`
+	RenewalError                 string     `json:"renewal_error,omitempty"`
+	CertificateActivationPending bool       `json:"certificate_activation_pending,omitempty"`
 }
 type reply struct {
 	Info    Info   `json:"info"`
@@ -111,6 +116,50 @@ func Status(store *state.Store) (Info, error) {
 	defer cancel()
 	return control(ctx, store, "status")
 }
+
+func PrepareReloadTo(ctx context.Context, store *state.Store, listen string) error {
+	info, err := control(ctx, store, "prepare?listen="+url.QueryEscape(listen))
+	if err != nil {
+		return err
+	}
+	if info.State != "ready" {
+		return &Error{Code: "NOT_FOUND", Message: "proxy is not running"}
+	}
+	return nil
+}
+
+func PrepareReload(ctx context.Context, store *state.Store) error {
+	info, err := control(ctx, store, "prepare")
+	if err != nil {
+		return err
+	}
+	if info.State != "ready" {
+		return &Error{Code: "NOT_FOUND", Message: "proxy is not running"}
+	}
+	return nil
+}
+func AbortReload(ctx context.Context, store *state.Store) error {
+	_, err := control(ctx, store, "abort")
+	return err
+}
+
+func reloadRenewal(ctx context.Context, store *state.Store) error {
+	info, err := control(ctx, store, "reload-renewal")
+	if err != nil {
+		return err
+	}
+	if info.State != "ready" {
+		return &Error{Code: "NOT_FOUND", Message: "proxy is not running"}
+	}
+	if info.TLSError != "" {
+		return fmt.Errorf("managed TLS activation: %s", info.TLSError)
+	}
+	if info.TLSMode != "managed" || info.HTTPSListen == "" {
+		return errors.New("managed TLS listener is not active")
+	}
+	return nil
+}
+
 func Reload(ctx context.Context, store *state.Store) error {
 	info, err := control(ctx, store, "reload")
 	if err != nil {

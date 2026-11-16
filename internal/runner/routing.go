@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
@@ -19,6 +21,10 @@ type routeAssignment struct{ host, url, alias string }
 func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selection) (map[string]routeAssignment, error) {
 	projects := map[string]state.Project{}
 	owners := map[string]string{}
+	changedProjects := map[string]bool{}
+	for _, sel := range selections {
+		changedProjects[sel.Project.ID] = true
+	}
 	for id := range reg.Projects {
 		p, err := reg.Project(id)
 		if err != nil {
@@ -26,7 +32,19 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 		}
 		projects[id] = p
 		for _, inst := range p.Instances {
-			if inst.Hostname != "" {
+			for _, ep := range inst.Endpoints {
+				if ep.InstanceID != inst.ID {
+					return nil, &Error{"STATE_CONFLICT", errors.New("invalid endpoint owner")}
+				}
+				if ep.Alias && changedProjects[id] {
+					continue
+				}
+				if other := owners[ep.Hostname]; other != "" && other != inst.ID {
+					return nil, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s already reserved", ep.Hostname)}
+				}
+				owners[ep.Hostname] = inst.ID
+			}
+			if inst.Hostname != "" && !(r.Routing != nil && r.Routing.LocalOnly && r.Routing.Legacy != nil && !strings.HasSuffix(inst.Hostname, ".localhost")) {
 				host := strings.ToLower(inst.Hostname)
 				if other := owners[host]; other != "" && other != inst.ID {
 					return nil, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s already reserved; choose an alias", host)}
@@ -53,6 +71,15 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 			return nil, errors.New("instance is not registered")
 		}
 		a := routeAssignment{host: inst.Hostname}
+		if r.Routing != nil && r.Routing.LocalOnly && r.Routing.Legacy != nil {
+			a.host = ""
+			for _, ep := range inst.Endpoints {
+				if ep.Scope == "local" && !ep.Alias && ep.InstanceID == id {
+					a.host = ep.Hostname
+					break
+				}
+			}
+		}
 		if !enabled {
 			changes[id] = a
 			continue
@@ -71,6 +98,9 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 				continue
 			}
 		}
+		if r.Routing.LocalOnly && !strings.HasSuffix(a.host, ".localhost") {
+			a.host = ""
+		}
 		var wi int = -1
 		for i, w := range p.Worktrees {
 			if w.ID == sel.Worktree.ID && w.Root == sel.Worktree.Root {
@@ -87,7 +117,7 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 		}
 		if a.host == "" {
 			domain := ""
-			if sel.Worktree.Config.Routing != nil {
+			if !r.Routing.LocalOnly && sel.Worktree.Config.Routing != nil {
 				domain = sel.Worktree.Config.Routing.Domain
 			}
 			var err error
@@ -129,8 +159,45 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 		p := projects[sel.Project.ID]
 		inst := p.Instances[id]
 		a := changes[id]
-		inst.Hostname = a.host
-		inst.RouteURL = a.url
+		if r.Routing == nil || !r.Routing.LocalOnly || a.url != "" {
+			if r.Routing == nil || !r.Routing.LocalOnly || r.Routing.Legacy == nil || inst.Hostname == "" || strings.HasSuffix(inst.Hostname, ".localhost") {
+				inst.Hostname = a.host
+				inst.RouteURL = a.url
+			}
+		}
+		if r.Routing != nil && r.Routing.LocalOnly && a.host != "" && a.url != "" {
+			_, portText, _ := net.SplitHostPort(r.Routing.Routing.HTTPListen)
+			port, _ := strconv.Atoi(portText)
+			var endpoints []state.Endpoint
+			for _, endpoint := range inst.Endpoints {
+				if endpoint.Scope != "local" {
+					endpoints = append(endpoints, endpoint)
+				}
+			}
+			inst.Endpoints = append(endpoints, state.Endpoint{Scope: "local", Hostname: a.host, Port: port, InstanceID: id})
+			if r.Routing.TailnetDomain != "" && r.Routing.LocalProjects[sel.Project.ID].Tailnet {
+				hostname := strings.TrimSuffix(a.host, ".localhost") + "." + r.Routing.TailnetDomain
+				if owner := owners[hostname]; owner != "" && owner != id {
+					return nil, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s already reserved", hostname)}
+				}
+				owners[hostname] = id
+				var filtered []state.Endpoint
+				for _, ep := range inst.Endpoints {
+					if ep.Scope != "tailnet" {
+						filtered = append(filtered, ep)
+					}
+				}
+				inst.Endpoints = append(filtered, state.Endpoint{Scope: "tailnet", Hostname: hostname, Port: 443, InstanceID: id})
+			} else {
+				var filtered []state.Endpoint
+				for _, ep := range inst.Endpoints {
+					if ep.Scope != "tailnet" {
+						filtered = append(filtered, ep)
+					}
+				}
+				inst.Endpoints = filtered
+			}
+		}
 		p.Instances[id] = inst
 		if a.alias != "" {
 			for i := range p.Worktrees {
@@ -140,6 +207,11 @@ func (r *Runner) assignRoutes(reg *state.Registry, selections map[string]Selecti
 			}
 		}
 		projects[p.ID] = p
+	}
+	if r.Routing != nil && r.Routing.LocalOnly {
+		if err := r.assignLocalAliases(projects, selections, owners); err != nil {
+			return nil, err
+		}
 	}
 	touched := map[string]bool{}
 	for _, sel := range selections {
@@ -172,7 +244,7 @@ func (r *Runner) AssignProjectRoutes(reg *state.Registry, fresh *discovery.Proje
 			id := fresh.ID + "/" + w.ID + "/" + name
 			if instance, ok := saved.Instances[id]; ok {
 				selectedWorktree := w
-				if r.Routing != nil && r.Routing.Routing.Enabled && instance.Hostname != "" && instance.RunID != "" {
+				if r.Routing != nil && r.Routing.Routing.Enabled && instance.Hostname != "" && instance.RunID != "" && (!r.Routing.LocalOnly || r.Routing.Legacy == nil || hasLocalEndpoint(instance)) {
 					observed, e := r.Store.Inspect(instance)
 					if e != nil {
 						return e
@@ -224,4 +296,13 @@ func (r *Runner) ReservePlannedRoutes(reg *state.Registry, plan GraphPlan) error
 	}
 	reg.Projects = candidate.Projects
 	return nil
+}
+
+func hasLocalEndpoint(instance state.Instance) bool {
+	for _, ep := range instance.Endpoints {
+		if ep.Scope == "local" && !ep.Alias && ep.InstanceID == instance.ID {
+			return true
+		}
+	}
+	return false
 }

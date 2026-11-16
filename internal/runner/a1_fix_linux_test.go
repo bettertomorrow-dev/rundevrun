@@ -1,6 +1,6 @@
 //go:build linux
 
-// Tests missing supervisors and lifecycle hook retry behavior on Linux.
+// Tests service plan refresh, restart rebuilding, and stale process recovery on Linux.
 package runner
 
 import (

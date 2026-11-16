@@ -120,7 +120,7 @@ env = { API = '{dependencies.api.direct_url}', SECRET = 'private-value' }
 }
 
 func TestGraphCrossWorktreeBinding(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	main := filepath.Join(dir, "main")
 	other := filepath.Join(dir, "other")
 	if err := os.Mkdir(main, 0700); err != nil {
@@ -351,7 +351,7 @@ depends_on = ['api']
 }
 
 func TestConcurrentBindCycle(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonicalTempDir(t)
 	main := filepath.Join(dir, "main")
 	other := filepath.Join(dir, "other")
 	if err := os.Mkdir(main, 0700); err != nil {

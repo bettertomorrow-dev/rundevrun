@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,10 +17,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/diagnostics"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
+	"github.com/bettertomorrow-dev/rundevrun/internal/localrouting"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
@@ -144,7 +147,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--to-worktree is only supported by bind or switch")
 		return
 	}
-	if (opts.file != "" || opts.allServices) && e.Command != "switch" {
+	if (opts.file != "" || opts.allServices) && e.Command != "switch" && !strings.HasPrefix(e.Command, "network ") {
 		e.fail("USAGE", "--file and --all-services are only valid with switch")
 		return
 	}
@@ -169,7 +172,9 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	store := &state.Store{Root: root}
 	switch e.Command {
-	case "proxy status", "proxy reload", "proxy stop":
+	case "network inspect", "network check", "network plan", "network apply", "network setup-plan", "network setup-apply", "network setup-check", "network credential-store", "network setup-recover", "network adopt-dns", "network adopt-serve", "network resolve-challenge", "network credential-replace", "network adopt-existing-dns", "network cleanup-plan", "network cleanup-apply", "network resolve-finalization":
+		networkingCommand(ctx, store, args, opts, e)
+	case "proxy status", "proxy reload", "proxy stop", "proxy abort":
 		proxyCommand(ctx, store, args[1:], opts, e)
 	case "alias":
 		aliasCommand(ctx, store, args[1:], opts, e)
@@ -435,7 +440,7 @@ func switchCommand(ctx context.Context, store *state.Store, services []string, o
 			break
 		}
 	}
-	if started && !opts.noProxy && cfg.Routing.Enabled {
+	if started && cfg.Routing.Enabled {
 		needs, checkErr := graphNeedsProxy(store, out.Results)
 		if checkErr != nil {
 			appendProxyError(ctx, e, checkErr)
@@ -499,12 +504,12 @@ func machineRouting() (routing.Config, string, error) {
 	if err != nil {
 		return routing.Config{}, "", err
 	}
-	cfg, err := routing.Load(path)
+	cfg, err := localrouting.Load(path)
 	return cfg, path, err
 }
 
 func proxyView(info proxy.Info) *proxyInfoView {
-	return &proxyInfoView{State: info.State, PID: info.Identity.PID, HTTPListen: info.HTTPListen, HTTPSListen: info.HTTPSListen, TLSMode: info.TLSMode, ConfigPath: info.ConfigPath}
+	return &proxyInfoView{State: info.State, PID: info.Identity.PID, HTTPListen: info.HTTPListen, HTTPSListen: info.HTTPSListen, TLSMode: info.TLSMode, ConfigPath: info.ConfigPath, PreparedListen: info.PreparedListen, TLSError: info.TLSError, RenewalError: info.RenewalError, CertificateActivationPending: info.CertificateActivationPending}
 }
 
 func openCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
@@ -539,7 +544,7 @@ func openCommand(ctx context.Context, store *state.Store, args []string, opts op
 		e.fail("NOT_FOUND", "registered service instance not found: "+args[0])
 		return
 	}
-	openURL := instance.RouteURL
+	openURL := localEntryURL(instance)
 	if openURL == "" {
 		observed, err := store.Inspect(instance)
 		if err == nil && liveState(observed) && instance.RunID != "" {
@@ -552,6 +557,12 @@ func openCommand(ctx context.Context, store *state.Store, args []string, opts op
 					}
 				}
 			}
+		}
+	}
+	if openURL != "" && instance.RunID != "" {
+		reported, readErr := runner.New(store, "").ReportedURL(ctx, instance.RunID)
+		if readErr == nil {
+			openURL, _ = runner.TransferOwnedReportedURL(store, d.ID, instance, openURL, reported)
 		}
 	}
 	if openURL == "" {
@@ -758,7 +769,7 @@ func reportFailed(r diagnostics.Report) bool {
 			return true
 		}
 	}
-	if r.Configuration.Status == "fail" || r.Proxy.Status.Status == "fail" || r.Proxy.HTTP.Status == "fail" {
+	if r.Configuration.Status == "fail" || (r.LegacyTLS != nil && r.LegacyTLS.Status == "fail") || r.Proxy.Status.Status == "fail" || r.Proxy.HTTP.Status == "fail" {
 		return true
 	}
 	for _, route := range r.Routes {
@@ -820,7 +831,38 @@ func proxyCommand(ctx context.Context, store *state.Store, args []string, opts o
 			}
 			return
 		}
+		cfg, _, cfgErr := machineRouting()
+		if cfgErr != nil {
+			failError(e, cfgErr)
+			return
+		}
+		if cfg.LocalOnly {
+			if err := proxy.PrepareReload(ctx, store); err != nil {
+				failError(e, err)
+				return
+			}
+			defer proxy.AbortReload(context.Background(), store)
+			if err := runner.ReconcileLocalRoutes(ctx, store, cfg); err != nil {
+				failError(e, err)
+				return
+			}
+		}
 		if err := proxy.Reload(ctx, store); err != nil {
+			failError(e, err)
+			return
+		}
+		info, err := proxy.Status(store)
+		if err != nil {
+			failError(e, err)
+			return
+		}
+		e.Proxy = proxyView(info)
+	case "abort":
+		if opts.dryRun {
+			e.fail("USAGE", "proxy abort does not support --dry-run")
+			return
+		}
+		if err := proxy.AbortReload(ctx, store); err != nil {
 			failError(e, err)
 			return
 		}
@@ -856,6 +898,9 @@ func proxyCommand(ctx context.Context, store *state.Store, args []string, opts o
 }
 
 func proxyReloadCompatibility(info proxy.Info, cfg routing.Config) error {
+	if cfg.LocalOnly && (info.TLSMode == "local" || info.TLSMode == "managed") {
+		return nil
+	}
 	expectedHTTPS := cfg.Routing.HTTPSListen
 	if cfg.ExternalTLS() {
 		expectedHTTPS = ""
@@ -1080,7 +1125,14 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 		seen[service] = true
 	}
 	requireConfig := e.Command != "down"
-	d, w := resolveCommandSelection(store, opts, requireConfig, e)
+	var d *discovery.Project
+	var w *discovery.Worktree
+	var candidate *state.Registry
+	if e.Command == "up" {
+		d, w, candidate = discoverForUp(store, opts, e)
+	} else {
+		d, w = resolveCommandSelection(store, opts, requireConfig, e)
+	}
 	if d == nil {
 		return
 	}
@@ -1088,6 +1140,9 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 	if err != nil {
 		failError(e, err)
 		return
+	}
+	if candidate != nil {
+		reg = *candidate
 	}
 	p, err := reg.Project(d.ID)
 	if err != nil {
@@ -1108,10 +1163,185 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 		selections = append(selections, runner.Selection{Project: d, Worktree: w, Service: service})
 	}
 	if opts.dryRun {
+		if candidate != nil {
+			r := runner.New(store, executablePath())
+			cfg, _, err := machineRouting()
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			r.Routing = &cfg
+			plan, err := r.PlanGraphWithRegistry(ctx, e.Command, selections, opts.cascade, reg)
+			if err != nil {
+				failError(e, err)
+				return
+			}
+			e.Plan = plan
+			return
+		}
 		setGraphPlan(ctx, store, e.Command, selections, opts.cascade, reg.Revision, e)
 		return
 	}
-	runGraph(ctx, store, e.Command, selections, opts.cascade, opts.retryHooks, opts.noProxy, e)
+	started := time.Now().UTC()
+	graph := runGraph(ctx, store, e.Command, selections, opts.cascade, opts.retryHooks, opts.noProxy, e)
+	if e.Command == "up" || e.Command == "restart" {
+		attempt := fmt.Sprintf("%d-%d", started.UnixNano(), os.Getpid())
+		outcomes := map[string]string{}
+		for _, item := range graph.Results {
+			if item.InstanceID == "" {
+				continue
+			}
+			switch item.Status {
+			case "completed", "unchanged":
+				outcomes[item.InstanceID] = ""
+			case "not_run":
+				outcomes[item.InstanceID] = "Not started because another service failed"
+			case "failed":
+				outcomes[item.InstanceID] = "Service launch failed"
+			}
+		}
+		for _, failure := range graph.Errors {
+			if failure.InstanceID != "" {
+				outcomes[failure.InstanceID] = failure.Code + ": " + failure.Message
+			}
+		}
+		for _, sel := range selections {
+			id := sel.Project.ID + "/" + sel.Worktree.ID + "/" + sel.Service
+			if _, ok := outcomes[id]; !ok {
+				message := ""
+				for _, failure := range graph.Errors {
+					if failure.InstanceID == "" {
+						message = failure.Code + ": " + failure.Message
+						break
+					}
+				}
+				if message == "" && graph.Status != "ok" {
+					message = "Service was not started"
+				}
+				if message == "" && graph.Status == "" && len(e.Errors) > 0 {
+					message = e.Errors[0].Code + ": " + e.Errors[0].Message
+				}
+				outcomes[id] = message
+			}
+		}
+		results := make([]state.LaunchResult, 0, len(outcomes))
+		for id, message := range outcomes {
+			parts := strings.Split(id, "/")
+			if len(parts) == 3 {
+				results = append(results, state.LaunchResult{Attempt: attempt, ProjectID: parts[0], InstanceID: id, StartedAt: started, Error: message})
+			}
+		}
+		if err := store.RecordLaunch(results); err != nil {
+			failError(e, err)
+		}
+	}
+}
+
+func discoverForUp(store *state.Store, opts options, e *envelope) (*discovery.Project, *discovery.Worktree, *state.Registry) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		failError(e, err)
+		return nil, nil, nil
+	}
+	var p *discovery.Project
+	if opts.project == "" {
+		p, err = discovery.Discover(cwd)
+	} else {
+		reg, readErr := store.Read()
+		if readErr != nil {
+			failError(e, readErr)
+			return nil, nil, nil
+		}
+		saved := selectProject(reg, opts.project, e)
+		if saved == nil {
+			return nil, nil, nil
+		}
+		roots := []string{cwd, saved.Root}
+		for _, old := range saved.Worktrees {
+			roots = append(roots, old.Root)
+		}
+		for _, root := range roots {
+			fresh, discoverErr := discovery.Discover(root)
+			if discoverErr == nil && fresh.ID == saved.ID {
+				p = fresh
+				break
+			}
+			if discoverErr != nil {
+				err = discoverErr
+			}
+		}
+		if p == nil && err == nil {
+			err = errors.New("registered project could not be discovered")
+		}
+	}
+	if err != nil && p == nil {
+		failError(e, err)
+		return nil, nil, nil
+	}
+	selector := opts.worktree
+	if selector == "" {
+		canonical, err := filepath.EvalSymlinks(cwd)
+		if err != nil {
+			failError(e, err)
+			return nil, nil, nil
+		}
+		for _, candidate := range p.Worktrees {
+			if within(canonical, candidate.Root) && len(candidate.Root) > len(selector) {
+				selector = candidate.Root
+			}
+		}
+	}
+	if selector == "" {
+		e.fail("USAGE", "outside the selected project, specify --worktree")
+		return nil, nil, nil
+	}
+	w, err := discovery.Resolve(p, selector)
+	if err != nil {
+		failError(e, err)
+		return nil, nil, nil
+	}
+	e.Scope = scope{Project: p.ID, Worktree: w.ID}
+	merge := func(reg *state.Registry) error {
+		saved, err := reg.Project(p.ID)
+		alreadyRegistered := err == nil
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		mergeDiscoveredProject(&saved, p)
+		if err := reg.SetProject(p.ID, saved); err != nil {
+			return err
+		}
+		cfg, _, err := machineRouting()
+		if err != nil {
+			if alreadyRegistered {
+				return err
+			}
+
+			return nil
+		}
+		if cfg.Routing.Enabled {
+			r := runner.New(store, executablePath())
+			r.Routing = &cfg
+			return r.AssignProjectRoutes(reg, p)
+		}
+		return nil
+	}
+	if opts.dryRun {
+		reg, err := store.Read()
+		if err == nil {
+			err = merge(&reg)
+		}
+		if err != nil {
+			failError(e, err)
+			return nil, nil, nil
+		}
+		return p, w, &reg
+	}
+	if err := store.Update(merge); err != nil {
+		failError(e, err)
+		return nil, nil, nil
+	}
+	return p, w, nil
 }
 
 func setGraphPlan(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade bool, revision uint64, e *envelope) {
@@ -1136,7 +1366,7 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 	e.Plan = plan
 }
 
-func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) {
+func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) runner.GraphResult {
 	r := runner.New(store, executablePath())
 	var routeCfg *routing.Config
 	var routePath string
@@ -1144,7 +1374,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 		cfg, path, err := machineRouting()
 		if err != nil {
 			failError(e, err)
-			return
+			return runner.GraphResult{}
 		}
 		routePath = path
 		routeCfg = &cfg
@@ -1164,7 +1394,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 		result, err = r.RestartGraph(ctx, selections)
 	default:
 		e.fail("USAGE", "unsupported graph action: "+action)
-		return
+		return runner.GraphResult{}
 	}
 	for _, item := range result.Results {
 		if action == "up" {
@@ -1219,7 +1449,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 		}
 	}
 	if (action == "up" || action == "restart") && hasSuccessfulLiveResult(result.Results) {
-		if routeCfg != nil && routeCfg.Routing.Enabled && !noProxy {
+		if routeCfg != nil && routeCfg.Routing.Enabled {
 			needs, checkErr := graphNeedsProxy(store, result.Results)
 			if checkErr != nil {
 				appendProxyError(ctx, e, checkErr)
@@ -1228,6 +1458,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 			}
 		}
 	}
+	return result
 }
 
 func ensureProxyAfterStart(ctx context.Context, store *state.Store, path string, e *envelope) {
@@ -1982,6 +2213,15 @@ func addRunDetails(store *state.Store, instance state.Instance, info *instanceIn
 	}
 }
 
+func localEntryURL(instance state.Instance) string {
+	for _, ep := range instance.Endpoints {
+		if ep.Scope == "local" && !ep.Alias && ep.InstanceID == instance.ID && ep.Port > 0 {
+			return "http://" + net.JoinHostPort(ep.Hostname, strconv.Itoa(ep.Port))
+		}
+	}
+	return instance.RouteURL
+}
+
 func applyRouteView(store *state.Store, instance state.Instance, info *instanceInfo) {
 	if instance.RunID == "" || info.StateUnknown {
 		if instance.RouteURL != "" {
@@ -1996,7 +2236,7 @@ func applyRouteView(store *state.Store, instance state.Instance, info *instanceI
 		}
 		return
 	}
-	desiredURL := instance.RouteURL
+	desiredURL := localEntryURL(instance)
 	if desiredURL == "" {
 		desiredURL = manifest.Addresses["direct_url"]
 	}
@@ -2005,18 +2245,6 @@ func applyRouteView(store *state.Store, instance state.Instance, info *instanceI
 		info.RouteChanged = true
 		info.RestartRequired = true
 	}
-}
-
-func instanceByID(store *state.Store, projectID, instanceID string) state.Instance {
-	r, err := store.Read()
-	if err != nil {
-		return state.Instance{}
-	}
-	p, err := r.Project(projectID)
-	if err != nil {
-		return state.Instance{}
-	}
-	return p.Instances[instanceID]
 }
 
 func findWorktree(p state.Project, id string) (state.Worktree, bool) {

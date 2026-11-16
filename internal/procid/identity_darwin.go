@@ -11,13 +11,21 @@ import (
 const szomb = 5
 
 func Identity(pid int) (string, error) {
-	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+
+	processes, err := unix.SysctlKinfoProcSlice("kern.proc.pid", pid)
 	if err != nil {
 		if errors.Is(err, unix.ESRCH) || errors.Is(err, unix.ENOENT) {
 			return "", ErrGone
 		}
 		return "", err
 	}
+	if len(processes) == 0 {
+		return "", ErrGone
+	}
+	if len(processes) != 1 {
+		return "", fmt.Errorf("unexpected process count for pid %d: %d", pid, len(processes))
+	}
+	kp := processes[0]
 	if kp.Proc.P_pid != int32(pid) {
 		return "", ErrGone
 	}

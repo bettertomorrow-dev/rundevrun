@@ -48,7 +48,7 @@ func TestDiscoverDetachedAndAmbiguity(t *testing.T) {
 	}
 }
 func TestDiscoverThroughSymlink(t *testing.T) {
-	d := t.TempDir()
+	d := canonicalTempDir(t)
 	os.WriteFile(filepath.Join(d, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	link := filepath.Join(t.TempDir(), "link")
 	os.Symlink(d, link)
@@ -62,7 +62,7 @@ func TestDiscoverThroughSymlink(t *testing.T) {
 }
 
 func TestDescriptorSelectionDoesNotRequireConfig(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalTempDir(t)
 	p := &Project{Worktrees: []Worktree{{ID: "w_known", Root: root, Branch: "main", ConfigError: os.ErrNotExist}}}
 	for _, selector := range []string{"w_known", root, "main"} {
 		w, err := ResolveDescriptor(p, selector)
@@ -76,7 +76,7 @@ func TestDescriptorSelectionDoesNotRequireConfig(t *testing.T) {
 }
 
 func TestResolveSymlinkAndRealAmbiguity(t *testing.T) {
-	parent := t.TempDir()
+	parent := canonicalTempDir(t)
 	root := filepath.Join(parent, "repo")
 	os.Mkdir(root, 0755)
 	run(t, root, "init", "-q")
@@ -147,4 +147,13 @@ func TestFindConfigPropagatesNonNotFound(t *testing.T) {
 	if _, e := findConfig(f); e == nil {
 		t.Fatal("expected ENOTDIR")
 	}
+}
+
+func canonicalTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

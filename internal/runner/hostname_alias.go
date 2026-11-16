@@ -119,7 +119,7 @@ func (r *Runner) planHostnameAlias(ctx context.Context, reg state.Registry, sele
 		return HostnameAliasPlan{}, &Error{"CONFIG_INVALID", err}
 	}
 	domain := r.Routing.Routing.Domain
-	if cfg.Routing != nil {
+	if !r.Routing.LocalOnly && cfg.Routing != nil {
 		domain = cfg.Routing.Domain
 	}
 	domain = strings.ToLower(domain)
@@ -134,13 +134,26 @@ func (r *Runner) planHostnameAlias(ctx context.Context, reg state.Registry, sele
 			return HostnameAliasPlan{}, e
 		}
 		for _, existing := range p.Instances {
-			if existing.Hostname != "" {
+			for _, ep := range existing.Endpoints {
+				host := strings.ToLower(ep.Hostname)
+				if owner := owners[host]; owner != "" && owner != existing.ID {
+					return HostnameAliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", host)}
+				}
+				owners[host] = existing.ID
+			}
+			if existing.Hostname != "" && !(r.Routing.LocalOnly && r.Routing.Legacy != nil && !strings.HasSuffix(existing.Hostname, ".localhost")) {
 				host := strings.ToLower(existing.Hostname)
 				if owner := owners[host]; owner != "" && owner != existing.ID {
 					return HostnameAliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", host)}
 				}
 				owners[host] = existing.ID
 			}
+		}
+	}
+	if r.Routing.LocalOnly && r.Routing.TailnetDomain != "" && r.Routing.LocalProjects[project.ID].Tailnet {
+		tailHost := strings.TrimSuffix(hostname, ".localhost") + "." + r.Routing.TailnetDomain
+		if owner := owners[tailHost]; owner != "" && owner != id {
+			return HostnameAliasPlan{}, &Error{"ROUTE_CONFLICT", fmt.Errorf("hostname %s is already reserved", tailHost)}
 		}
 	}
 	if owner := owners[hostname]; owner != "" && owner != id {
@@ -205,8 +218,7 @@ func (r *Runner) SetHostnameAlias(ctx context.Context, selection Selection, host
 			return e
 		}
 		inst := project.Instances[next.InstanceID]
-		inst.Hostname = next.NewHostname
-		inst.RouteURL = next.NewURL
+		r.setCanonicalEndpoint(&inst, project.ID, next.NewHostname, next.NewURL)
 		project.Instances[inst.ID] = inst
 		return reg.SetProject(project.ID, project)
 	})

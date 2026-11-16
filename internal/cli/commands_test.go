@@ -687,7 +687,12 @@ func TestShareDryRunUsesConfiguredSnapshotAndExplicitLiveOverride(t *testing.T) 
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	base := t.TempDir()
+
+	base, err := os.MkdirTemp("", "rdr-cli-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
 	modFile, err := exec.Command("go", "env", "GOMOD").Output()
 	if err != nil {
 		t.Fatalf("locate module: %v", err)
@@ -697,6 +702,20 @@ func TestShareDryRunUsesConfiguredSnapshotAndExplicitLiveOverride(t *testing.T) 
 	runtimeRootPath := filepath.Join(base, "state")
 	t.Setenv("RDR_HOME", runtimeRootPath)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	proxyListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyPort := proxyListener.Addr().(*net.TCPAddr).Port
+	proxyListener.Close()
+	configRoot := filepath.Join(base, "config", "rundevrun")
+	if err := os.MkdirAll(configRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	settings := fmt.Sprintf(`{"version":1,"local":{"listen":"127.0.0.1:%d"},"tailnet":{}}`, proxyPort)
+	if err := os.WriteFile(filepath.Join(configRoot, "networking.json"), []byte(settings), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -740,6 +759,7 @@ dir = "dist"
 	}
 	t.Cleanup(func() {
 		_, _ = invokeBinary(t, binary, "down", "web", "--project", project, "--worktree", root)
+		_, _ = invokeBinary(t, binary, "proxy", "stop")
 	})
 	if e, code := invokeBinary(t, binary, "up", "web", "--project", project, "--worktree", root); code != 0 {
 		logs, logCode := invokeBinary(t, binary, "logs", "web", "--project", project, "--worktree", root, "--tail", "30")

@@ -19,16 +19,7 @@ func (e *Error) Error() string {
 	}
 	return e.Field + ": invalid"
 }
-func (e *Error) Unwrap() error              { return e.Err }
-func ValidateEnv(s string, c *Config) error { _, e := scan(s, false, c); return e }
-func ValidateCommand(s string, c *Config) error {
-	has := strings.Contains(strings.ReplaceAll(s, "${", ""), "{")
-	if !has {
-		return nil
-	}
-	_, e := scan(s, true, c)
-	return e
-}
+func (e *Error) Unwrap() error { return e.Err }
 func scan(s string, command bool, c *Config) (bool, error) {
 	seen := false
 	quote := byte(0)

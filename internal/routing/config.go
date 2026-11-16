@@ -16,8 +16,16 @@ import (
 const defaultHostname = "{service}-{worktree}-{project}.{domain}"
 
 type Config struct {
-	Version int      `toml:"version"`
-	Routing Settings `toml:"routing"`
+	LocalOnly     bool                    `toml:"-" json:"-"`
+	LocalProjects map[string]LocalProject `toml:"-" json:"-"`
+	TailnetDomain string                  `toml:"-" json:"-"`
+	Legacy        *Config                 `toml:"-" json:"-"`
+	Version       int                     `toml:"version"`
+	Routing       Settings                `toml:"routing"`
+}
+type LocalProject struct {
+	DefaultService, PrimaryWorktree string
+	Tailnet                         bool
 }
 type Settings struct {
 	Enabled           bool        `toml:"enabled"`
@@ -151,16 +159,23 @@ func (c Config) URL(host string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, port, err := net.SplitHostPort(c.Routing.HTTPSListen)
+	listen := c.Routing.HTTPSListen
+	if c.LocalOnly {
+		listen = c.Routing.HTTPListen
+	}
+	_, port, err := net.SplitHostPort(listen)
 	if err != nil {
 		return "", err
 	}
-	if c.Routing.ExternalHTTPSPort != nil {
+	if !c.LocalOnly && c.Routing.ExternalHTTPSPort != nil {
 		port = strconv.Itoa(*c.Routing.ExternalHTTPSPort)
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
 		return "", errors.New("invalid HTTPS port")
+	}
+	if c.LocalOnly {
+		return "http://" + net.JoinHostPort(host, port), nil
 	}
 	if port == "443" {
 		return "https://" + host, nil

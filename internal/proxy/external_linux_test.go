@@ -48,6 +48,7 @@ func TestExternalHandlerRequiresTrustedHTTPS(t *testing.T) {
 }
 func externalConfigFile(t *testing.T, dir, httpAddr, httpsAddr, cert string) string {
 	t.Helper()
+	writeLocalConfig(t, dir, httpAddr)
 	p := filepath.Join(dir, "config.toml")
 	text := fmt.Sprintf("version=1\n[routing]\nenabled=true\ndomain='example.com'\nhttp_listen=%q\nhttps_listen=%q\nexternal_https_port=443\ntrusted_proxies=['127.0.0.1']\n[routing.tls]\nmode='external'\n[[routing.tls.certificates]]\ncert_file=%q\n", httpAddr, httpsAddr, cert)
 	if err := os.WriteFile(p, []byte(text), 0600); err != nil {

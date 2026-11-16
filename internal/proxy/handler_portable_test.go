@@ -1,6 +1,4 @@
-//go:build linux
-
-// Tests proxy handler behavior on Linux.
+// Tests proxy handler portable behavior.
 package proxy
 
 import (
@@ -388,5 +386,67 @@ func TestPinnedPublicationRootStripKeepsAbsolutePath(t *testing.T) {
 	var body map[string]string
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body["path"] != "/identity" {
 		t.Fatalf("root strip: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLocalStreamingAndCookies(t *testing.T) {
+	store, _, src := fixture(t)
+	if err := store.Update(func(reg *state.Registry) error {
+		p, err := reg.Project("p")
+		if err != nil {
+			return err
+		}
+		i := p.Instances[src]
+		i.Endpoints = []state.Endpoint{{Scope: "local", Hostname: "web.localhost", Port: 8080, InstanceID: src}}
+		p.Instances[src] = i
+		return reg.SetProject("p", p)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(NewHandler(store, routing.Config{LocalOnly: true}))
+	defer server.Close()
+	req, _ := http.NewRequest("GET", server.URL+"/path?query=1", nil)
+	req.Host = "web.localhost"
+	req.Header.Set("Cookie", "user=kept")
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]string
+	if err = json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if body["cookie"] != "user=kept" || body["path"] != "/path" || response.Header.Get("Set-Cookie") != "app_session=fixture; Secure; HttpOnly; SameSite=Lax" {
+		t.Fatalf("response=%v cookies=%v", body, response.Header)
+	}
+	req, _ = http.NewRequest("GET", server.URL+"/sse", nil)
+	req.Host = "web.localhost"
+	start := time.Now()
+	response, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := bufio.NewReader(response.Body).ReadString('\n')
+	response.Body.Close()
+	if err != nil || first != "data: first\n" || time.Since(start) > 750*time.Millisecond {
+		t.Fatalf("SSE=%q after %v: %v", first, time.Since(start), err)
+	}
+	conn, err := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = fmt.Fprint(conn, "GET /socket HTTP/1.1\r\nHost: web.localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+	reader := bufio.NewReader(conn)
+	response, err = http.ReadResponse(reader, &http.Request{Method: "GET"})
+	if err != nil || response.StatusCode != 101 {
+		t.Fatalf("upgrade: %v %v", response, err)
+	}
+	_, _ = io.WriteString(conn, "hello")
+	reply := make([]byte, 5)
+	if _, err = io.ReadFull(reader, reply); err != nil || string(reply) != "hello" {
+		t.Fatalf("websocket=%q %v", reply, err)
 	}
 }
