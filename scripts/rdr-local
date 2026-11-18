@@ -1,11 +1,11 @@
 #!/bin/sh
-# Installs committed main or restores the previous local rdr binary.
+# Installs rdr from this worktree or restores the previous local binary.
 set -eu
 
 action=${1:-}
-case "$action" in
-    update|rollback) ;;
-    *) echo "Usage: $0 update|rollback" >&2; exit 2 ;;
+case "$action:${2:-}:$#" in
+    update::1|update:--committed:2|rollback::1) ;;
+    *) echo "Usage: $0 update [--committed] | rollback" >&2; exit 2 ;;
 esac
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -36,17 +36,19 @@ if [ "$action" = rollback ]; then
     exit 0
 fi
 
-if [ "$(git -C "$repo" symbolic-ref --short HEAD)" != main ]; then
-    echo "Update requires the main branch" >&2
-    exit 1
-fi
 revision=$(git -C "$repo" rev-parse HEAD)
-work=$(mktemp -d "${TMPDIR:-/tmp}/rdr-install.XXXXXXXX")
-git -C "$repo" archive --format=tar -o "$work/source.tar" "$revision"
-mkdir "$work/source"
-tar -xf "$work/source.tar" -C "$work/source"
+source=$repo
+if [ "${2:-}" = --committed ]; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/rdr-install.XXXXXXXX")
+    git -C "$repo" archive --format=tar -o "$work/source.tar" "$revision"
+    mkdir "$work/source"
+    tar -xf "$work/source.tar" -C "$work/source"
+    source="$work/source"
+elif [ -n "$(git -C "$repo" status --porcelain)" ]; then
+    revision="$revision.dirty"
+fi
 (
-    cd "$work/source"
+    cd "$source"
     go build -trimpath -ldflags "-X github.com/bettertomorrow-dev/rundevrun/internal/cli.Version=0.1.0-dev+$revision" -o "$lock/rdr" ./cmd/rdr
 )
 "$lock/rdr" version --json
