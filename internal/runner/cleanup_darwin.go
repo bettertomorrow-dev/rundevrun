@@ -51,10 +51,13 @@ func verifySessionGone(anchor procid.Ref) error {
 		if errors.Is(err, syscall.ESRCH) {
 			return nil
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, syscall.EPERM) {
 			return unknown(fmt.Errorf("cannot verify recorded process group: %w", err))
 		}
 		if !time.Now().Before(deadline) {
+			if err != nil {
+				return unknown(fmt.Errorf("cannot verify recorded process group: %w", err))
+			}
 			return unknown(fmt.Errorf("recorded process group %d still exists; cleanup is unconfirmed", anchor.PGID))
 		}
 		time.Sleep(10 * time.Millisecond)

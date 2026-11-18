@@ -101,8 +101,9 @@ func checkDarwinListeners(refs []procid.Ref, port int) error {
 			if err != nil {
 				return err
 			}
-			if !bytes.Equal(entries, after) {
-				return errors.New("descriptors changed during Darwin socket inspection")
+
+			if !bytes.Equal(darwinSocketDescriptors(entries), darwinSocketDescriptors(after)) {
+				return errors.New("socket descriptors changed during Darwin inspection")
 			}
 		}
 		ok, err = procid.Check(ref)
@@ -117,4 +118,14 @@ func checkDarwinListeners(refs []procid.Ref, port int) error {
 		return fmt.Errorf("no owned loopback listener on port %d", port)
 	}
 	return nil
+}
+
+func darwinSocketDescriptors(entries []byte) []byte {
+	var sockets []byte
+	for off := 0; off < len(entries); off += 8 {
+		if binary.LittleEndian.Uint32(entries[off+4:]) == 2 {
+			sockets = append(sockets, entries[off:off+8]...)
+		}
+	}
+	return sockets
 }

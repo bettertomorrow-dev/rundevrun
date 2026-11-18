@@ -47,6 +47,57 @@ func endpointURL(endpoint state.Endpoint) string {
 	return scheme + "://" + endpoint.Hostname + ":" + strconv.Itoa(endpoint.Port)
 }
 
+func (svc *Service) LoadURLs(ctx context.Context, store *state.Store, inst state.Instance, manifest state.Manifest) error {
+	svc.DirectURL, svc.URL = manifest.Addresses["direct_url"], manifest.Addresses["url"]
+	svc.Protocol = manifest.Launch.Protocol
+	var localURL string
+	for _, endpoint := range inst.Endpoints {
+		u := endpointURL(endpoint)
+		switch endpoint.Scope {
+		case "local":
+			if endpoint.Alias {
+				svc.LocalAliasURL = u
+			} else {
+				localURL = u
+			}
+		case "tailnet":
+			if endpoint.Alias {
+				svc.TailnetAliasURL = u
+			} else {
+				svc.TailnetURL = u
+			}
+		}
+	}
+	svc.LocalURL = localURL
+	svc.LaunchURLStale = localURL != "" && manifest.Addresses["url"] != localURL
+	if inst.RouteURL != "" {
+		svc.URL = inst.RouteURL
+	}
+	reported, err := runner.New(store, "").ReportedURL(ctx, svc.RunID)
+	if err == nil && reported != "" {
+		transferred := false
+		for _, destination := range []*string{&svc.LocalURL, &svc.TailnetURL, &svc.LocalAliasURL, &svc.TailnetAliasURL} {
+			if *destination == "" {
+				continue
+			}
+			if value, ok := runner.TransferOwnedReportedURL(store, svc.ProjectID, inst, *destination, reported); ok {
+				*destination = value
+				transferred = true
+			}
+		}
+		if !transferred {
+			svc.ReportedURL = reported
+			if localURL == "" {
+				svc.URL = reported
+			}
+		}
+	}
+	if svc.LocalURL != "" {
+		svc.URL = svc.LocalURL
+	}
+	return err
+}
+
 func RuntimeRoot() (string, error) {
 	if root := os.Getenv("RDR_HOME"); root != "" {
 		return filepath.Abs(root)
@@ -208,53 +259,8 @@ func Read(ctx context.Context, store *state.Store, cwd string) (Snapshot, error)
 				} else if manifest.InstanceID != id {
 					out.Warnings = append(out.Warnings, id+": manifest instance mismatch")
 				} else {
-					svc.DirectURL, svc.URL = manifest.Addresses["direct_url"], manifest.Addresses["url"]
-					svc.Protocol = manifest.Launch.Protocol
-					var localURL string
-					for _, endpoint := range inst.Endpoints {
-						u := endpointURL(endpoint)
-						switch endpoint.Scope {
-						case "local":
-							if endpoint.Alias {
-								svc.LocalAliasURL = u
-							} else {
-								localURL = u
-							}
-						case "tailnet":
-							if endpoint.Alias {
-								svc.TailnetAliasURL = u
-							} else {
-								svc.TailnetURL = u
-							}
-						}
-					}
-					svc.LocalURL = localURL
-					svc.LaunchURLStale = localURL != "" && manifest.Addresses["url"] != localURL
-					if inst.RouteURL != "" {
-						svc.URL = inst.RouteURL
-					}
-					if reported, err := runner.New(store, "").ReportedURL(ctx, svc.RunID); err != nil {
+					if err := svc.LoadURLs(ctx, store, inst, manifest); err != nil {
 						out.Warnings = append(out.Warnings, fmt.Sprintf("%s: cannot read reported URL: %v", id, err))
-					} else if reported != "" {
-						transferred := false
-						for _, destination := range []*string{&svc.LocalURL, &svc.TailnetURL, &svc.LocalAliasURL, &svc.TailnetAliasURL} {
-							if *destination == "" {
-								continue
-							}
-							if value, ok := runner.TransferOwnedReportedURL(store, p.ID, inst, *destination, reported); ok {
-								*destination = value
-								transferred = true
-							}
-						}
-						if !transferred {
-							svc.ReportedURL = reported
-							if localURL == "" {
-								svc.URL = reported
-							}
-						}
-					}
-					if svc.LocalURL != "" {
-						svc.URL = svc.LocalURL
 					}
 					if port := manifest.Launch.Port; port > 0 {
 						svc.Ports = []int{port}

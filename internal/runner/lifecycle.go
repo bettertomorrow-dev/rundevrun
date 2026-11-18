@@ -469,10 +469,19 @@ func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string)
 				return &Error{"OWNERSHIP_UNKNOWN", checkErr}
 			}
 			if !live && record.State != "stopped" && record.State != "failed" {
-				return &Error{"OWNERSHIP_UNKNOWN", errors.New("supervisor disappeared before confirmed cleanup")}
+
+				sup, child := record.Supervisor, record.Child
+				if sup.PID <= 1 || sup.PGID != sup.PID || sup.SID != sup.PID || sup.Identity == "" || sup.BootID == "" || child.PID <= 1 || child.PGID != child.PID || child.SID != sup.SID || child.BootID != sup.BootID || child.Identity == "" {
+					return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid dead-supervisor process ownership")}
+				}
+				for _, ref := range record.Members {
+					if ref.PID <= 1 || ref.PGID <= 1 || ref.SID != sup.SID || ref.BootID != sup.BootID || ref.Identity == "" {
+						return &Error{"OWNERSHIP_UNKNOWN", errors.New("invalid recorded session member")}
+					}
+				}
 			}
 			if live {
-				members, scanErr := groupMembers(record.Child, []procid.Ref{record.Supervisor})
+				members, scanErr := runtimeMembers(record.Child, record.Supervisor)
 				if record.Child.PID != 0 && scanErr != nil {
 					return scanErr
 				}

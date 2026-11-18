@@ -58,7 +58,7 @@ func VerifyProxyTarget(store *state.Store, projectID, instanceID, expectedRunID 
 			return 0, errors.New("recorded process is not live")
 		}
 	}
-	members, err := groupMembers(record.Child, []procid.Ref{record.Supervisor, record.Child})
+	members, err := runtimeMembers(record.Child, record.Supervisor)
 	if err != nil {
 		return 0, err
 	}

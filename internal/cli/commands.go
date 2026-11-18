@@ -23,6 +23,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/diagnostics"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/localrouting"
+	"github.com/bettertomorrow-dev/rundevrun/internal/monitor"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
@@ -1398,7 +1399,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 	}
 	for _, item := range result.Results {
 		if action == "up" {
-			e.Results = append(e.Results, graphInstanceInfo(store, item, e))
+			e.Results = append(e.Results, graphInstanceInfo(ctx, store, item, e))
 		} else {
 			e.Results = append(e.Results, item)
 		}
@@ -1556,7 +1557,7 @@ func graphFailureCode(ctx context.Context, err error) string {
 	return "PROCESS_FAILED"
 }
 
-func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) map[string]any {
+func graphInstanceInfo(ctx context.Context, store *state.Store, result runner.Result, e *envelope) map[string]any {
 	fields := map[string]any{
 		"instance_id": result.InstanceID,
 		"status":      result.Status,
@@ -1601,6 +1602,23 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 	instance.State = result.State
 	if result.RunID != "" {
 		instance.RunID = result.RunID
+	}
+	if e.upURLs != nil && (result.Status == "completed" || result.Status == "unchanged") && liveState(result.State) && instance.RunID != "" {
+		if manifest, err := store.ReadManifest(instance.RunID); err == nil && manifest.InstanceID == instance.ID {
+			view := monitor.Service{ProjectID: project.ID, RunID: instance.RunID}
+			_ = view.LoadURLs(ctx, store, instance, manifest)
+			local, reported := view.LocalURL, view.ReportedURL
+			if local == "" {
+				local = instance.RouteURL
+				if local == "" {
+					local = view.DirectURL
+				}
+				if url, ok := runner.TransferOwnedReportedURL(store, project.ID, instance, local, reported); ok {
+					local, reported = url, ""
+				}
+			}
+			e.upURLs[result.InstanceID] = upURLs{local: local, domain: view.TailnetURL, reported: reported}
+		}
 	}
 	worktree, ok := findWorktree(project, instance.WorktreeID)
 	if !ok {

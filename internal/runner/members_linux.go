@@ -16,7 +16,19 @@ import (
 )
 
 func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error) {
+	return scanMembers(leader, anchors, false)
+}
+
+func runtimeMembers(leader, supervisor procid.Ref) ([]procid.Ref, error) {
+	if supervisor.PID <= 1 || supervisor.PGID != supervisor.PID || supervisor.SID != supervisor.PID || supervisor.Identity == "" || supervisor.BootID == "" || leader.SID != supervisor.SID || leader.BootID != supervisor.BootID {
+		return nil, errors.New("invalid detached supervisor session")
+	}
+	return scanMembers(leader, []procid.Ref{supervisor}, true)
+}
+
+func scanMembers(leader procid.Ref, anchors []procid.Ref, session bool) ([]procid.Ref, error) {
 	valid := false
+	var verifiedAnchor procid.Ref
 	for _, anchor := range anchors {
 		if anchor.SID != leader.SID || anchor.BootID != leader.BootID {
 			continue
@@ -27,6 +39,7 @@ func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error)
 		}
 		if ok {
 			valid = true
+			verifiedAnchor = anchor
 			break
 		}
 	}
@@ -63,7 +76,7 @@ func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error)
 		if e1 != nil || e2 != nil {
 			return nil, fmt.Errorf("invalid proc stat for %d", pid)
 		}
-		if pg != leader.PGID || sid != leader.SID {
+		if sid != leader.SID || (!session && pg != leader.PGID) || (session && pid == verifiedAnchor.PID) {
 			continue
 		}
 		ref, err := procid.Observe(pid)
@@ -73,8 +86,17 @@ func groupMembers(leader procid.Ref, anchors []procid.Ref) ([]procid.Ref, error)
 		if err != nil {
 			return nil, err
 		}
-		if ref.PGID == leader.PGID && ref.SID == leader.SID && ref.BootID == leader.BootID {
+		if (session || ref.PGID == leader.PGID) && ref.SID == leader.SID && ref.BootID == leader.BootID {
 			refs = append(refs, ref)
+		}
+	}
+	if session {
+		ok, err := procid.Check(verifiedAnchor)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("session anchor changed during process inspection")
 		}
 	}
 	return refs, nil

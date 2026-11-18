@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
+	"github.com/charmbracelet/x/term"
 )
 
 type scope struct {
@@ -42,6 +47,11 @@ type envelope struct {
 	Credentials       *shareCredentials    `json:"credentials,omitempty"`
 	Publications      []publication.Status `json:"publications,omitempty"`
 	PublicationErrors []commandError       `json:"publication_errors,omitempty"`
+	upURLs            map[string]upURLs
+}
+
+type upURLs struct {
+	local, domain, reported string
 }
 
 type shareCredentials struct {
@@ -62,8 +72,12 @@ type proxyInfoView struct {
 }
 
 func result(command string, opts options) envelope {
-	return envelope{Version: 1, Command: command, Scope: scope{opts.project, opts.worktree},
+	e := envelope{Version: 1, Command: command, Scope: scope{opts.project, opts.worktree},
 		Status: "ok", DryRun: opts.dryRun, Results: []any{}, Errors: []commandError{}}
+	if command == "up" && !opts.json && !opts.dryRun {
+		e.upURLs = make(map[string]upURLs)
+	}
+	return e
 }
 
 func (e *envelope) fail(code, message string, actions ...string) {
@@ -81,14 +95,30 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 			return 4
 		}
 	} else {
-		for _, item := range e.Results {
-			if _, err := fmt.Fprintln(out, item); err != nil {
+		if e.Command == "up" && !e.DryRun {
+			if err := writeUpTable(out, e); err != nil {
 				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
 				return 4
 			}
+		} else {
+			for _, item := range e.Results {
+				if _, err := fmt.Fprintln(out, item); err != nil {
+					fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+					return 4
+				}
+			}
 		}
 		for _, err := range e.Errors {
-			fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
+			if e.Command == "up" && err.InstanceID != "" {
+				fmt.Fprintf(errOut, "rdr: %s: %s: %s\n", serviceName(err.InstanceID), err.Code, err.Message)
+			} else {
+				fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
+			}
+		}
+		if e.Command == "up" {
+			for _, err := range e.ProxyErrors {
+				fmt.Fprintf(errOut, "rdr: proxy: %s: %s\n", err.Code, err.Message)
+			}
 		}
 		for _, item := range e.Publications {
 			if _, err := fmt.Fprintln(out, item.ID, publicationResult{Status: item}); err != nil {
@@ -121,4 +151,76 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 	default:
 		return 2
 	}
+}
+
+func serviceName(id string) string {
+	return id[strings.LastIndexByte(id, '/')+1:]
+}
+
+func upSymbol(status string, color bool) string {
+	symbol, code := "?", "33"
+	switch status {
+	case "completed":
+		symbol, code = "✓", "32"
+	case "unchanged":
+		symbol, code = "●", "36"
+	case "failed":
+		symbol, code = "✗", "31"
+	case "not_run":
+		symbol, code = "–", "90"
+	}
+	if color {
+		return "\x1b[" + code + "m" + symbol + "\x1b[0m"
+	}
+	return symbol
+}
+
+func writeUpTable(out io.Writer, e envelope) error {
+	if len(e.Results) == 0 {
+		return nil
+	}
+	_, noColor := os.LookupEnv("NO_COLOR")
+	terminal, ok := out.(interface{ Fd() uintptr })
+	color := ok && !noColor && os.Getenv("TERM") != "dumb" && term.IsTerminal(terminal.Fd())
+	clean := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return '�'
+			}
+			return r
+		}, s)
+	}
+	type row struct {
+		service, symbol string
+		urls            upURLs
+		restart         bool
+	}
+	rows := make([]row, 0, len(e.Results))
+	serviceWidth, localWidth := len("SERVICE"), len("LOCALHOST")
+	for _, raw := range e.Results {
+		item, _ := raw.(map[string]any)
+		id, _ := item["instance_id"].(string)
+		status, _ := item["status"].(string)
+		restart, _ := item["restart_required"].(bool)
+		urls := e.upURLs[id]
+		urls.local, urls.domain, urls.reported = clean(urls.local), clean(urls.domain), clean(urls.reported)
+		service := clean(serviceName(id))
+		serviceWidth = max(serviceWidth, utf8.RuneCountInString(service))
+		localWidth = max(localWidth, utf8.RuneCountInString(urls.local))
+		rows = append(rows, row{service, upSymbol(status, color), urls, restart})
+	}
+	var table strings.Builder
+	fmt.Fprintf(&table, "  %-*s  %-*s  CONNECTED DOMAIN\n", serviceWidth, "SERVICE", localWidth, "LOCALHOST")
+	for _, row := range rows {
+		line := fmt.Sprintf("%s %-*s  %-*s  %s", row.symbol, serviceWidth, row.service, localWidth, row.urls.local, row.urls.domain)
+		table.WriteString(strings.TrimRight(line, " ") + "\n")
+		if row.urls.reported != "" {
+			fmt.Fprintf(&table, "  App URL  %s\n", row.urls.reported)
+		}
+		if row.restart {
+			fmt.Fprintf(&table, "  Restart required. Run rdr restart %s to apply changes.\n", row.service)
+		}
+	}
+	_, err := io.WriteString(out, table.String())
+	return err
 }

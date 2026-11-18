@@ -560,6 +560,16 @@ func (s *Store) Inspect(i Instance) (string, error) {
 		return "", err
 	}
 	if live {
+
+		if r.Claim == "accepted" && r.State != "stopped" && r.State != "failed" {
+			supervisorLive, checkErr := procid.Check(r.Supervisor)
+			if checkErr != nil {
+				return "", fmt.Errorf("%w: uncertain supervisor identity: %v", ErrOwnershipUnknown, checkErr)
+			}
+			if !supervisorLive {
+				return "stale", nil
+			}
+		}
 		return r.State, nil
 	}
 	if i.State == "stopped" && i.Intent != nil && i.Intent.RunID == i.RunID && i.Intent.OperationID == m.OperationID && i.Intent.Phase == "stopped" && r.Claim == "accepted" && r.Supervisor.PID > 0 {

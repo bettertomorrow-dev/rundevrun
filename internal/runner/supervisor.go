@@ -160,7 +160,7 @@ func superviseLoop(m state.Manifest, record *state.RunRecord, write func() error
 		if result == nil {
 			return
 		}
-		members, scanErr := groupMembers(record.Child, []procid.Ref{record.Supervisor})
+		members, scanErr := runtimeMembers(record.Child, record.Supervisor)
 		record.Members = mergeMembers(record.Members, members)
 		if scanErr != nil {
 			result = errors.Join(result, scanErr)
@@ -185,7 +185,7 @@ func superviseLoop(m state.Manifest, record *state.RunRecord, write func() error
 		case err := <-logErrors:
 			return err
 		case err := <-done:
-			members, scanErr := groupMembers(record.Child, []procid.Ref{record.Supervisor})
+			members, scanErr := runtimeMembers(record.Child, record.Supervisor)
 			if scanErr != nil {
 				return scanErr
 			}
@@ -203,7 +203,7 @@ func superviseLoop(m state.Manifest, record *state.RunRecord, write func() error
 			}
 			return err
 		case <-ctx.Done():
-			members, err := groupMembers(record.Child, []procid.Ref{record.Supervisor})
+			members, err := runtimeMembers(record.Child, record.Supervisor)
 			if err != nil {
 				return err
 			}
@@ -218,7 +218,7 @@ func superviseLoop(m state.Manifest, record *state.RunRecord, write func() error
 			}
 			return nil
 		case <-tick.C:
-			members, err := groupMembers(record.Child, []procid.Ref{record.Supervisor})
+			members, err := runtimeMembers(record.Child, record.Supervisor)
 			if err != nil {
 				return err
 			}
