@@ -28,8 +28,8 @@ func TestConfigAndHostname(t *testing.T) {
 	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Load created config directory")
 	}
-	host, err := c.Hostname("Console", "Feature/Test", "MillDrum", "dev.example.com")
-	if err != nil || host != "console-feature-test-milldrum.dev.example.com" {
+	host, err := c.Hostname("Console", "Feature/Test", "Demo", "dev.example.com")
+	if err != nil || host != "console-feature-test-demo.dev.example.com" {
 		t.Fatalf("host=%q err=%v", host, err)
 	}
 	url, err := c.URL(host)

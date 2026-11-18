@@ -25,8 +25,26 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Local credentials and environment files
 .env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local rdr state and machine networking configuration
+.rdr/
+networking.json
+setup-plan.json
+cleanup-plan.json
+
+# Local build outputs and macOS metadata
+/rdr
+/rdrtop
+.DS_Store
 
 # Python helper caches
 __pycache__/

@@ -1,36 +1,14 @@
 # rundevrun
 
-CLI for development services across projects and existing Git worktrees.
-Implementation follows [the plan](docs/IMPLEMENTATION_PLAN.md) and
-[PRD](docs/PRD.md). This is an intermediate implementation, not a release.
-
-Requires Go 1.27 or newer and Git for worktree discovery. Go 1.27.4 was used
-for the current local build. See [local installation and usage](docs/INSTALL.md)
-for a repeatable build, private install, and JSON-first workflow.
+Run development services across projects and existing Git worktrees.
+Development software for Linux and macOS; requires Go 1.27 or newer and Git.
 
 ```sh
 go build -trimpath -o /tmp/rdr ./cmd/rdr
 /tmp/rdr --help
 ```
 
-The separate `rdrtop` terminal app visualizes rdr-managed services:
-
-```sh
-go build -trimpath -o /tmp/rdrtop ./cmd/rdrtop
-/tmp/rdrtop
-```
-
-See [rdrtop usage](docs/RDRTOP.md).
-
-See [local and tailnet networking](docs/NETWORKING.md) for configuration,
-provider setup, credential handling, recovery, and migration.
-
-For guided setup with your own domain on macOS or Linux, use the explicit-only
-[`rundevrun-domain-setup-wizard`](skills/rundevrun-domain-setup-wizard/SKILL.md)
-agent skill. It checks prerequisites, guides Cloudflare onboarding, and previews
-the private Tailscale/DNS/certificate changes before applying them.
-
-Project configuration lives in `dev.toml`:
+Create `dev.toml` in your project:
 
 ```toml
 version = 1
@@ -42,49 +20,30 @@ port = "auto"
 health = { http = "/" }
 ```
 
-The discovery commands validate configuration without running project commands:
-
 ```sh
 rdr config check --json
-rdr register . --dry-run --json
-rdr register . --json
-rdr projects --json
-rdr worktrees --project example --json
-rdr services --project example --json
-rdr status --project example --json
 rdr up api --dry-run --json
 rdr up api --json
 rdr logs api --tail 50
-rdr open api --json
-rdr doctor --json
-rdr proxy status --json
-rdr restart api --json
 rdr down api --json
 ```
 
-Registration records configured services as stopped. Independent clones receive
-different IDs even when names match. Select ambiguous projects or worktrees by
-the IDs in JSON output. Discovery and status do not create runtime state;
-registration stores private state under `$RDR_HOME`, `$XDG_STATE_HOME/rundevrun`,
-or `~/.local/state/rundevrun`.
+`up` registers the project automatically. Discovery and dry-runs do not execute
+project commands. Use IDs from `rdr projects --json` and `rdr worktrees --json`
+when names are ambiguous.
 
-Graph lifecycle, hooks, batch switch, live sharing, and static snapshots passed
-Linux tests and public CLI scenarios. Unknown process ownership refuses unsafe
-cleanup and keeps state available for inspection. MillDrum and twikko ran together
-under one binary with disposable data. The MillDrum wrapper, watcher, backup,
-seed, sign-in, protected preview and legacy handover passed Linux acceptance.
-Real Cloudflare HTTPS, password authentication, WebSocket and immutable snapshots
-also passed. Darwin arm64/amd64 cross-builds passed; actual macOS process checks
-remain open because no Mac is available. The user's HTTPS ingress for
-`home.litvinovich.dev` also remains unprepared. These two conditions keep final
-acceptance open.
-See [local HTTPS setup](docs/LOCAL_HTTPS.md), [acceptance evidence](docs/ACCEPTANCE.md),
-[technical contracts](docs/TECH_SPEC.md) and [review status](docs/REVIEWS.md).
+- [Installation and state](docs/INSTALL.md)
+- [Terminal interface](docs/RDRTOP.md)
+- [Local and tailnet networking](docs/NETWORKING.md)
+- [Existing HTTPS infrastructure](docs/LOCAL_HTTPS.md)
+- [Configuration and contributor reference](docs/TECH_SPEC.md)
+- [Examples and verification](examples/mini/README.md)
 
-Checks:
+## Checks
 
 ```sh
 go vet ./...
 go test ./...
 go test -race ./...
+node --test scripts/domain-wizard-token.test.mjs
 ```

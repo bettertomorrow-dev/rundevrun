@@ -1,108 +1,48 @@
-# Local build and use
+# Installation
 
-`rundevrun` is an intermediate CLI, not a release. Build it from a checkout
-with Go 1.27 or newer and Git installed. The current source was built with Go
-1.27.4. Use `rdr version --json` for the product and public API versions. Record the
-checkout revision and `go version` alongside a local build.
-
-## Build and install
-
-From the repository root:
+Requires Go 1.27 or newer and Git. From the repository root:
 
 ```sh
-go version
 go build -trimpath -o /tmp/rdr ./cmd/rdr
-/tmp/rdr version --json
-/tmp/rdr --help
-```
-
-Install a user-owned copy without changing system directories or requiring
-`sudo`:
-
-```sh
 install -d -m 0700 "$HOME/.local/opt/rundevrun"
 install -m 0755 /tmp/rdr "$HOME/.local/opt/rundevrun/rdr"
-"$HOME/.local/opt/rundevrun/rdr" --help
+"$HOME/.local/opt/rundevrun/rdr" version --json
 ```
 
-Use that absolute path in commands, or choose another private user-owned install
-directory. `version --json` returns `results[0].api_version`, currently `1`, for project
-wrappers to check compatibility; `--help` lists the available commands.
-
-On this Linux machine, the verified local binary is installed at
-`/home/alex/.local/bin/rdr`, already on PATH. It reports version `0.1.0-dev`
-and public API 1. Its source revision and acceptance evidence are recorded in
-[ACCEPTANCE.md](ACCEPTANCE.md). The private install above is an alternative.
+Add `$HOME/.local/opt/rundevrun` to PATH or use the absolute path.
+`version --json` reports product and API versions; `--help` lists commands.
+Build the optional terminal app with `go build -o /tmp/rdrtop ./cmd/rdrtop`.
 
 ## First project
 
-Put a `dev.toml` in the project root, then inspect it without running project
-commands:
+Create the [example configuration](../README.md), then run from its directory:
 
 ```sh
-RDR="$HOME/.local/opt/rundevrun/rdr"
-"$RDR" config check --json
-"$RDR" register . --dry-run --json
+rdr config check --json
+rdr up api --dry-run --json
+rdr up api --json
+rdr status --json
+rdr open api --json
+rdr down api --json
 ```
 
-`config check` validates the current project configuration. `register --dry-run`
-shows the discovered project and worktrees without storing registration state.
-After reviewing the configuration and plan, register it and inspect the public
-JSON views:
+Review project commands before `up`. It registers the project automatically;
+`rdr register .` supports explicit registration. `open --json` returns the URL;
+text-mode `open` launches a browser. Use `doctor` for diagnostics and `--project`
+and `--worktree` to select services outside the current checkout.
 
-```sh
-"$RDR" register . --json
-"$RDR" projects --json
-"$RDR" worktrees --project PROJECT_ID --json
-"$RDR" services --project PROJECT_ID --worktree WORKTREE_ID --json
-"$RDR" status --project PROJECT_ID --json
-```
+Use `bind` followed by `restart` to change a dependency's worktree. `switch`
+moves a live service and its consumers. Inspect these operations with `--dry-run`.
 
-Use the stable IDs returned by JSON when a name or path could be ambiguous.
-`status`, `ls`, `projects`, `worktrees`, and `services` report observed state;
-they do not start services. `up --dry-run` shows a lifecycle plan. `up` runs
-commands from `dev.toml`, so review those commands before starting them.
+## State and secrets
 
-```sh
-"$RDR" up api --project PROJECT_ID --worktree WORKTREE_ID --dry-run --json
-"$RDR" up api --project PROJECT_ID --worktree WORKTREE_ID --json
-"$RDR" logs api --project PROJECT_ID --worktree WORKTREE_ID --tail 50
-"$RDR" open api --project PROJECT_ID --worktree WORKTREE_ID --json
-"$RDR" doctor --project PROJECT_ID --worktree WORKTREE_ID --json
-"$RDR" down api --project PROJECT_ID --worktree WORKTREE_ID --json
-```
+Runtime state uses `$RDR_HOME`, then `$XDG_STATE_HOME/rundevrun`, then
+`~/.local/state/rundevrun`. Keep application data elsewhere; retention removes
+old run artifacts. Do not commit runtime files or publish their logs.
 
-`open --json` reports the URL without launching a browser. Text-mode `open`
-uses the platform browser opener. `doctor` reads configuration and current
-diagnostics. For dependencies, use `bind` to change the desired worktree and
-`restart` to apply the new selection. `switch` moves a live service and its
-consumers to a target worktree. Both support public JSON planning with
-`--dry-run`; see `--help` for their selectors.
+Machine networking settings use `$XDG_CONFIG_HOME/rundevrun`, falling back to
+`~/.config/rundevrun`. See [networking](NETWORKING.md) and [existing TLS](LOCAL_HTTPS.md).
 
-## State and credentials
-
-The project file is `dev.toml`. Machine routing configuration is
-`$XDG_CONFIG_HOME/rundevrun/config.toml`, or `~/.config/rundevrun/config.toml`
-when `XDG_CONFIG_HOME` is unset. Private runtime state is stored under
-`$RDR_HOME` when set, otherwise `$XDG_STATE_HOME/rundevrun`, or
-`~/.local/state/rundevrun` when `XDG_STATE_HOME` is unset. Keep those state
-directories private and backed up only as appropriate for local development.
-Application data belongs in a separate project directory outside `RDR_HOME`;
-runner retention may remove old build artifacts. Do not copy runtime files into
-project repositories or publish them as logs.
-
-Creating a live or snapshot share returns its password once, including in the
-JSON response. Treat that command output as a secret. A repeated share and
-status views do not return the password. Recreate rotates the share URL and
-password; it does not open the URL automatically. Quick Tunnels do not support
-SSE. For local HTTPS setup and external acceptance limits, read
-[LOCAL_HTTPS.md](LOCAL_HTTPS.md) and [ACCEPTANCE.md](ACCEPTANCE.md).
-
-## Current limits
-
-Linux test suites and public CLI scenarios cover lifecycle, routing, live
-sharing and snapshots. Real MillDrum and twikko ran simultaneously with isolated
-data. Real Cloudflare HTTPS acceptance passed. Cross-builds exist for Darwin
-arm64 and amd64, but runtime behavior on macOS remains unaccepted because no Mac
-is available. The user's local HTTPS ingress also remains open. See the exact
-scope and reproducible checks in [acceptance evidence](ACCEPTANCE.md).
+Share creation returns its password once, including in JSON. Treat that output
+as secret. Repeated shares and status do not return it; `--recreate` rotates the
+URL and password. Quick Tunnels do not support SSE.

@@ -1,4 +1,4 @@
-// Identifies and stops processes using verified kernel identities; adapted from MillDrum internal/procid at commit 1184e35.
+// Identifies and stops processes using verified kernel identities.
 package procid
 
 import (

@@ -1,12 +1,20 @@
 # Networking
 
-rdr gives registered HTTP services local URLs and can expose selected projects over a private Tailscale network. Local HTTP works without Cloudflare credentials or an active tailnet. The default listener is `127.0.0.1:8080`.
+HTTP services get local URLs through `127.0.0.1:8080` without provider credentials.
+Selected projects can also use private Tailscale HTTPS addresses with Cloudflare
+DNS. Settings live in `$XDG_CONFIG_HOME/rundevrun/networking.json`, or
+`~/.config/rundevrun/networking.json`.
 
-Settings live in `$XDG_CONFIG_HOME/rundevrun/networking.json`, or `~/.config/rundevrun/networking.json` when `XDG_CONFIG_HOME` is unset. Existing `config.toml` TLS routes remain supported and networking commands do not rewrite them. Runtime process state stays in the existing state directory.
+## Guided setup
 
-## Inspect and change settings
+Install the complete [`rundevrun-domain-setup-wizard`](../skills/rundevrun-domain-setup-wizard/SKILL.md)
+directory through your agent host, then explicitly invoke
+`$rundevrun-domain-setup-wizard` or its slash-command equivalent. It checks
+prerequisites, guides Cloudflare onboarding, and previews changes before applying.
+The [`rdr-network-setup`](../skills/rdr-network-setup/SKILL.md) skill covers direct
+setup and recovery. Neither runs automatically.
 
-These commands use the versioned JSON envelope and do not start a proxy or contact providers during inspection or planning:
+## Settings and provider setup
 
 ```sh
 rdr network inspect --json
@@ -15,26 +23,18 @@ rdr network plan --file desired.json --json
 rdr network apply --file plan.json --json
 rdr network setup-plan --json
 rdr network setup-apply --file setup-plan.json --json
-rdr network setup-recover --json
-rdr network cleanup-plan --json
-rdr network cleanup-apply --file cleanup-plan.json --json
 ```
 
-`inspect` returns current settings and the config revision. `check` reports locally known tailnet setup state and does not contact providers. `plan` accepts a version 1 desired settings JSON file, validates it, and returns before/after settings plus affected local route changes and the registry revision. `apply` accepts that reviewed plan JSON, checks both revisions and route changes again, reserves the proposed listener, saves settings, commits routes, then reloads the proxy. If settings or registered routes changed after planning, create a new plan.
+`inspect`, `setup-check`, and settings `plan` read local state without contacting
+providers. Settings `apply` validates the reviewed plan, updates routes, and
+reloads the proxy. Re-plan if settings or registry revisions changed.
 
-`setup-check` reports locally known settings, ownership records, and certificate state without contacting providers. `setup-plan` contacts Cloudflare and Tailscale to check current resources and reports the exact DNS, certificate, and Tailscale Serve actions. It does not apply them. Review its output before the user directs setup. If it returns a certificate terms URL, the user must review and accept those terms. Set `terms_accepted` to true in the plan file only after acceptance. `setup-apply` rechecks the plan and applies it through the shared networking backend, then activates local routes and the proxy. Re-plan after a baseline conflict. `setup-recover` handles an interrupted operation only when it can verify ownership. If it reports ambiguity, inspect the resource and use the explicit `adopt-dns ID`, `adopt-serve`, `resolve-challenge ID`, or `resolve-finalization` operation after review. Resolving ambiguous ACME finalization may consume another certificate issuance against CA rate limits. Use `adopt-existing-dns ID` only after inspecting the exact matching DNS record and getting user confirmation. `credential-store REF` reads a token from stdin and stores it privately. Use `credential-replace REF` for explicit token rotation. Both commands print only the reference name:
+`setup-plan` contacts Cloudflare and Tailscale without changing them. Review its
+DNS, certificate, and Serve actions before `setup-apply`. If issuance requires
+ACME terms acceptance, review the terms and set `terms_accepted` only afterward.
+Provider status alone does not prove browser trust or access from another device.
 
-```sh
-host-secret-tool | rdr network credential-store cloudflare-dns-token
-```
-
-If a proxy listener reservation remains after an interrupted reload, inspect `rdr proxy status` and run `rdr proxy abort` to release it before retrying.
-
-Changing a legacy provided-TLS listener between ports reserved by managed tailnet TLS can require a proxy restart. If proxy reload reports `TLS mode or listener addresses changed; restart proxy`, run `rdr proxy stop`, then `rdr up` or initialize `rdrtop` again. This restarts only the proxy; application processes remain running.
-
-To change the tailnet domain or zone, first create and review `cleanup-plan`. Apply it with `cleanup-apply` only after reviewing the listed owned DNS and Serve removals. Cleanup preserves credentials and certificates. Then update the networking settings with `plan` and `apply`, and run a new setup plan for the new domain. Never remove unrelated DNS records or Tailscale Serve entries.
-
-Example desired settings:
+Example `desired.json`:
 
 ```json
 {
@@ -55,24 +55,36 @@ Example desired settings:
 }
 ```
 
-The short project address needs one selected default HTTP service and one primary main/master worktree when several eligible choices exist. Full service addresses remain available while a choice is unresolved.
+Short project URLs need a default HTTP service and primary main/master worktree.
+When several are eligible, save a selection; full service URLs remain available.
 
-## Tailnet credentials and recovery
+## Credentials and recovery
 
-Use a Cloudflare API token scoped to the selected zone with Zone Read and DNS Edit permissions. Store it through the host's secret-delivery mechanism in rdr's private credentials directory. The directory must be mode 0700 and the token file mode 0600. `credential_ref` contains only the file name. Never paste token values into JSON, shell arguments, logs, or skill files. Cloudflare's browser login is not an ACME credential source.
+Use a zone-scoped Cloudflare token with Zone Read and DNS Edit permissions.
+Deliver it through stdin to `rdr network credential-store cloudflare-dns-token`;
+use `credential-replace` for rotation. Both print only the reference name.
+Credentials use mode 0600 files in a mode 0700 directory. Cloudflare browser login
+is separate. Never put tokens in chat, arguments, plans, JSON, or logs.
 
-A missing or stale credential reference, conflicting DNS record, changed config revision, DNS timeout, certificate renewal failure, or unavailable Tailscale connection must be reported with its recovery action. Do not overwrite a DNS record that another owner changed. Keep local HTTP available if tailnet setup or certificate renewal fails.
+After an interrupted setup, use `rdr network setup-recover --json`. Ambiguous
+resources require inspection and explicit `adopt-dns ID`, `adopt-serve`,
+`resolve-challenge ID`, or `resolve-finalization`. Finalization recovery may
+consume another certificate issuance. `adopt-existing-dns ID` requires review and
+confirmation of the exact matching record. Never overwrite another owner's DNS.
 
-For a guided conversation, use [`rundevrun-domain-setup-wizard`](../skills/rundevrun-domain-setup-wizard/SKILL.md). It supports macOS and Linux, offers rdr installation/update, checks Tailscale and Cloudflare CLI, guides domain onboarding, and asks for a project subdomain and exposure choices. It creates a scoped token through cf without printing its value and calls the same rdr backend for setup.
+Before changing the domain or zone, review `rdr network cleanup-plan --json`,
+then apply with `rdr network cleanup-apply --file cleanup-plan.json --json`.
+Cleanup removes only verified owned DNS and Serve forwarding, retaining credentials
+and certificates. Then apply new settings and generate a fresh setup plan.
 
-Install the complete `skills/rundevrun-domain-setup-wizard` directory, including its references, scripts and `agents` metadata, using your agent host's skill installation workflow. Then explicitly invoke `$rundevrun-domain-setup-wizard`, or `/rundevrun-domain-setup-wizard` on hosts using slash commands. Automatic invocation is disabled in both skill frontmatter and Codex metadata. Creating the skill in this repository does not install it globally.
+## Proxy and existing TLS
 
-The existing [`rdr-network-setup`](../skills/rdr-network-setup/SKILL.md) remains available for direct technical setup/recovery. Both skills require explicit invocation. A successful settings apply alone does not prove a browser-trusted certificate, working DNS, or access from another tailnet device.
+Local routing stays enabled; `--no-proxy` does not remove routes. `proxy stop` is
+temporary: normal `up` or TUI initialization restores it. Tailnet changes do not
+rewrite running environments; restart services to apply changed local launch URLs.
 
-Maintainers can check the wizard's token helper with `node --test scripts/domain-wizard-token.test.mjs`. These tests use isolated fake CLIs and do not contact Cloudflare or change machine networking.
-
-## Ownership and migration
-
-Local routing is always enabled and has no persistent off setting. `rdr proxy stop` is temporary; normal service startup or TUI initialization restores the local proxy. `--no-proxy` does not remove local routes.
-
-Legacy provided and external TLS settings stay in `config.toml`. Networking settings use `networking.json`; neither operation silently migrates or deletes the legacy file. Tailnet entry URLs do not change a running process's environment. Restart a service explicitly if it needs updated canonical launch URL values after a local hostname or port change.
+Existing [provided/external TLS settings](LOCAL_HTTPS.md) remain in `config.toml`.
+If reload requires a restart, run `rdr proxy stop`, then `rdr up` or `rdrtop`.
+Apps keep running. An abandoned listener reservation can be released with
+`rdr proxy abort`. See [contributor notes](TECH_SPEC.md#networking-internals)
+for apply conflicts and partial failures.
