@@ -121,10 +121,10 @@ jobs:
       - name: Install Ubuntu under WSL 2
         shell: pwsh
         run: |
+          wsl --set-default-version 2
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot select WSL 2' }
           wsl --install -d Ubuntu --web-download --no-launch
           if ($LASTEXITCODE -ne 0) { throw 'WSL installation failed' }
-          wsl --set-version Ubuntu 2
-          if ($LASTEXITCODE -ne 0) { throw 'WSL 2 is required' }
       - name: Test inside WSL 2
         shell: pwsh
         env:

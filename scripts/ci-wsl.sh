@@ -22,7 +22,7 @@ export PATH=/usr/local/go/bin:$PATH
 mkdir -p /root/rundevrun-ci
 cp -a "$source_dir/." /root/rundevrun-ci/
 cd /root/rundevrun-ci
-uname -r | grep -i microsoft
+uname -r | grep -i 'microsoft.*WSL2'
 go test -race -count=1 -timeout=10m ./...
 go build -o /tmp/rundevrun ./cmd/rundevrun
 python3 examples/mini/scenario.py /tmp/rundevrun
