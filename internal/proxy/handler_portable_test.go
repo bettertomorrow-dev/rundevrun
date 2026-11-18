@@ -28,11 +28,25 @@ func TestProxyHelper(t *testing.T) {
 	if os.Getenv("RDR_PROXY_HELPER") != "yes" {
 		return
 	}
+	if os.Getenv("RDR_PROXY_SUPERVISOR") == "yes" {
+		exe, err := os.Executable()
+		if err != nil {
+			os.Exit(2)
+		}
+		cmd := exec.Command(exe, "-test.run=^TestProxyHelper$")
+		cmd.Env = append(os.Environ(), "RDR_PROXY_SUPERVISOR=no")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		os.Exit(2)
 	}
-	fmt.Println(ln.Addr().(*net.TCPAddr).Port)
+	fmt.Println(ln.Addr().(*net.TCPAddr).Port, os.Getpid())
 	_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {
 			conn, rw, e := w.(http.Hijacker).Hijack()
@@ -67,13 +81,13 @@ func TestProxyHelper(t *testing.T) {
 
 func fixture(t *testing.T) (*state.Store, routing.Config, string) {
 	t.Helper()
-	start := func() (int, procid.Ref) {
+	start := func() (int, procid.Ref, procid.Ref) {
 		exe, err := os.Executable()
 		if err != nil {
 			t.Fatal(err)
 		}
 		cmd := exec.Command(exe, "-test.run=^TestProxyHelper$")
-		cmd.Env = append(os.Environ(), "RDR_PROXY_HELPER=yes")
+		cmd.Env = append(os.Environ(), "RDR_PROXY_HELPER=yes", "RDR_PROXY_SUPERVISOR=yes")
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
@@ -87,18 +101,28 @@ func fixture(t *testing.T) (*state.Store, routing.Config, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		port, err := strconv.Atoi(strings.TrimSpace(line))
+		var port, pid int
+		_, err = fmt.Sscan(line, &port, &pid)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref, err := procid.Observe(cmd.Process.Pid)
+		child, err := os.FindProcess(pid)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return port, ref
+		t.Cleanup(func() { _ = child.Kill() })
+		ref, err := procid.Observe(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		supervisor, err := procid.Observe(cmd.Process.Pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return port, ref, supervisor
 	}
-	port, ref := start()
-	depPort, depRef := start()
+	port, ref, supervisor := start()
+	depPort, depRef, depSupervisor := start()
 	store, err := state.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -118,11 +142,11 @@ func fixture(t *testing.T) (*state.Store, routing.Config, string) {
 		if err = store.WriteManifest(m.RunID, m); err != nil {
 			t.Fatal(err)
 		}
-		targetRef := ref
+		targetRef, supervisorRef := ref, supervisor
 		if m.RunID == "api-run" {
-			targetRef = depRef
+			targetRef, supervisorRef = depRef, depSupervisor
 		}
-		if err = store.WriteRun(m.RunID, state.RunRecord{Claim: "accepted", Supervisor: targetRef, Child: targetRef, State: "running"}); err != nil {
+		if err = store.WriteRun(m.RunID, state.RunRecord{Claim: "accepted", Supervisor: supervisorRef, Child: targetRef, State: "running"}); err != nil {
 			t.Fatal(err)
 		}
 	}

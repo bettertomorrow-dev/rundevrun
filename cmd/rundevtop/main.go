@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/cli"
 	"github.com/bettertomorrow-dev/rundevrun/internal/monitor"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
@@ -30,6 +31,10 @@ func main() {
 		os.Exit(0)
 	}
 	if len(os.Args) > 1 {
+		if os.Args[1] == "--version" || os.Args[1] == "version" {
+			fmt.Println("rundevtop", cli.Version)
+			return
+		}
 		if os.Args[1] == "--help" || os.Args[1] == "-h" {
 			fmt.Println(tui.Help())
 			return

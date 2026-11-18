@@ -1,5 +1,56 @@
 # Installation
 
+## Release binaries
+
+Release archives contain `rundevrun` and `rundevtop` for macOS and Linux,
+for amd64 and arm64. WSL 2 uses the matching Linux archive. Run commands and
+keep projects inside the WSL distribution. Native Windows and WSL 1 are not
+supported. WSL CI checks service lifecycle and the terminal monitor inside Linux;
+Windows browser forwarding and private Tailscale/Cloudflare configurations still
+need acceptance on the user's machine.
+
+Git is required for worktree discovery. No Go installation is needed for release
+binaries. After the first release is published:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bettertomorrow-dev/rundevrun/main/install.sh | bash
+```
+
+The installer checks SHA-256 checksums and runs version/help checks on both
+binaries before replacing installed files. It defaults to
+`~/.local/opt/rundevrun` and creates links in `~/.local/bin`. Existing commands
+from other installations cause an error rather than being overwritten. It does
+not edit shell startup files. Add `~/.local/bin` to PATH when needed.
+
+To select a version or a different installation directory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bettertomorrow-dev/rundevrun/main/install.sh -o /tmp/install-rundevrun.sh
+RUNDEVRUN_VERSION=v0.1.0 bash /tmp/install-rundevrun.sh
+RUNDEVRUN_INSTALL_DIR="$HOME/tools/rundevrun" bash /tmp/install-rundevrun.sh
+```
+
+A custom directory receives both binaries directly, without creating PATH links.
+Rerun the installer to update. Previous binaries are saved as
+`rundevrun.previous` and `rundevtop.previous`. Restore the CLI with
+`./scripts/rdr-local rollback` from a checkout, using `RDR_INSTALL_DIR` for a
+custom directory, or reinstall a specific release. Neither operation removes
+runtime state or registrations. Supervisors retain their running code until you
+stop and start affected services with the same selectors using `rundevrun down`
+and `rundevrun up`.
+
+On macOS, once Homebrew publication is configured:
+
+```sh
+brew install --cask bettertomorrow-dev/tap/rundevrun
+brew upgrade --cask bettertomorrow-dev/tap/rundevrun
+```
+
+Use one installation method per machine to avoid competing commands on PATH.
+Homebrew manages its own installation location and upgrades.
+
+## Build from source
+
 Requires Go 1.27 or newer and Git. From the repository root:
 
 ```sh
