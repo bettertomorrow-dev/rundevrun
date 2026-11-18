@@ -130,8 +130,10 @@ jobs:
         env:
           GO_VERSION: ${{ steps.go.outputs.go-version }}
         run: |
-          $source = (wsl -d Ubuntu -u root -- wslpath -u $env:GITHUB_WORKSPACE).Trim()
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot locate checkout in WSL' }
+          $workspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          $source = wsl -d Ubuntu -u root -- wslpath -u $workspace
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) { throw 'Cannot locate checkout in WSL' }
+          $source = $source.Trim()
           wsl -d Ubuntu -u root -- bash "$source/scripts/ci-wsl.sh" "$source" $env:GO_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'WSL acceptance failed' }
 
