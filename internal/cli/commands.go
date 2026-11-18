@@ -1617,7 +1617,7 @@ func graphInstanceInfo(ctx context.Context, store *state.Store, result runner.Re
 					local, reported = url, ""
 				}
 			}
-			e.upURLs[result.InstanceID] = upURLs{local: local, domain: view.TailnetURL, reported: reported}
+			e.upURLs[result.InstanceID] = []string{local, view.TailnetURL, view.LocalAliasURL, view.TailnetAliasURL, reported}
 		}
 	}
 	worktree, ok := findWorktree(project, instance.WorktreeID)

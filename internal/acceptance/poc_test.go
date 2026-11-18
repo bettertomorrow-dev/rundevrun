@@ -745,10 +745,10 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 	if err != nil {
 		t.Fatalf("rdr up api: %v %s", err, out)
 	}
-	for _, want := range []string{"● api", "LOCALHOST", "CONNECTED DOMAIN", wantOwned, "https://api-project-launch.dev.example.com:443/s/session/?x=1#frag"} {
-		if !strings.Contains(string(out), want) {
-			t.Fatalf("rdr up api output missing %q: %s", want, out)
-		}
+	const connectedURL = "https://api-project-launch.dev.example.com:443/s/session/?x=1#frag"
+	wantTable := "  SERVICE  URL\n● api      " + wantOwned + "\n           " + connectedURL + "\n"
+	if !strings.HasPrefix(string(out), wantTable) {
+		t.Fatalf("rdr up api output = %q, want prefix %q", out, wantTable)
 	}
 	if strings.Contains(string(out), "\x1b[") {
 		t.Fatalf("rdr up api output uses color when piped: %q", out)

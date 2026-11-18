@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -47,11 +48,7 @@ type envelope struct {
 	Credentials       *shareCredentials    `json:"credentials,omitempty"`
 	Publications      []publication.Status `json:"publications,omitempty"`
 	PublicationErrors []commandError       `json:"publication_errors,omitempty"`
-	upURLs            map[string]upURLs
-}
-
-type upURLs struct {
-	local, domain, reported string
+	upURLs            map[string][]string
 }
 
 type shareCredentials struct {
@@ -75,7 +72,7 @@ func result(command string, opts options) envelope {
 	e := envelope{Version: 1, Command: command, Scope: scope{opts.project, opts.worktree},
 		Status: "ok", DryRun: opts.dryRun, Results: []any{}, Errors: []commandError{}}
 	if command == "up" && !opts.json && !opts.dryRun {
-		e.upURLs = make(map[string]upURLs)
+		e.upURLs = make(map[string][]string)
 	}
 	return e
 }
@@ -192,30 +189,38 @@ func writeUpTable(out io.Writer, e envelope) error {
 	}
 	type row struct {
 		service, symbol string
-		urls            upURLs
+		urls            []string
 		restart         bool
 	}
 	rows := make([]row, 0, len(e.Results))
-	serviceWidth, localWidth := len("SERVICE"), len("LOCALHOST")
+	serviceWidth := len("SERVICE")
 	for _, raw := range e.Results {
 		item, _ := raw.(map[string]any)
 		id, _ := item["instance_id"].(string)
 		status, _ := item["status"].(string)
 		restart, _ := item["restart_required"].(bool)
-		urls := e.upURLs[id]
-		urls.local, urls.domain, urls.reported = clean(urls.local), clean(urls.domain), clean(urls.reported)
+		var urls []string
+		for _, address := range e.upURLs[id] {
+			address = clean(address)
+			if address != "" && !slices.Contains(urls, address) {
+				urls = append(urls, address)
+			}
+		}
 		service := clean(serviceName(id))
 		serviceWidth = max(serviceWidth, utf8.RuneCountInString(service))
-		localWidth = max(localWidth, utf8.RuneCountInString(urls.local))
 		rows = append(rows, row{service, upSymbol(status, color), urls, restart})
 	}
 	var table strings.Builder
-	fmt.Fprintf(&table, "  %-*s  %-*s  CONNECTED DOMAIN\n", serviceWidth, "SERVICE", localWidth, "LOCALHOST")
+	fmt.Fprintf(&table, "  %-*s  URL\n", serviceWidth, "SERVICE")
+	urlIndent := strings.Repeat(" ", serviceWidth+4)
 	for _, row := range rows {
-		line := fmt.Sprintf("%s %-*s  %-*s  %s", row.symbol, serviceWidth, row.service, localWidth, row.urls.local, row.urls.domain)
-		table.WriteString(strings.TrimRight(line, " ") + "\n")
-		if row.urls.reported != "" {
-			fmt.Fprintf(&table, "  App URL  %s\n", row.urls.reported)
+		if len(row.urls) == 0 {
+			fmt.Fprintf(&table, "%s %s\n", row.symbol, row.service)
+		} else {
+			fmt.Fprintf(&table, "%s %-*s  %s\n", row.symbol, serviceWidth, row.service, row.urls[0])
+			for _, address := range row.urls[1:] {
+				fmt.Fprintln(&table, urlIndent+address)
+			}
 		}
 		if row.restart {
 			fmt.Fprintf(&table, "  Restart required. Run rdr restart %s to apply changes.\n", row.service)
