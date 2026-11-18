@@ -20,8 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -31,6 +29,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/networking"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
+	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
 
@@ -38,22 +37,31 @@ func TestActivationTargetHelper(t *testing.T) {
 	if os.Getenv("RDR_ACTIVATION_TARGET") != "1" {
 		return
 	}
+	if os.Getenv("RDR_ACTIVATION_SUPERVISOR") == "1" {
+		exe, err := os.Executable()
+		if err != nil {
+			os.Exit(2)
+		}
+		cmd := exec.Command(exe, "-test.run=^TestActivationTargetHelper$")
+		cmd.Env = append(os.Environ(), "RDR_ACTIVATION_SUPERVISOR=0")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		os.Exit(2)
 	}
-	fmt.Println(listener.Addr().(*net.TCPAddr).Port)
+	fmt.Println(listener.Addr().(*net.TCPAddr).Port, os.Getpid())
 	_ = http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "owned activation target") }))
 	os.Exit(0)
 }
 
 func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
 
-	tcp, err := net.Listen("tcp", "127.0.0.1:8443")
-	if err != nil {
-		t.Skipf("managed test port unavailable: %v", err)
-	}
-	tcp.Close()
 	local, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +90,7 @@ func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(exe, "-test.run=^TestActivationTargetHelper$")
-	cmd.Env = append(os.Environ(), "RDR_ACTIVATION_TARGET=1")
+	cmd.Env = append(os.Environ(), "RDR_ACTIVATION_TARGET=1", "RDR_ACTIVATION_SUPERVISOR=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -96,11 +104,21 @@ func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port, err := strconv.Atoi(strings.TrimSpace(line))
+	var port, pid int
+	_, err = fmt.Sscan(line, &port, &pid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := procid.Observe(cmd.Process.Pid)
+	child, err := os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.Kill()
+	ref, err := procid.Observe(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor, err := procid.Observe(cmd.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,9 +136,17 @@ func TestActivationEnablesRealManagedHTTPS(t *testing.T) {
 	if err = store.WriteManifest(instance.RunID, state.Manifest{RunID: instance.RunID, InstanceID: id, Launch: state.LaunchContract{Protocol: "http", Port: port}}); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.WriteRun(instance.RunID, state.RunRecord{Claim: "accepted", Supervisor: ref, Child: ref, State: "running"}); err != nil {
+	if err = store.WriteRun(instance.RunID, state.RunRecord{Claim: "accepted", Supervisor: supervisor, Child: ref, State: "running"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := runner.VerifyProxyTarget(store, "p", id, instance.RunID); err != nil {
+		t.Fatalf("activation target ownership: %v", err)
+	}
+	tcp, err := net.Listen("tcp", "127.0.0.1:8443")
+	if err != nil {
+		t.Skipf("managed test port unavailable: %v", err)
+	}
+	tcp.Close()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)

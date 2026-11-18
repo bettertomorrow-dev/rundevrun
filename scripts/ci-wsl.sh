@@ -5,7 +5,7 @@ source_dir=$1
 go_version=${2#go}
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git gcc python3
+apt-get install -y -qq ca-certificates curl git build-essential python3
 curl -fsSL "https://go.dev/dl/go${go_version}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
 curl -fsSL 'https://go.dev/dl/?mode=json&include=all' -o /tmp/go-releases.json
 python3 - "$go_version" <<'PYTHON'
