@@ -3,7 +3,7 @@
 `rdrtop` is a separate terminal view of services managed by rundevrun. Closing
 it leaves services running.
 
-The interface uses the same stack as TlgMe: Bubble Tea for terminal events and
+The interface uses Bubble Tea for terminal events and
 asynchronous commands, Bubbles for the scrolling viewport, and Lip Gloss for
 styling. It runs in the alternate screen and restores the terminal on exit.
 
@@ -37,8 +37,8 @@ No additional daemon is needed. Displayed ports are allocated service ports;
 readiness is shown separately in the service state.
 
 An application can print `app: url=https://example.test/path/` on its own line
-to announce the URL to display and open with `o`. For example, twikko prints
-`twikko: url=http://127.0.0.1:20002/s/example/`. The latest valid HTTP or HTTPS
+to announce the URL to display and open with `o`. For example,
+`app: url=http://127.0.0.1:20002/s/example/`. The latest valid HTTP or HTTPS
 announcement in the current run's retained logs takes precedence over the
 generated service URL. Without an announcement, the generated URL is used.
 URLs containing credentials are ignored. Announcements from previous runs are

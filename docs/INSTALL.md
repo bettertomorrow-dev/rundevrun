@@ -1,9 +1,9 @@
 # Local build and use
 
 `rundevrun` is an intermediate CLI, not a release. Build it from a checkout
-with Go 1.27 or newer and Git installed. The current source was built with Go
-1.27.4. Use `rdr version --json` for the product and public API versions. Record the
-checkout revision and `go version` alongside a local build.
+with Go 1.27 or newer and Git installed. Use `rdr version --json` for the product
+and public API versions. Record the checkout revision and `go version` alongside
+a local build.
 
 ## Build and install
 
@@ -28,11 +28,6 @@ install -m 0755 /tmp/rdr "$HOME/.local/opt/rundevrun/rdr"
 Use that absolute path in commands, or choose another private user-owned install
 directory. `version --json` returns `results[0].api_version`, currently `1`, for project
 wrappers to check compatibility; `--help` lists the available commands.
-
-On this Linux machine, the verified local binary is installed at
-`/home/alex/.local/bin/rdr`, already on PATH. It reports version `0.1.0-dev`
-and public API 1. Its source revision and acceptance evidence are recorded in
-[ACCEPTANCE.md](ACCEPTANCE.md). The private install above is an alternative.
 
 ## First project
 
@@ -98,11 +93,6 @@ password; it does not open the URL automatically. Quick Tunnels do not support
 SSE. For local HTTPS setup and external acceptance limits, read
 [LOCAL_HTTPS.md](LOCAL_HTTPS.md) and [ACCEPTANCE.md](ACCEPTANCE.md).
 
-## Current limits
+## Verification
 
-Linux test suites and public CLI scenarios cover lifecycle, routing, live
-sharing and snapshots. Real MillDrum and twikko ran simultaneously with isolated
-data. Real Cloudflare HTTPS acceptance passed. Cross-builds exist for Darwin
-arm64 and amd64, but runtime behavior on macOS remains unaccepted because no Mac
-is available. The user's local HTTPS ingress also remains open. See the exact
-scope and reproducible checks in [acceptance evidence](ACCEPTANCE.md).
+See [verification and known limits](ACCEPTANCE.md) for reproducible checks.

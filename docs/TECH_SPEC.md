@@ -1,19 +1,14 @@
 # rundevrun technical contracts, schema 1
 
-Implementation baseline: PRD 0.4, runner initial commit `ef017bc`.
-MillDrum inspected at `1184e35aba0a8c09699bff66439d00ba269b8209`.
-This document fixes contracts before builders start. Changes need Sol integration
-before dependent tasks resume. A release requires all stages of IMPLEMENTATION_PLAN.
+Contributor reference for process ownership, configuration, and CLI behavior.
+See [networking contracts](NETWORKING_CONTRACT.md) for managed local and tailnet
+routing. Use `rdr --help` for the current command grammar.
 
 ## Toolchain and boundaries
 
-Go 1.27, module `github.com/bettertomorrow-dev/rundevrun`, binary `cmd/rdr`.
-Development toolchain on this host: Go 1.27.4 in
-`/home/alex/.cache/rundevrun-toolchain/go/bin`. Use PATH explicitly for checks.
-No machine path is compiled into the binary. Linux and macOS are supported.
-TOML decoding may use `github.com/pelletier/go-toml/v2`; process inspection may use
-`golang.org/x/sys/unix`. Pin versions when first used. All other work starts with
-the standard library. No dependency on any MillDrum package.
+Go 1.27 or newer, module `github.com/bettertomorrow-dev/rundevrun`, binary `cmd/rdr`.
+Process inspection supports Linux and macOS. Dependencies are pinned in `go.mod`.
+Application data, authentication, and migrations belong to each project.
 
 ## Identity, discovery and selectors
 
@@ -400,7 +395,7 @@ actual state. Publications stay closed after switch, with no automatic reopen.
 
 ## CLI result contract
 
-Public command grammar follows the PRD examples. --json works before/after
+Public command grammar is listed by `rdr --help`. --json works before/after
 selectors. No prompts. No args prints help. Global flags --project, --worktree,
 --json, --dry-run; --all and --all-services have distinct scopes. logs --follow
 streams human log text; --json --follow is rejected to retain one-document stdout.

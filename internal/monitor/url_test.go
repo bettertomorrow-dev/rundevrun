@@ -39,9 +39,9 @@ func TestReadUsesApplicationReportedURL(t *testing.T) {
 	}
 	path := filepath.Join(store.Root, "runs", "current", "application.log")
 	for _, tc := range []struct{ name, previous, current, want string }{
-		{"twikko", "", "twikko: url=" + base + "/s/example/\n", base + "/s/example/"},
-		{"rotated", "twikko: url=" + base + "/s/example/\n", "request https://unrelated.example/\n", base + "/s/example/"},
-		{"latest", "twikko: url=" + base + "/s/old/\n", "another-app: url=https://example.test/new/?view=cards\n", "https://example.test/new/?view=cards"},
+		{"editor", "", "editor: url=" + base + "/s/example/\n", base + "/s/example/"},
+		{"rotated", "editor: url=" + base + "/s/example/\n", "request https://unrelated.example/\n", base + "/s/example/"},
+		{"latest", "editor: url=" + base + "/s/old/\n", "another-app: url=https://example.test/new/?view=cards\n", "https://example.test/new/?view=cards"},
 		{"unsafe", "", "app: url=javascript:alert(1)\napp: url=https://user:secret@example.test/\n", base},
 		{"ordinary URL", "", "see https://example.test/docs\n", base},
 	} {
