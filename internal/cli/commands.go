@@ -105,6 +105,9 @@ type instanceInfo struct {
 	URL               string            `json:"url,omitempty"`
 	RouteChanged      bool              `json:"route_changed,omitempty"`
 	LogPaths          map[string]string `json:"log_paths,omitempty"`
+	projectName       string
+	worktreeLabel     string
+	displayURLs       []string
 }
 
 type preparationInfo struct {
@@ -281,9 +284,20 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			e.fail("USAGE", "discovery already reads without changing state; omit --dry-run")
 			return
 		}
-		listConfiguration(store, opts, e)
+		listConfiguration(ctx, store, opts, e)
 	default:
 		e.fail("USAGE", "unknown or not yet implemented command: "+e.Command, "see rdr --help")
+	}
+	if e.text && (opts.dryRun || e.Command == "bind" || e.Command == "switch" || e.Command == "alias" || e.Command == "network plan") {
+		if reg, err := store.Read(); err == nil {
+			for id := range reg.Projects {
+				if p, err := reg.Project(id); err == nil {
+					for _, w := range p.Worktrees {
+						e.rememberWorktree(id, p.Name, w.ID, w.Branch, w.Root)
+					}
+				}
+			}
+		}
 	}
 	if err := ctx.Err(); err != nil && len(e.Errors) == 0 {
 		e.fail("CANCELLED", err.Error())
@@ -407,6 +421,17 @@ func switchCommand(ctx context.Context, store *state.Store, services []string, o
 		return
 	}
 	r.Routing = &cfg
+	if e.text {
+		for _, mapping := range mappings {
+			from, to := mapping.From, mapping.To
+			e.rememberWorktree(from.Project.ID, from.Project.Name, from.Worktree.ID, from.Worktree.Branch, from.Worktree.Root)
+			e.rememberWorktree(to.Project.ID, to.Project.Name, to.Worktree.ID, to.Worktree.Branch, to.Worktree.Root)
+			e.switchMappings = append(e.switchMappings, runner.SwitchPair{
+				From: from.Project.ID + "/" + from.Worktree.ID + "/" + from.Service,
+				To:   to.Project.ID + "/" + to.Worktree.ID + "/" + to.Service,
+			})
+		}
+	}
 	if opts.dryRun {
 		plan, err := r.PlanSwitch(ctx, mappings)
 		if err != nil {
@@ -1165,6 +1190,9 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 	}
 	if opts.dryRun {
 		if candidate != nil {
+			for _, sel := range selections {
+				e.rememberWorktree(sel.Project.ID, sel.Project.Name, sel.Worktree.ID, sel.Worktree.Branch, sel.Worktree.Root)
+			}
 			r := runner.New(store, executablePath())
 			cfg, _, err := machineRouting()
 			if err != nil {
@@ -1486,24 +1514,41 @@ func collectLifecycleURLs(ctx context.Context, store *state.Store, results []run
 		if !ok || instance.RunID == "" || (item.RunID != "" && instance.RunID != item.RunID) {
 			continue
 		}
-		manifest, err := store.ReadManifest(instance.RunID)
-		if err != nil || manifest.InstanceID != instance.ID {
-			continue
-		}
-		view := monitor.Service{ProjectID: projectID, RunID: instance.RunID}
-		_ = view.LoadURLs(ctx, store, instance, manifest)
-		local, reported := view.LocalURL, view.ReportedURL
-		if local == "" {
-			local = instance.RouteURL
-			if local == "" {
-				local = view.DirectURL
-			}
-			if url, ok := runner.TransferOwnedReportedURL(store, projectID, instance, local, reported); ok {
-				local, reported = url, ""
-			}
-		}
-		urls[item.InstanceID] = []string{local, view.TailnetURL, view.LocalAliasURL, view.TailnetAliasURL, reported}
+		urls[item.InstanceID] = serviceDisplayURLs(ctx, store, projectID, instance)
 	}
+}
+
+func (i *instanceInfo) setDisplayURLs(ctx context.Context, store *state.Store, instance state.Instance) {
+	if i.StateUnknown || !liveState(i.State) {
+		return
+	}
+	i.displayURLs = serviceDisplayURLs(ctx, store, i.ProjectID, instance)
+	if len(i.displayURLs) == 0 && i.URL != "" {
+		i.displayURLs = []string{i.URL}
+	}
+}
+
+func serviceDisplayURLs(ctx context.Context, store *state.Store, projectID string, instance state.Instance) []string {
+	if instance.RunID == "" {
+		return nil
+	}
+	manifest, err := store.ReadManifest(instance.RunID)
+	if err != nil || manifest.InstanceID != instance.ID {
+		return nil
+	}
+	view := monitor.Service{ProjectID: projectID, RunID: instance.RunID}
+	_ = view.LoadURLs(ctx, store, instance, manifest)
+	local, reported := view.LocalURL, view.ReportedURL
+	if local == "" {
+		local = instance.RouteURL
+		if local == "" {
+			local = view.DirectURL
+		}
+		if url, ok := runner.TransferOwnedReportedURL(store, projectID, instance, local, reported); ok {
+			local, reported = url, ""
+		}
+	}
+	return []string{local, view.TailnetURL, view.LocalAliasURL, view.TailnetAliasURL, reported}
 }
 
 func ensureProxyAfterStart(ctx context.Context, store *state.Store, path string, e *envelope) {
@@ -1943,7 +1988,7 @@ func selectProject(r state.Registry, selector string, e *envelope) *state.Projec
 	return &matches[0]
 }
 
-func listConfiguration(store *state.Store, opts options, e *envelope) {
+func listConfiguration(ctx context.Context, store *state.Store, opts options, e *envelope) {
 	start := "."
 	if opts.project != "" {
 		r, err := store.Read()
@@ -2029,6 +2074,12 @@ func listConfiguration(store *state.Store, opts options, e *envelope) {
 				applyRouteView(store, instance, &info)
 			}
 			addDependencyDetails(store, viewProject, state.Worktree{ID: w.ID, Root: w.Root}, &service, instance, registered, &info, e)
+			if e.text {
+				info.projectName, info.worktreeLabel = p.Name, worktreeName(w.Branch, w.Root)
+				if e.Command == "services" {
+					info.setDisplayURLs(ctx, store, instance)
+				}
+			}
 			e.Results = append(e.Results, info)
 		}
 	}
@@ -2154,11 +2205,13 @@ func listRegistry(ctx context.Context, store *state.Store, opts options, e *enve
 			}
 			observed, unknown := inspectState(store, i, e)
 			info := instanceInfo{ID: i.ID, ProjectID: p.ID, WorktreeID: i.WorktreeID, Service: i.Service, State: observed, StateUnknown: unknown, RunID: i.RunID}
+			info.projectName, info.worktreeLabel = p.Name, i.WorktreeID
 			info.Preparation = preparationView(store, i)
 			info.Hook = hookView(store, i.Hook)
 			addRunDetails(store, i, &info)
 			i.State = observed
 			if worktree, ok := findWorktree(p, i.WorktreeID); ok {
+				info.worktreeLabel = worktreeName(worktree.Branch, worktree.Root)
 				cfg, configErr := config.Load(filepath.Join(worktree.Root, "dev.toml"))
 				if configErr != nil {
 					info.ConfigError = configErr.Error()
@@ -2180,6 +2233,9 @@ func listRegistry(ctx context.Context, store *state.Store, opts options, e *enve
 				addDependencyDetails(store, p, state.Worktree{ID: i.WorktreeID}, nil, i, true, &info, e)
 			}
 			applyRouteView(store, i, &info)
+			if e.text {
+				info.setDisplayURLs(ctx, store, i)
+			}
 			e.Results = append(e.Results, info)
 		}
 	}

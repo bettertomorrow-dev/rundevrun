@@ -6,11 +6,48 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/networking"
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 )
+
+func TestTextChangeSummaries(t *testing.T) {
+	const from, to = "p/w1/api", "p/w2/api"
+	for _, tc := range []struct {
+		command string
+		plan    any
+		results []any
+		want    string
+	}{
+		{"switch", runner.SwitchPlan{
+			Mappings: []runner.SwitchPair{{From: from, To: to}},
+			Steps:    []runner.SwitchStep{{Action: "start", InstanceID: to}},
+		}, nil, "api (demo/main) → api (demo/feature)\n  Start  api (demo/feature)"},
+		{"bind", nil, []any{runner.BindResult{ConsumerID: from, TargetID: to, RestartRequired: true}},
+			"Bind api (demo/main) to api (demo/feature)\n  Restart required."},
+		{"alias", nil, []any{runner.HostnameAliasPlan{InstanceID: from, NewURL: "http://api.localhost"}},
+			"api (demo/main)  http://api.localhost"},
+		{"network setup-plan", networking.SetupPlan{Domain: "dev.example.com", DNSAction: "create"}, nil,
+			"Connected domain  dev.example.com\nDNS  create"},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			e := result(tc.command, options{dryRun: tc.command == "switch"})
+			e.rememberWorktree("p", "demo", "w1", "main", "")
+			e.rememberWorktree("p", "demo", "w2", "feature", "")
+			e.Plan = tc.plan
+			if tc.results != nil {
+				e.Results = tc.results
+			}
+			var out, errOut bytes.Buffer
+			if code := writeResult(&out, &errOut, e, false); code != 0 || !strings.Contains(out.String(), tc.want) {
+				t.Fatalf("exit=%d stdout=%q stderr=%q, want %q", code, out.String(), errOut.String(), tc.want)
+			}
+		})
+	}
+}
 
 func TestJSONResultIsOneDocumentWithArrays(t *testing.T) {
 	e := result("services", options{json: true})

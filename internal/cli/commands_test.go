@@ -942,6 +942,24 @@ func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	if e, code = invoke(t, "up", "worker", "--dry-run", "--no-proxy", "--json"); code != 0 || e.Plan == nil {
 		t.Fatalf("no-proxy dry run: %d %+v", code, e)
 	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"up", "worker", "--dry-run"}, "Prepare → Build → Start → Wait for readiness"},
+		{[]string{"down", "worker", "--dry-run"}, "Keep stopped"},
+		{[]string{"restart", "worker", "--dry-run"}, "Plan for rdr restart"},
+		{[]string{"config", "check"}, "Configuration valid"},
+		{[]string{"projects"}, "PROJECT"},
+		{[]string{"worktrees"}, "WORKTREE"},
+		{[]string{"network", "check"}, "Tailscale Serve"},
+		{[]string{"network", "plan"}, "Network plan"},
+	} {
+		var out, errOut bytes.Buffer
+		if code := Run(context.Background(), tc.args, &out, &errOut); code != 0 || !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("rdr %v: exit=%d stdout=%q stderr=%q, want %q", tc.args, code, out.String(), errOut.String(), tc.want)
+		}
+	}
 	if _, code = invoke(t, "up", "--dry-run", "--json"); code != 2 {
 		t.Fatalf("missing service exit=%d", code)
 	}

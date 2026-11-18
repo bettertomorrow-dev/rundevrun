@@ -753,6 +753,20 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 		return string(out)
 	}
 	const connectedURL = "https://api-project-launch.dev.example.com:443/s/session/?x=1#frag"
+	for _, command := range []string{"services", "status", "ls"} {
+		got := textOutput(command)
+		for _, want := range []string{"SERVICE", "WORKTREE", "STATE", "URL", "● api", "ready", wantOwned + "\n", connectedURL + "\n"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("rdr %s output missing %q: %s", command, want, got)
+			}
+		}
+	}
+	if got := textOutput("proxy", "status"); !strings.Contains(got, fmt.Sprintf("HTTP  127.0.0.1:%d", oldPort)) {
+		t.Fatalf("rdr proxy status output missing listener: %s", got)
+	}
+	if got := textOutput("network", "inspect"); !strings.Contains(got, "Connected domain  dev.example.com") {
+		t.Fatalf("rdr network inspect output missing domain: %s", got)
+	}
 	for _, tc := range []struct{ command, symbol string }{{"up", "●"}, {"restart", "✓"}} {
 		wantTable := "  SERVICE  URL\n" + tc.symbol + " api      " + wantOwned + "\n           " + connectedURL + "\n"
 		if got := textOutput(tc.command, "api"); !strings.HasPrefix(got, wantTable) {
