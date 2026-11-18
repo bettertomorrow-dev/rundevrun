@@ -17,12 +17,12 @@ setup and recovery. Neither runs automatically.
 ## Settings and provider setup
 
 ```sh
-rdr network inspect --json
-rdr network setup-check --json
-rdr network plan --file desired.json --json
-rdr network apply --file plan.json --json
-rdr network setup-plan --json
-rdr network setup-apply --file setup-plan.json --json
+rundevrun network inspect --json
+rundevrun network setup-check --json
+rundevrun network plan --file desired.json --json
+rundevrun network apply --file plan.json --json
+rundevrun network setup-plan --json
+rundevrun network setup-apply --file setup-plan.json --json
 ```
 
 `inspect`, `setup-check`, and settings `plan` read local state without contacting
@@ -61,19 +61,19 @@ When several are eligible, save a selection; full service URLs remain available.
 ## Credentials and recovery
 
 Use a zone-scoped Cloudflare token with Zone Read and DNS Edit permissions.
-Deliver it through stdin to `rdr network credential-store cloudflare-dns-token`;
+Deliver it through stdin to `rundevrun network credential-store cloudflare-dns-token`;
 use `credential-replace` for rotation. Both print only the reference name.
 Credentials use mode 0600 files in a mode 0700 directory. Cloudflare browser login
 is separate. Never put tokens in chat, arguments, plans, JSON, or logs.
 
-After an interrupted setup, use `rdr network setup-recover --json`. Ambiguous
+After an interrupted setup, use `rundevrun network setup-recover --json`. Ambiguous
 resources require inspection and explicit `adopt-dns ID`, `adopt-serve`,
 `resolve-challenge ID`, or `resolve-finalization`. Finalization recovery may
 consume another certificate issuance. `adopt-existing-dns ID` requires review and
 confirmation of the exact matching record. Never overwrite another owner's DNS.
 
-Before changing the domain or zone, review `rdr network cleanup-plan --json`,
-then apply with `rdr network cleanup-apply --file cleanup-plan.json --json`.
+Before changing the domain or zone, review `rundevrun network cleanup-plan --json`,
+then apply with `rundevrun network cleanup-apply --file cleanup-plan.json --json`.
 Cleanup removes only verified owned DNS and Serve forwarding, retaining credentials
 and certificates. Then apply new settings and generate a fresh setup plan.
 
@@ -84,7 +84,7 @@ temporary: normal `up` or TUI initialization restores it. Tailnet changes do not
 rewrite running environments; restart services to apply changed local launch URLs.
 
 Existing [provided/external TLS settings](LOCAL_HTTPS.md) remain in `config.toml`.
-If reload requires a restart, run `rdr proxy stop`, then `rdr up` or `rdrtop`.
+If reload requires a restart, run `rundevrun proxy stop`, then `rundevrun up` or `rundevtop`.
 Apps keep running. An abandoned listener reservation can be released with
-`rdr proxy abort`. See [contributor notes](TECH_SPEC.md#networking-internals)
+`rundevrun proxy abort`. See [contributor notes](TECH_SPEC.md#networking-internals)
 for apply conflicts and partial failures.

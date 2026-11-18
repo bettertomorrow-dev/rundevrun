@@ -20,7 +20,7 @@ const args = process.argv.slice(2);
 const program = require('node:path').basename(process.argv[1]);
 fs.appendFileSync(process.env.CALL_LOG, JSON.stringify({program,args})+'\\n');
 const output = x => console.log(JSON.stringify(x));
-if(program === 'rdr') {
+if(program === 'rundevrun') {
  if(args[1] === 'inspect') output({status:'ok',results:[{config:{version:1}}]});
  else if(args[1] === 'credential-store') {
   const input = fs.readFileSync(0,'utf8');
@@ -43,10 +43,10 @@ else if(args[2] === 'create') {
 }
 else process.exit(8);
 `;
-  const cf = path.join(root, 'cf'), rdr = path.join(root, 'rdr');
-  for (const file of [cf, rdr]) writeFileSync(file, fake, { mode: 0o700 });
+  const cf = path.join(root, 'cf'), rundevrun = path.join(root, 'rundevrun');
+  for (const file of [cf, rundevrun]) writeFileSync(file, fake, { mode: 0o700 });
   const env = { ...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), CALL_LOG: log, DUMMY_SECRET: secret, ...overrides };
-  const invoke = (...extra) => spawnSync(process.execPath, [helper, '--zone', 'example.test', '--cf', cf, '--rdr', rdr, ...extra], { env, encoding: 'utf8' });
+  const invoke = (...extra) => spawnSync(process.execPath, [helper, '--zone', 'example.test', '--cf', cf, '--rundevrun', rundevrun, ...extra], { env, encoding: 'utf8' });
   const calls = () => readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   return { root, invoke, calls };
 }
@@ -61,7 +61,7 @@ test('default invocation previews the exact zone policy without creating or stor
   assert(!f.calls().some(c => c.args.includes('create') || c.args.includes('credential-store')));
 });
 
-test('apply passes the one-time value only through rdr stdin and prints metadata', t => {
+test('apply passes the one-time value only through rundevrun stdin and prints metadata', t => {
   const f = fixture(t), result = f.invoke('--apply');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, 'stored');

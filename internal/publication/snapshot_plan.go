@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -32,7 +33,7 @@ func (m *Manager) PlanSnapshot(ctx context.Context, selection runner.Selection) 
 	if err != nil {
 		return SnapshotPlan{}, err
 	}
-	cfg, err := config.Load(filepath.Join(selection.Worktree.Root, "dev.toml"))
+	cfg, err := discovery.LoadConfig(selection.Worktree.Root)
 	if err != nil {
 		return SnapshotPlan{}, err
 	}

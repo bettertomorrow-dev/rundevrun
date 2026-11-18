@@ -5,11 +5,11 @@ For managed Cloudflare DNS, certificates, and private Tailscale access, use
 
 Machine settings live in `$XDG_CONFIG_HOME/rundevrun/config.toml`, or
 `~/.config/rundevrun/config.toml`. Keep certificates and private keys outside
-the repository. Project `dev.toml` files must not contain keys.
+the repository. Project `rundevrun.toml` files must not contain keys.
 
 ## Provided certificates
 
-Configure an existing certificate and key readable by the user running rdr:
+Configure an existing certificate and key readable by the user running rundevrun:
 
 ```toml
 version = 1
@@ -28,12 +28,12 @@ key_file = "/absolute/path/privkey.pem"
 Configure DNS separately so route names resolve only to loopback. A wildcard
 certificate must cover names such as `api-main-example.dev.example.com`.
 This example uses HTTPS port 8443. An existing forwarder from port 443 can use
-`external_https_port = 443` in `[routing]`; rdr does not create the forwarding.
+`external_https_port = 443` in `[routing]`; rundevrun does not create the forwarding.
 
 ## Existing TLS proxy
 
 If a trusted local proxy terminates HTTPS, use its public certificate without
-giving rdr its private key:
+giving rundevrun its private key:
 
 ```toml
 version = 1
@@ -56,11 +56,11 @@ Update the public certificate file when the terminating proxy renews it.
 
 ## Apply and verify
 
-Normal `rdr up` starts the required proxy. Inspect it with
-`rdr proxy status --json`. Preview a reload with
-`rdr proxy reload --dry-run --json`, then apply with `rdr proxy reload --json`.
+Normal `rundevrun up` starts the required proxy. Inspect it with
+`rundevrun proxy status --json`. Preview a reload with
+`rundevrun proxy reload --dry-run --json`, then apply with `rundevrun proxy reload --json`.
 Invalid configuration leaves the old configuration active. Listener or TLS mode
-changes require `rdr proxy stop` followed by `rdr up`. Stopping the proxy leaves
+changes require `rundevrun proxy stop` followed by `rundevrun up`. Stopping the proxy leaves
 application processes running.
 
 Verify DNS, browser trust, Secure cookies, WebSocket, and SSE against your own

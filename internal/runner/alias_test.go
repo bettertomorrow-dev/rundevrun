@@ -43,7 +43,7 @@ port='auto'
 [services.worker]
 command='echo worker'
 `
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(content), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 	store, err := state.New(filepath.Join(dir, "state"))
@@ -191,7 +191,7 @@ func TestAliasRejectsInvalidCandidatesWithoutWrites(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation: %v", err)
 	}
-	if err = os.WriteFile(filepath.Join(w.Root, "dev.toml"), []byte("broken = ["), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(w.Root, "rundevrun.toml"), []byte("broken = ["), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err = r.PlanAlias(context.Background(), p, w, "feature")

@@ -183,6 +183,7 @@ func writeDiscovery(b *strings.Builder, e envelope) {
 			for _, item := range e.Results {
 				if info, ok := item.(instanceInfo); ok {
 					fmt.Fprintf(b, "Configuration valid for %s.\n", singleLine(info.worktreeLabel))
+					fmt.Fprintf(b, "Source (%s)  %s\nWorktree  %s\n", singleLine(info.ConfigMode), singleLine(info.ConfigFile), singleLine(info.WorktreeRoot))
 					return
 				}
 			}
@@ -217,7 +218,7 @@ func writeDiscovery(b *strings.Builder, e envelope) {
 		case worktreeInfo:
 			config := "valid"
 			if !v.ConfigValid {
-				config = "missing dev.toml"
+				config = "missing rundevrun.toml"
 			}
 			if v.ConfigError != "" {
 				config = v.ConfigError
@@ -309,7 +310,7 @@ func writeProxy(b *strings.Builder, p *proxyInfoView) {
 func writeTextPlan(b *strings.Builder, e envelope) {
 	switch plan := e.Plan.(type) {
 	case runner.GraphPlan:
-		fmt.Fprintf(b, "Plan for rdr %s\n", singleLine(plan.Action))
+		fmt.Fprintf(b, "Plan for rundevrun %s\n", singleLine(plan.Action))
 		if len(plan.Instances) == 0 {
 			b.WriteString("  No services selected.\n")
 		}
@@ -329,7 +330,7 @@ func writeTextPlan(b *strings.Builder, e envelope) {
 		}
 		writePublicationPlan(b, plan.Publications)
 	case runner.SwitchPlan:
-		b.WriteString("Plan for rdr switch\n")
+		b.WriteString("Plan for rundevrun switch\n")
 		for _, pair := range plan.Mappings {
 			fmt.Fprintf(b, "  %s → %s\n", e.instanceLabel(pair.From), e.instanceLabel(pair.To))
 		}
@@ -338,8 +339,10 @@ func writeTextPlan(b *strings.Builder, e envelope) {
 		}
 		writePublicationPlan(b, plan.Publications)
 	case runner.BindResult, runner.AliasPlan, runner.HostnameAliasPlan:
-		fmt.Fprintf(b, "Plan for rdr %s\n", e.Command)
+		fmt.Fprintf(b, "Plan for rundevrun %s\n", e.Command)
 		writeTextItem(b, e, plan)
+	case externalConfigInfo:
+		fmt.Fprintf(b, "Would import configuration\n%s\n", plan)
 	case networkPlanFile:
 		b.WriteString("Network plan\n")
 		writeTextItem(b, e, networking.Snapshot{Config: plan.Settings.Desired})
@@ -366,7 +369,7 @@ func writeTextPlan(b *strings.Builder, e envelope) {
 		}
 	case map[string]any:
 		if strings.HasPrefix(e.Command, "proxy ") {
-			fmt.Fprintf(b, "Plan for rdr %s\n", e.Command)
+			fmt.Fprintf(b, "Plan for rundevrun %s\n", e.Command)
 			if proxy, ok := plan["proxy"].(*proxyInfoView); ok && proxy != nil {
 				writeProxy(b, proxy)
 			}

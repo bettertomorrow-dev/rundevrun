@@ -5,11 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -127,7 +126,7 @@ func (m *Manager) Plan(ctx context.Context, selection runner.Selection, options 
 		if selection.Worktree == nil {
 			return Plan{}, &runner.Error{Code: "USAGE", Err: errors.New("missing worktree")}
 		}
-		cfg, err := config.Load(filepath.Join(selection.Worktree.Root, "dev.toml"))
+		cfg, err := discovery.LoadConfig(selection.Worktree.Root)
 		if err != nil {
 			return Plan{}, err
 		}

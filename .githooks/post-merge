@@ -1,5 +1,5 @@
 #!/bin/sh
-# Updates the local rdr installation after a merge on main.
+# Updates the local rundevrun installation after a merge on main.
 set -eu
 [ "$(git symbolic-ref --short HEAD)" = main ] || exit 0
-./scripts/rdr-local update --committed || echo "rdr update failed; the installed binary was kept. Retry: ./scripts/rdr-local update --committed" >&2
+./scripts/rdr-local update --committed || echo "rundevrun update failed; the installed binary was kept. Retry: ./scripts/rdr-local update --committed" >&2

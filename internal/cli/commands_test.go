@@ -45,7 +45,7 @@ func TestVersionWithoutRuntime(t *testing.T) {
 		t.Fatalf("version: %d %+v", code, e)
 	}
 	info := e.Results[0].(map[string]any)
-	if info["name"] != "rdr" || info["api_version"] != float64(1) || info["version"] != Version {
+	if info["name"] != "rundevrun" || info["api_version"] != float64(1) || info["version"] != Version {
 		t.Fatalf("version contract: %+v", info)
 	}
 	if _, err := os.Stat(runtime); !errors.Is(err, os.ErrNotExist) {
@@ -99,7 +99,7 @@ func writeProject(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(`version = 1
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(`version = 1
 [project]
 name = "example"
 [services.worker]
@@ -162,7 +162,7 @@ func TestUsageAndVersionErrorsAreJSON(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("RDR_HOME", filepath.Join(root, "state"))
 	t.Chdir(root)
-	if err := os.WriteFile("dev.toml", []byte("version = 2\n"), 0600); err != nil {
+	if err := os.WriteFile("rundevrun.toml", []byte("version = 2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	e, code := invoke(t, "config", "check", "--json")
@@ -730,7 +730,7 @@ HTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serve_forever()
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(fmt.Sprintf(`version = 1
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(fmt.Sprintf(`version = 1
 [project]
 name = "example"
 [services.web]
@@ -751,11 +751,11 @@ dir = "dist"
 		t.Fatalf("register: %d %+v", code, registered)
 	}
 	project := registered.Scope.Project
-	binary := filepath.Join(base, "rdr")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/rdr")
+	binary := filepath.Join(base, "rundevrun")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/rundevrun")
 	build.Dir = repoRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build rdr binary: %v: %s", err, output)
+		t.Fatalf("build rundevrun binary: %v: %s", err, output)
 	}
 	t.Cleanup(func() {
 		_, _ = invokeBinary(t, binary, "down", "web", "--project", project, "--worktree", root)
@@ -948,7 +948,7 @@ func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	}{
 		{[]string{"up", "worker", "--dry-run"}, "Prepare → Build → Start → Wait for readiness"},
 		{[]string{"down", "worker", "--dry-run"}, "Keep stopped"},
-		{[]string{"restart", "worker", "--dry-run"}, "Plan for rdr restart"},
+		{[]string{"restart", "worker", "--dry-run"}, "Plan for rundevrun restart"},
 		{[]string{"config", "check"}, "Configuration valid"},
 		{[]string{"projects"}, "PROJECT"},
 		{[]string{"worktrees"}, "WORKTREE"},
@@ -957,7 +957,7 @@ func TestLifecyclePlanAndSingleServiceGrammar(t *testing.T) {
 	} {
 		var out, errOut bytes.Buffer
 		if code := Run(context.Background(), tc.args, &out, &errOut); code != 0 || !strings.Contains(out.String(), tc.want) {
-			t.Fatalf("rdr %v: exit=%d stdout=%q stderr=%q, want %q", tc.args, code, out.String(), errOut.String(), tc.want)
+			t.Fatalf("rundevrun %v: exit=%d stdout=%q stderr=%q, want %q", tc.args, code, out.String(), errOut.String(), tc.want)
 		}
 	}
 	if _, code = invoke(t, "up", "--dry-run", "--json"); code != 2 {
@@ -977,7 +977,7 @@ func TestDownUsesRegisteredDescriptorWithoutConfig(t *testing.T) {
 	if _, code := invoke(t, "register", ".", "--json"); code != 0 {
 		t.Fatalf("register exit=%d", code)
 	}
-	if err := os.Remove(filepath.Join(root, "dev.toml")); err != nil {
+	if err := os.Remove(filepath.Join(root, "rundevrun.toml")); err != nil {
 		t.Fatal(err)
 	}
 	e, code := invoke(t, "down", "worker", "--json")
@@ -1019,7 +1019,7 @@ func TestBindDryRunUsesSharedValidationWithoutWritingState(t *testing.T) {
 	t.Setenv("RDR_HOME", runtime)
 	writeProject(t, root)
 	t.Chdir(root)
-	if err := os.WriteFile("dev.toml", []byte(`version=1
+	if err := os.WriteFile("rundevrun.toml", []byte(`version=1
 [project]
 name="example"
 [services.api]
@@ -1135,7 +1135,7 @@ func TestStatusKeepsProcessStateWhenConfigIsInvalid(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte("invalid = ["), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte("invalid = ["), 0600); err != nil {
 		t.Fatal(err)
 	}
 	e, code := invoke(t, "status", "--project", "example", "--json")
@@ -1251,7 +1251,7 @@ func writeDependencyProject(t *testing.T, root string) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(`version = 1
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(`version = 1
 [project]
 name = "example"
 [services.api]

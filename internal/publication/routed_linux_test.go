@@ -22,8 +22,8 @@ import (
 
 func TestRestartRoutedDependencyClosesPublication(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	fakeDir := filepath.Join(dir, "bin")
@@ -73,7 +73,7 @@ depends_on = ['api']
 routes = [{ path = '/api/', dependency = 'api', strip_prefix = true }]
 `)
 
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)
@@ -112,7 +112,7 @@ mode = "snapshot"
 build = 'mkdir -p dist; printf %s "$RDR_DEP_API_URL" > dist/index.html'
 dir = "dist"
 `
-	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(snapshotConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(snapshotConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	created, e := m.Share(ctx, selection, Options{Mode: "snapshot"})
@@ -148,7 +148,7 @@ dir = "dist"
 	if len(response.Cookies()) == 0 {
 		t.Fatal("missing route auth cookie")
 	}
-	request, e := http.NewRequest("GET", string(gateway)+"/api/dev.toml", nil)
+	request, e := http.NewRequest("GET", string(gateway)+"/api/rundevrun.toml", nil)
 	if e != nil {
 		t.Fatal(e)
 	}

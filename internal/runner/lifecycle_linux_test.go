@@ -22,8 +22,8 @@ import (
 
 func TestLifecycleProcess(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build binary: %v: %s", err, out)
 	}
@@ -31,7 +31,7 @@ func TestLifecycleProcess(t *testing.T) {
 	if err := os.Mkdir(projectDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(projectDir, "dev.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'sleep 60'\nstart_timeout = '3s'\nstop_timeout = '1s'\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, "rundevrun.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'sleep 60'\nstart_timeout = '3s'\nstop_timeout = '1s'\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(projectDir)
@@ -84,7 +84,7 @@ func TestLifecycleProcess(t *testing.T) {
 	if err != nil || restarted.RunID == first.RunID {
 		t.Fatalf("restart: %+v %v", restarted, err)
 	}
-	if err := os.Remove(filepath.Join(projectDir, "dev.toml")); err != nil {
+	if err := os.Remove(filepath.Join(projectDir, "rundevrun.toml")); err != nil {
 		t.Fatal(err)
 	}
 	record, err := store.ReadRun(restarted.RunID)
@@ -108,8 +108,8 @@ func TestFixedPortRestart(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("binary: %v %s", err, out)
 	}
@@ -118,7 +118,7 @@ func TestFixedPortRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := fmt.Sprintf("version = 1\n[project]\nname = 'demo'\n[services.web]\ncommand = 'python3 -m http.server {port} --bind 127.0.0.1'\nport = %d\nstart_timeout = '5s'\nstop_timeout = '1s'\n", port)
-	if err = os.WriteFile(filepath.Join(projectDir, "dev.toml"), []byte(content), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(projectDir, "rundevrun.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(projectDir)
@@ -149,7 +149,7 @@ func TestFixedPortRestart(t *testing.T) {
 		defer cancel()
 		runner.Stop(ctx, p, w, "web")
 	}()
-	configPath := filepath.Join(projectDir, "dev.toml")
+	configPath := filepath.Join(projectDir, "rundevrun.toml")
 	failing := content + "build = 'exit 17'\n"
 	if err := os.WriteFile(configPath, []byte(failing), 0600); err != nil {
 		t.Fatal(err)

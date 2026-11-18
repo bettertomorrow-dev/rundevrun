@@ -1,10 +1,10 @@
 # Configuration and contributor reference
 
-Use `rdr --help` for command syntax and the [mini project](../examples/mini/dev.toml)
+Use `rundevrun --help` for command syntax and the [mini project](../examples/mini/rundevrun.toml)
 for a runnable configuration. Application data, migrations, and authentication
 belong to each project.
 
-## dev.toml schema
+## rundevrun.toml schema
 
 Unknown fields at every depth and unknown versions are errors with filename and
 field path. Service/project names match `[a-z][a-z0-9_-]*`. Empty services fail.
@@ -67,7 +67,7 @@ cwd must remain inside the canonical worktree after symlink resolution. Snapshot
 dir resolves relative to cwd and must remain there after symlink resolution.
 Build outputs belong in run_dir; project builds that write source directories
 must publish by copying into a fresh snapshot directory, never serve source dist.
-Configuration digest is SHA-256 of raw dev.toml bytes; live digest is immutable.
+Configuration digest is SHA-256 of raw rundevrun.toml bytes; live digest is immutable.
 
 ## Commands and environment
 
@@ -82,7 +82,7 @@ status, and dry-runs never execute project commands.
 | `{worktree}`, `{project}`, `{service}` | Worktree path and configured names. |
 | `{dependencies.NAME.FIELD}` | Selected declared dependency's host, port, direct_url, or url. |
 
-Placeholders in commands must be outside shell quotes. rdr passes values through
+Placeholders in commands must be outside shell quotes. rundevrun passes values through
 quoted environment substitutions, so `{run_dir}/api` handles spaces safely.
 Commands with placeholders reject backticks, command substitution, heredocs,
 unquoted backslashes and comments. Plain `$VAR` and `${VAR}` remain shell syntax;
@@ -102,8 +102,12 @@ its dependency URLs must use declared publication routes, not local addresses.
 
 Projects and worktrees use hashes of canonical paths, not display names or remote
 URLs. Separate clones remain distinct. Selector precedence is ID, canonical path,
-then unique label. rdr discovers existing worktrees; it does not create them.
-Each worktree loads its own `dev.toml` with the same project name.
+then unique label. rundevrun discovers existing worktrees; it does not create them.
+Shared mode loads each worktree's own `rundevrun.toml` with the same project name.
+External mode loads one personal config for all linked worktrees, resolving
+service paths against each worktree independently. An external config takes
+precedence over repo configs. See [project setup](ONBOARDING.md) for storage,
+import, and mode selection.
 
 `bind` changes desired dependencies; running environments change only on restart.
 Missing selected dependencies never fall back to another worktree. `up` starts
@@ -114,7 +118,7 @@ Restart and switch prepare replacements before stopping old processes.
 Switch moves selected live services and affected consumers. Pending binding
 changes must be resolved first; explicit target bindings are preserved or rejected
 if invalid. Preparation failure preserves old processes. Failures after stopping
-can leave a partial result; rdr does not roll back application data or restart old
+can leave a partial result; rundevrun does not roll back application data or restart old
 binaries automatically. Failed saved stop hooks require explicit `--retry-hooks`.
 Shares close before affected services stop and do not reopen automatically.
 
@@ -149,7 +153,7 @@ credentials and certificates. Ambiguous ownership requires explicit resolution.
 Settings apply validates candidate routes and reserves the listener before writing.
 Route commits require the expected registry revision. A conflict rolls settings
 back only if they still match that apply. After route commit, reload failure is
-partial and retryable; `rdr proxy abort` releases abandoned listener reservations.
+partial and retryable; `rundevrun proxy abort` releases abandoned listener reservations.
 Local route changes never rewrite a running process's saved launch environment.
 Tailnet entry changes alone do not require an application restart.
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/snapshot"
@@ -50,7 +51,7 @@ func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication,
 			result = errors.Join(result, err)
 			return
 		}
-		_, err = fmt.Fprintln(log, "rdr: snapshot preparation failed:", result)
+		_, err = fmt.Fprintln(log, "rundevrun: snapshot preparation failed:", result)
 		result = errors.Join(result, err, log.Close())
 	}()
 	f, err := os.Open(filepath.Join(dir, "snapshot.json"))
@@ -65,7 +66,7 @@ func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication,
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Load(filepath.Join(spec.Worktree, "dev.toml"))
+	cfg, err := discovery.LoadConfig(spec.Worktree)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-// Package monitor supplies read-only views and ownership-checked actions for rdrtop.
+// Package monitor supplies read-only views and ownership-checked actions for rundevtop.
 package monitor
 
 import (

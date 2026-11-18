@@ -93,11 +93,11 @@ func TestSetupApplyReloadsExistingProxyAndReleasesReservation(t *testing.T) {
 
 	_, source, _, _ := runtime.Caller(0)
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	binary := filepath.Join(root, "rdr")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/rdr")
+	binary := filepath.Join(root, "rundevrun")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/rundevrun")
 	build.Dir = repoRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build rdr: %v: %s", err, output)
+		t.Fatalf("build rundevrun: %v: %s", err, output)
 	}
 	configPath, err := routing.DefaultPath()
 	if err != nil {

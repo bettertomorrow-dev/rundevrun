@@ -7,7 +7,7 @@ account login/2FA may need their participation. Keep secrets out of chat and log
 
 ## Rundevrun
 
-Locate `rdr`, check `rdr version --json` and required `network` commands. Offer
+Locate `rundevrun`, check `rundevrun version --json` and required `network` commands. Offer
 installation/update when unavailable or incompatible. Prefer the current trusted
 release/install procedure, or build from the user's trusted rundevrun checkout
 following its `docs/INSTALL.md`, `go.mod` and `--help`. If the skill was installed
@@ -15,7 +15,7 @@ alone, locate that source with the user rather than assuming its parent director
 is the repository. Do not guess a release URL or silently upgrade Go/system tools.
 
 Use a user-owned install directory where practical; retain previous binaries and
-existing configuration. Build `rdr` and `rdrtop` where supplied by that version.
+existing configuration. Build `rundevrun` and `rundevtop` where supplied by that version.
 Recommend an update, but do not replace the user's working binary on discovery
 alone. Runtime state and desired networking configuration remain separate.
 
@@ -55,14 +55,14 @@ OAuth credential files.
 
 Look up the exact user's zone through `cf zones list --name DOMAIN`; verify one
 active, unpaused zone and its public delegation. A configured credential reference
-may already be usable: inspect and plan through rdr before creating another token.
+may already be usable: inspect and plan through rundevrun before creating another token.
 If account or zone selection is ambiguous, ask the user and use that choice for
 the CLI session; do not select the first account or guess a zone ID.
 
 For a new credential, explain the token's zone and permissions before creation.
-Use Zone Read plus DNS Write/Edit limited to that zone, so rdr can issue and renew
+Use Zone Read plus DNS Write/Edit limited to that zone, so rundevrun can issue and renew
 certificates without depending on the CLI login. The following bundled helper
-captures the token internally and passes it directly to rdr's stdin:
+captures the token internally and passes it directly to rundevrun's stdin:
 
 ```sh
 node scripts/create-cloudflare-token.mjs --zone example.com --credential-ref cloudflare-dns-token
@@ -71,7 +71,7 @@ node scripts/create-cloudflare-token.mjs --zone example.com --credential-ref clo
 
 Resolve `scripts/` relative to this skill, not the user's current directory. Run
 the helper with a Node version compatible with cf; it prepends that Node's
-directory to PATH for child processes. `--cf` and `--rdr` select executable paths.
+directory to PATH for child processes. `--cf` and `--rundevrun` select executable paths.
 The first invocation is a read-only policy preview. Run `--apply` only within the
 user's authorized token-creation step. It creates a token and stores it under
 the chosen credential reference, not DNS/Serve resources. It refuses existing
@@ -83,7 +83,7 @@ an ambiguous creation; do not create tokens repeatedly.
 If OAuth cannot create tokens, guide the user through the current official
 [token creation instructions](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
 Use host secret delivery to feed the scoped token to
-`rdr network credential-store REF` over stdin, or a local masked input mechanism
+`rundevrun network credential-store REF` over stdin, or a local masked input mechanism
 if the host has no secret tool.
 Never ask them to paste a token into chat. Never print `cf user tokens create`
 output directly, put secret values in arguments/plans or use a Global API Key.

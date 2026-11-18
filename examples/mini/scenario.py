@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the public rdr JSON CLI against disposable Git worktrees."""
+"""Exercise the public rundevrun JSON CLI against disposable Git worktrees."""
 import json
 import os
 import shutil
@@ -14,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 FIXTURE_ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 FIXTURE_ENV.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
 CLI_ENV = FIXTURE_ENV.copy()
-RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rdr")
+RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rundevrun")
 if os.sep in RDR:
     RDR = str(Path(RDR).expanduser().resolve())
 else:
@@ -38,7 +38,7 @@ def main():
         repo.mkdir()
         CLI_ENV["RDR_HOME"] = str(state)
         FIXTURE_ENV["RDR_HOME"] = str(state)
-        for name in ("dev.toml", "service.py"):
+        for name in ("rundevrun.toml", "service.py"):
             shutil.copyfile(HERE / name, repo / name)
 
         template = temp / "empty-git-template"
@@ -47,9 +47,9 @@ def main():
         git(repo, "config", "core.hooksPath", "/dev/null")
         git(repo, "config", "core.fsmonitor", "false")
         git(repo, "config", "commit.gpgSign", "false")
-        git(repo, "config", "user.name", "rdr example")
+        git(repo, "config", "user.name", "rundevrun example")
         git(repo, "config", "user.email", "example@invalid")
-        git(repo, "add", "dev.toml", "service.py")
+        git(repo, "add", "rundevrun.toml", "service.py")
         git(repo, "commit", "-m", "mini example")
         git(repo, "worktree", "add", "-b", "consumer-a", str(roots["consumer-a"]))
         git(repo, "worktree", "add", "-b", "consumer-b", str(roots["consumer-b"]))
@@ -130,10 +130,10 @@ def cli(cwd, *args, check=True):
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ScenarioError(f"rdr {args[0]} did not return public JSON: {proc.stderr.strip()}") from exc
+        raise ScenarioError(f"rundevrun {args[0]} did not return public JSON: {proc.stderr.strip()}") from exc
     if check and proc.returncode:
         errors = "; ".join(error.get("message", str(error)) for error in result.get("errors", []))
-        raise ScenarioError(f"rdr {' '.join(args)} failed ({proc.returncode}): {errors}")
+        raise ScenarioError(f"rundevrun {' '.join(args)} failed ({proc.returncode}): {errors}")
     return result
 
 

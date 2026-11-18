@@ -3,19 +3,19 @@
 Three Python standard-library services demonstrate dependency bindings:
 `catalog` and `reports` serve HTTP; `reports` returns its selected catalog's
 identity at `/identity`. The portless `indexer` polls its selected catalog.
-See [dev.toml](dev.toml).
+See [rundevrun.toml](rundevrun.toml).
 
 ## Worktree bindings
 
-Create Git worktrees yourself; rdr only discovers them. From the mini project:
+Create Git worktrees yourself; rundevrun only discovers them. From the mini project:
 
 ```sh
-rdr register . --json
-rdr worktrees --project mini --json
-rdr bind reports catalog --worktree /path/to/consumer --to-worktree /path/to/catalog --json
-rdr up reports --worktree /path/to/consumer --json
-rdr logs reports --worktree /path/to/consumer --tail 20
-rdr down reports --worktree /path/to/consumer --json
+rundevrun register . --json
+rundevrun worktrees --project mini --json
+rundevrun bind reports catalog --worktree /path/to/consumer --to-worktree /path/to/catalog --json
+rundevrun up reports --worktree /path/to/consumer --json
+rundevrun logs reports --worktree /path/to/consumer --tail 20
+rundevrun down reports --worktree /path/to/consumer --json
 ```
 
 Rebind and restart `reports` to change its catalog without changing other
@@ -29,11 +29,11 @@ Build from the repository root. Scenarios require Python 3 and Git; TLS and
 offline sharing also require OpenSSL.
 
 ```sh
-go build -trimpath -o /tmp/rdr ./cmd/rdr
-python3 examples/mini/scenario.py /tmp/rdr
-python3 examples/mini/switch_scenario.py /tmp/rdr
-python3 examples/mini/tls_scenario.py /tmp/rdr
-python3 examples/mini/share_scenario.py /tmp/rdr
+go build -trimpath -o /tmp/rundevrun ./cmd/rundevrun
+python3 examples/mini/scenario.py /tmp/rundevrun
+python3 examples/mini/switch_scenario.py /tmp/rundevrun
+python3 examples/mini/tls_scenario.py /tmp/rundevrun
+python3 examples/mini/share_scenario.py /tmp/rundevrun
 python3 scripts/rdrtop_smoke.py
 ```
 
@@ -50,7 +50,7 @@ through public CLI status before deleting files; uncertain cleanup retains the
 fixture and reports its path. TLS trusts a temporary CA only in the test client
 and changes neither DNS nor system trust. Offline sharing creates no public tunnel.
 
-For real outbound HTTPS, run `python3 examples/mini/cloudflare_scenario.py /tmp/rdr`.
+For real outbound HTTPS, run `python3 examples/mini/cloudflare_scenario.py /tmp/rundevrun`.
 It requires `cloudflared` on PATH or `CLOUDFLARED_BIN` and publishes synthetic
 password-protected data. It checks live/snapshot authentication, cookies,
 WebSocket, immutability, and unshare through normal DNS and system TLS trust.

@@ -1,10 +1,13 @@
-# rdrtop
+# rundevtop
 
-Terminal view of rdr services. Quitting leaves services running.
+Terminal view of rundevrun services. Quitting leaves services running.
+
+Shared and External configurations work the same way. Run `rundevrun register .` or
+`rundevrun up` in an [onboarded project](ONBOARDING.md), then open rundevtop from the repo.
 
 ```sh
-go build -trimpath -o /tmp/rdrtop ./cmd/rdrtop
-/tmp/rdrtop
+go build -trimpath -o /tmp/rundevtop ./cmd/rundevtop
+/tmp/rundevtop
 ```
 
 Services are grouped by project and labelled with their worktree. State and logs

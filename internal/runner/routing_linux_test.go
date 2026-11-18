@@ -47,7 +47,7 @@ build = 'printenv API_ROUTE API_DIRECT > build.out'
 depends_on = ['api']
 env = { API_ROUTE = '{dependencies.api.url}', API_DIRECT = '{dependencies.api.direct_url}' }
 `
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(config), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(root)
@@ -90,8 +90,8 @@ env = { API_ROUTE = '{dependencies.api.url}', API_DIRECT = '{dependencies.api.di
 	if err = os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk}), 0600); err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(dir, "rdr")
-	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	cmd := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, out)
 	}
@@ -170,7 +170,7 @@ func TestRoutingGraphActualURLs(t *testing.T) {
 		t.Fatal("unchanged process environment changed")
 	}
 	changed := "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'sleep 60'\n"
-	if err = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(changed), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(changed), 0600); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := discovery.Discover(root)
@@ -367,7 +367,7 @@ func TestSharedRouteSurvivesInvalidLiveWorktreeConfig(t *testing.T) {
 	git("init", "-q")
 	git("config", "user.name", "Test")
 	git("config", "user.email", "test@example.invalid")
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "fixture")
 	git("worktree", "add", "-qb", "feature", other)
 	p, err := discovery.Discover(root)
@@ -420,7 +420,7 @@ func TestSharedRouteSurvivesInvalidLiveWorktreeConfig(t *testing.T) {
 	if _, err = r.Bind(ctx, Selection{p, otherW, "worker"}, "api", Selection{p, mainW, "api"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(root, "dev.toml"), []byte("invalid = ["), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte("invalid = ["), 0600); err != nil {
 		t.Fatal(err)
 	}
 	fresh, err := discovery.Discover(other)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise rdrtop in a real PTY, including stop hooks and terminal restoration."""
+"""Exercise rundevtop in a real PTY, including stop hooks and terminal restoration."""
 
 import fcntl
 import http.client
@@ -35,12 +35,12 @@ def main():
     repo = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="rdrtop-smoke-", dir="/tmp") as temporary:
         root = Path(temporary).resolve()
-        rdr, top = root / "rdr", root / "rdrtop"
-        for command, destination in [("rdr", rdr), ("rdrtop", top)]:
+        rundevrun, top = root / "rundevrun", root / "rundevtop"
+        for command, destination in [("rundevrun", rundevrun), ("rundevtop", top)]:
             subprocess.run(["go", "build", "-o", str(destination), f"./cmd/{command}"], cwd=repo, check=True)
         project = root / "project"
         project.mkdir()
-        (project / "dev.toml").write_text('''version = 1
+        (project / "rundevrun.toml").write_text('''version = 1
 [project]
 name = "pty-fixture"
 [services.worker]
@@ -59,7 +59,7 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
         }))
 
         def cli(*args, cwd=project, check=True):
-            result = subprocess.run([str(rdr), *args, "--json"], cwd=cwd, env=env,
+            result = subprocess.run([str(rundevrun), *args, "--json"], cwd=cwd, env=env,
                                     capture_output=True, text=True, timeout=15)
             if check:
                 assert result.returncode == 0, result.stdout + result.stderr
@@ -145,7 +145,7 @@ http.server.HTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serv
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
                 web_port = listener.getsockname()[1]
-            (web / "dev.toml").write_text(f'''version = 1
+            (web / "rundevrun.toml").write_text(f'''version = 1
 [project]
 name = "http-fixture"
 [services.web]
@@ -214,7 +214,7 @@ stop_timeout = "3s"
             assert routed_response.status == 200 and routed_payload == "local-route-ok:" + parsed.hostname, routed_payload
             proxy_after = cli("proxy", "status", cwd=web)
             assert proxy_after.get("proxy", {}).get("state") == "ready", proxy_after
-            print("PASS: PTY navigation/logs, terminal restoration, hooks, rdrtop-owned HTTP proxy startup, route Host, and process persistence")
+            print("PASS: PTY navigation/logs, terminal restoration, hooks, rundevtop-owned HTTP proxy startup, route Host, and process persistence")
         finally:
             cli("down", "--all", check=False)
             cli("proxy", "stop", check=False)

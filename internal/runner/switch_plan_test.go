@@ -46,10 +46,10 @@ command = 'sleep 60'
 depends_on = ['api']
 env = { API = '{dependencies.api.url}' }
 `
-	if e := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	git("worktree", "add", "-qb", "third", third)
@@ -235,7 +235,7 @@ env = { API = '{dependencies.api.url}' }
 	}
 	cycleConfig := strings.Replace(cfg, "port = 'auto'\n[services.app]", "port = 'auto'\ndepends_on = ['app']\n[services.app]", 1)
 	cycleConfig = strings.Replace(cycleConfig, "depends_on = ['api']\nenv = { API = '{dependencies.api.url}' }\n", "", 1)
-	if e = os.WriteFile(filepath.Join(c.Root, "dev.toml"), []byte(cycleConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(c.Root, "rundevrun.toml"), []byte(cycleConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	if e = store.Update(func(reg *state.Registry) error {
@@ -257,7 +257,7 @@ env = { API = '{dependencies.api.url}' }
 	if !errors.As(e, &cycle) || cycle.Code != "CYCLE" {
 		t.Fatalf("expected CYCLE: %v", e)
 	}
-	if e = os.WriteFile(filepath.Join(c.Root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(c.Root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	if e = store.Update(func(reg *state.Registry) error {
@@ -332,10 +332,10 @@ command = 'sleep 60'
 command = 'sleep 60'
 depends_on = ['api']
 `
-	if e := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(base), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(base), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	targetConfig := `version = 1
@@ -347,7 +347,7 @@ depends_on = ['helper']
 [services.helper]
 command = 'sleep 60'
 `
-	if e := os.WriteFile(filepath.Join(other, "dev.toml"), []byte(targetConfig), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(other, "rundevrun.toml"), []byte(targetConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(main)
@@ -419,7 +419,7 @@ command = 'sleep 60'
 		t.Fatal("rejected plan modified registry")
 	}
 	fixed := strings.Replace(base, "depends_on = ['api']\n", "", 1)
-	if e = os.WriteFile(filepath.Join(main, "dev.toml"), []byte(fixed), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(fixed), 0600); e != nil {
 		t.Fatal(e)
 	}
 	plan, e = New(store, "").PlanSwitch(context.Background(), []SwitchMapping{{Selection{p, a, "api"}, Selection{p, b, "api"}}})

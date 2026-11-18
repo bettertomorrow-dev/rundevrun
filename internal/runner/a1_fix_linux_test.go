@@ -19,8 +19,8 @@ import (
 
 func TestMissingSupervisorStoppedAndUncertain(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -28,7 +28,7 @@ func TestMissingSupervisorStoppedAndUncertain(t *testing.T) {
 		t.Fatal(e)
 	}
 	cfg := "version = 1\n[project]\nname = 'demo'\n[services.app]\ncommand = 'sleep 60'\n"
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)
@@ -184,8 +184,8 @@ func TestMissingSupervisorStoppedAndUncertain(t *testing.T) {
 }
 func TestRetryHooksNeverReplaysUnchangedDependency(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -202,7 +202,7 @@ hooks = { before_stop = 'echo hit >> hits; exit 1' }
 command = 'sleep 60'
 depends_on = ['api']
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)

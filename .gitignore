@@ -35,15 +35,15 @@ go.work.sum
 *.p12
 *.pfx
 
-# Local rdr state and machine networking configuration
+# Local rundevrun state and machine networking configuration
 .rdr/
 networking.json
 setup-plan.json
 cleanup-plan.json
 
 # Local build outputs and macOS metadata
-/rdr
-/rdrtop
+/rundevrun
+/rundevtop
 .DS_Store
 
 # Python helper caches

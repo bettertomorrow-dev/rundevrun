@@ -26,8 +26,8 @@ import (
 
 func TestOfflineLiveLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	fakeDir := filepath.Join(dir, "bin")
@@ -71,7 +71,7 @@ exec sleep 60
 		t.Fatal(e)
 	}
 	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n")
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)
@@ -104,7 +104,7 @@ exec sleep 60
 		_, _ = r.Stop(cleanup, p, w, "api")
 	}()
 	snapshotConfig := cfg + "[services.api.share]\nmode = 'snapshot'\nbuild = 'mkdir -p dist; printf secret-build-command > dist/index.html'\ndir = 'dist'\nenv = { PRIVATE_VALUE = 'snapshot-secret-value' }\n"
-	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(snapshotConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(snapshotConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	snapshotPlan, e := m.PlanSnapshot(ctx, selection)
@@ -185,7 +185,7 @@ exec sleep 60
 		}
 	}
 	brokenConfig := strings.Replace(snapshotConfig, "mkdir -p dist; printf secret-build-command > dist/index.html", "exit 7", 1)
-	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(brokenConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(brokenConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	failed, buildErr := m.Share(ctx, selection, Options{Mode: "snapshot", Recreate: true})
@@ -212,7 +212,7 @@ exec sleep 60
 	}
 	buildPID := filepath.Join(dir, "snapshot-build.pid")
 	longConfig := strings.Replace(snapshotConfig, "mkdir -p dist; printf secret-build-command > dist/index.html", "echo $$ > "+buildPID+"; sleep 60", 1)
-	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(longConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(longConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	short, stopBuild := context.WithTimeout(ctx, 2*time.Second)
@@ -243,7 +243,7 @@ exec sleep 60
 	if _, e = m.Unshare(ctx, selection); e != nil {
 		t.Fatal(e)
 	}
-	if e = os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	type shareResponse struct {

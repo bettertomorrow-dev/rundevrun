@@ -3,31 +3,40 @@
 Requires Go 1.27 or newer and Git. From the repository root:
 
 ```sh
-go build -trimpath -o /tmp/rdr ./cmd/rdr
+go build -trimpath -o /tmp/rundevrun ./cmd/rundevrun
 install -d -m 0700 "$HOME/.local/opt/rundevrun"
-install -m 0755 /tmp/rdr "$HOME/.local/opt/rundevrun/rdr"
-"$HOME/.local/opt/rundevrun/rdr" version --json
+install -m 0755 /tmp/rundevrun "$HOME/.local/opt/rundevrun/rundevrun"
+"$HOME/.local/opt/rundevrun/rundevrun" version --json
 ```
 
 Add `$HOME/.local/opt/rundevrun` to PATH or use the absolute path.
 `version --json` reports product and API versions; `--help` lists commands.
-Build the optional terminal app with `go build -o /tmp/rdrtop ./cmd/rdrtop`.
+Install the optional terminal app from the same checkout:
+
+```sh
+go build -trimpath -o /tmp/rundevtop ./cmd/rundevtop
+install -m 0755 /tmp/rundevtop "$HOME/.local/opt/rundevrun/rundevtop"
+```
+
+The [README](../README.md) shows optional `rdr` and `rdrtop` shell aliases.
+The executable rename keeps existing runtime state and registrations, including
+the `RDR_HOME` environment setting. Use `rundevrun` in scripts that launch it.
 
 ## First project
 
 Create the [example configuration](../README.md), then run from its directory:
 
 ```sh
-rdr config check --json
-rdr up api --dry-run --json
-rdr up api --json
-rdr status --json
-rdr open api --json
-rdr down api --json
+rundevrun config check --json
+rundevrun up api --dry-run --json
+rundevrun up api --json
+rundevrun status --json
+rundevrun open api --json
+rundevrun down api --json
 ```
 
 Review project commands before `up`. It registers the project automatically;
-`rdr register .` supports explicit registration. `open --json` returns the URL;
+`rundevrun register .` supports explicit registration. `open --json` returns the URL;
 text-mode `open` launches a browser. Use `doctor` for diagnostics and `--project`
 and `--worktree` to select services outside the current checkout.
 

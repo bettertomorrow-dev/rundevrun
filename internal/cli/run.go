@@ -1,4 +1,4 @@
-// Package cli implements the noninteractive rdr command line.
+// Package cli implements the noninteractive rundevrun command line.
 package cli
 
 import (
@@ -10,56 +10,58 @@ import (
 	"strings"
 )
 
-const help = `rdr manages development services configured in dev.toml.
+const help = `rundevrun manages development services configured in rundevrun.toml.
 
 Discovery and registration:
-  rdr version             Show the binary version and public API version.
-  rdr register [path]     Register a project and its existing worktrees.
-  rdr projects            List registered projects and their stable IDs.
-  rdr worktrees           List existing worktrees; never change Git state.
-  rdr services            List configured services, including stopped instances.
-  rdr config check        Validate configuration without running project code.
-  rdr up <service...>     Build and start services and their dependencies.
-  rdr down [service...]   Stop services; without names, select this worktree.
-  rdr down --all          Select services across all registered projects.
-  rdr restart <service...> Restart selected services; start missing dependencies.
-  rdr switch <service...> --project ID --worktree SOURCE --to-worktree TARGET
-                          Move live services and their consumers to another worktree.
-  rdr switch --all-services --project ID --worktree SOURCE --to-worktree TARGET
-                          Switch live services in one source worktree.
-  rdr switch --file path  Read version 1 mappings from a JSON file.
-  rdr bind <service> <dependency> --to-worktree ID|PATH|NAME
-                          Set a desired dependency binding; live services need restart.
-  rdr alias LABEL         Name each service route in one worktree.
-  rdr alias SERVICE HOST  Assign one HTTP service a full hostname.
-  rdr open <service>     Open a registered route from the current worktree.
-  rdr proxy status|reload|stop|abort
-                          Inspect or control the local routing proxy. abort releases a pending listener reservation.
-  rdr doctor             Diagnose routes, TLS, proxy, and application state.
-  rdr network inspect|check|plan|apply
-                          Inspect or change networking settings.
-  rdr network setup-check|setup-plan|setup-apply|credential-store
-                          Check and configure tailnet access. setup-plan contacts providers
-                          without changes; setup-apply applies the reviewed plan.
-  rdr network cleanup-plan
-                          Preview release of owned DNS and Serve resources.
-  rdr network cleanup-apply --file PLAN.json
-                          Release the resources described by a reviewed plan.
-  rdr network setup-recover|resolve-finalization|adopt-dns|adopt-existing-dns|adopt-serve|resolve-challenge
-                          Recover owned resources or explicitly adopt conflicts.
-  rdr network credential-replace REF
-                          Replace a stored Cloudflare credential using stdin.
-  rdr share <service>    Create a live public link for one HTTP service.
-  rdr unshare <service>  Remove its public link without stopping the service.
-  rdr logs <service>      Show recent application output.
-  rdr ls                  Show known instances across registered projects.
-  rdr status              Show known instances, optionally scoped to a project.
+  rundevrun version               Show the binary version and public API version.
+  rundevrun register [path]       Register a project and its existing worktrees.
+  rundevrun projects              List registered projects and their stable IDs.
+  rundevrun worktrees             List existing worktrees; never change Git state.
+  rundevrun services              List configured services, including stopped instances.
+  rundevrun config check          Validate configuration without running project code.
+  rundevrun config external [path] [--file PATH]
+                                  Show the external config path, or import a config there.
+  rundevrun up <service...>       Build and start services and their dependencies.
+  rundevrun down [service...]     Stop services; without names, select this worktree.
+  rundevrun down --all            Select services across all registered projects.
+  rundevrun restart <service...> Restart selected services; start missing dependencies.
+  rundevrun switch <service...> --project ID --worktree SOURCE --to-worktree TARGET
+                                  Move live services and their consumers to another worktree.
+  rundevrun switch --all-services --project ID --worktree SOURCE --to-worktree TARGET
+                                  Switch live services in one source worktree.
+  rundevrun switch --file path    Read version 1 mappings from a JSON file.
+  rundevrun bind <service> <dependency> --to-worktree ID|PATH|NAME
+                                  Set a desired dependency binding; live services need restart.
+  rundevrun alias LABEL           Name each service route in one worktree.
+  rundevrun alias SERVICE HOST    Assign one HTTP service a full hostname.
+  rundevrun open <service>        Open a registered route from the current worktree.
+  rundevrun proxy status|reload|stop|abort
+                                  Inspect or control the local routing proxy. abort releases a pending listener reservation.
+  rundevrun doctor                Diagnose routes, TLS, proxy, and application state.
+  rundevrun network inspect|check|plan|apply
+                                  Inspect or change networking settings.
+  rundevrun network setup-check|setup-plan|setup-apply|credential-store
+                                  Check and configure tailnet access. setup-plan contacts providers
+                                  without changes; setup-apply applies the reviewed plan.
+  rundevrun network cleanup-plan
+                                  Preview release of owned DNS and Serve resources.
+  rundevrun network cleanup-apply --file PLAN.json
+                                  Release the resources described by a reviewed plan.
+  rundevrun network setup-recover|resolve-finalization|adopt-dns|adopt-existing-dns|adopt-serve|resolve-challenge
+                                  Recover owned resources or explicitly adopt conflicts.
+  rundevrun network credential-replace REF
+                                  Replace a stored Cloudflare credential using stdin.
+  rundevrun share <service>       Create a live public link for one HTTP service.
+  rundevrun unshare <service>     Remove its public link without stopping the service.
+  rundevrun logs <service>        Show recent application output.
+  rundevrun ls                    Show known instances across registered projects.
+  rundevrun status                Show known instances, optionally scoped to a project.
 
 Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
   --worktree ID|PATH|NAME Select an existing worktree.
   --to-worktree ID|PATH|NAME Select bind target or switch destination.
-  --file PATH              Read switch mappings or networking settings/plan from JSON.
+  --file PATH              Read a config to import, switch mappings, or a network plan.
   --all-services           Select live source services for switch.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
@@ -74,24 +76,25 @@ Options may appear before or after the command:
   --help, -h              Show this help.
 
 Examples:
-  rdr register . --json
-  rdr services --project example --worktree ./feature --json
-  rdr config check --json
-  rdr up api --dry-run --json
-  rdr up api --json
-  rdr logs api --tail 50
-  rdr open console --project example --worktree ./feature-a --json
-  rdr doctor --project example --json
-  rdr down api --json
+  rundevrun register . --json
+  rundevrun services --project example --worktree ./feature --json
+  rundevrun config check --json
+  rundevrun config external --file /tmp/rundevrun.toml --json
+  rundevrun up api --dry-run --json
+  rundevrun up api --json
+  rundevrun logs api --tail 50
+  rundevrun open console --project example --worktree ./feature-a --json
+  rundevrun doctor --project example --json
+  rundevrun down api --json
 
 Graph dry-runs support service lists, default down, and global down. Retry uses
 the original stopped run's hook record; a new consumer does not retry a failed
 after_start hook.
 --no-proxy is deprecated. Local routing remains enabled.
 If proxy reload reports a TLS mode or listener change requires restart, run
-rdr proxy stop, then rdr up or reopen rdrtop to start the proxy again.
+rundevrun proxy stop, then rundevrun up or reopen rundevtop to start the proxy again.
 Sharing requires a running HTTP service. The password is shown once at creation;
-recreate replaces an existing link. rdr does not open the URL automatically.
+recreate replaces an existing link. rundevrun does not open the URL automatically.
 Quick Tunnels do not support server-sent events (SSE).
 Switch journals are shown by status and ls without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
@@ -122,7 +125,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	e := result(command, opts)
 	if err != nil {
-		e.fail("USAGE", err.Error(), "see rdr --help")
+		e.fail("USAGE", err.Error(), "see rundevrun --help")
 		return writeResult(out, errOut, e, opts.json)
 	}
 	if opts.help || command == "help" {
@@ -131,7 +134,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			return writeResult(out, errOut, e, true)
 		}
 		if _, err := fmt.Fprintln(out, help); err != nil {
-			fmt.Fprintln(errOut, "rdr: cannot write help:", err)
+			fmt.Fprintln(errOut, "rundevrun: cannot write help:", err)
 			return 4
 		}
 		return 0
@@ -161,7 +164,7 @@ func runtimeRoot() (string, error) {
 
 func validArity(args []string, min, max int, e *envelope) bool {
 	if len(args) < min || len(args) > max {
-		e.fail("USAGE", "unexpected arguments: "+strings.Join(args, " "), "see rdr --help")
+		e.fail("USAGE", "unexpected arguments: "+strings.Join(args, " "), "see rundevrun --help")
 		return false
 	}
 	return true

@@ -22,7 +22,7 @@ func TestDiscoverDetachedAndAmbiguity(t *testing.T) {
 	root := t.TempDir()
 	run(t, root, "init", "-q")
 	run(t, root, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
-	os.WriteFile(filepath.Join(root, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
+	os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	run(t, root, "worktree", "add", "--detach", filepath.Join(filepath.Dir(root), "detached"))
 	p, e := Discover(root)
 	if e != nil {
@@ -49,7 +49,7 @@ func TestDiscoverDetachedAndAmbiguity(t *testing.T) {
 }
 func TestDiscoverThroughSymlink(t *testing.T) {
 	d := canonicalTempDir(t)
-	os.WriteFile(filepath.Join(d, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
+	os.WriteFile(filepath.Join(d, "rundevrun.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	link := filepath.Join(t.TempDir(), "link")
 	os.Symlink(d, link)
 	p, e := Discover(link)
@@ -58,6 +58,25 @@ func TestDiscoverThroughSymlink(t *testing.T) {
 	}
 	if p.Root != d {
 		t.Fatalf("root %s != %s", p.Root, d)
+	}
+}
+
+func TestDiscoverIgnoresDevTOML(t *testing.T) {
+	root := canonicalTempDir(t)
+	data := []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n")
+	if err := os.WriteFile(filepath.Join(root, "dev.toml"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dev.toml must not identify an rundevrun project: %v", err)
+	}
+	file := filepath.Join(root, "rundevrun.toml")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Discover(root)
+	if err != nil || p.Worktrees[0].Config.Filename != file {
+		t.Fatalf("rundevrun.toml discovery: %+v %v", p, err)
 	}
 }
 
@@ -81,7 +100,7 @@ func TestResolveSymlinkAndRealAmbiguity(t *testing.T) {
 	os.Mkdir(root, 0755)
 	run(t, root, "init", "-q")
 	run(t, root, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
-	os.WriteFile(filepath.Join(root, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
+	os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	wt1 := filepath.Join(parent, "one", "same")
 	wt2 := filepath.Join(parent, "two", "same")
 	os.MkdirAll(filepath.Dir(wt1), 0755)
@@ -89,7 +108,7 @@ func TestResolveSymlinkAndRealAmbiguity(t *testing.T) {
 	run(t, root, "worktree", "add", "-b", "one", "-q", wt1)
 	run(t, root, "worktree", "add", "-b", "two", "-q", wt2)
 	for _, p := range []string{wt1, wt2} {
-		os.WriteFile(filepath.Join(p, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
+		os.WriteFile(filepath.Join(p, "rundevrun.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	}
 	p, e := Discover(root)
 	if e != nil {
@@ -112,7 +131,7 @@ func TestIndependentClonesAndGitEnvironment(t *testing.T) {
 		os.Mkdir(r, 0755)
 		run(t, r, "init", "-q")
 		run(t, r, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "--allow-empty", "-m", "init")
-		os.WriteFile(filepath.Join(r, "dev.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
+		os.WriteFile(filepath.Join(r, "rundevrun.toml"), []byte("version=1\n[project]\nname=\"demo\"\n[services.api]\ncommand=\"true\"\n"), 0600)
 	}
 	t.Setenv("GIT_DIR", "/definitely/not/the/repository")
 	t.Setenv("GIT_WORK_TREE", "/definitely/not/the/worktree")

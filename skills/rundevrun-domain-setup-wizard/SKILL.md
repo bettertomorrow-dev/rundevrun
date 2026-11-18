@@ -6,14 +6,14 @@ disable-model-invocation: true
 
 # Rundevrun domain setup wizard
 
-Configure a user-owned subdomain for private HTTPS access to rdr projects. Run
+Configure a user-owned subdomain for private HTTPS access to rundevrun projects. Run
 only when explicitly invoked. Speak the user's language. Ask one short question
 at a time, using choices where useful; reuse answers already given and settings
 already verified. Execute the steps you can perform, and guide the user through
 account login, registrar access and other steps requiring their participation.
 
 Keep this a conversation, not a generated shell wizard. All project DNS,
-certificate and Serve changes go through `rdr network` plan/apply operations.
+certificate and Serve changes go through `rundevrun network` plan/apply operations.
 Cloudflare CLI handles discovery, authorization and scoped-token creation.
 
 Detect the OS read-only before provider changes. On Windows or another
@@ -54,8 +54,8 @@ Local HTTP remains available. Verify the claimed Cloudflare state after login.
 Read [prerequisites and authentication](references/prerequisites.md) for this
 stage, using the instructions for the detected macOS or Linux system.
 
-1. Find rdr and inspect `rdr version --json`, `rdr network inspect --json` and
-   `rdr network setup-check --json`. Recommend installing/updating rdr when it is
+1. Find rundevrun and inspect `rundevrun version --json`, `rundevrun network inspect --json` and
+   `rundevrun network setup-check --json`. Recommend installing/updating rundevrun when it is
    absent or lacks the required commands. Offer to perform that work from a
    trusted checkout/release using its documented installation procedure. Obtain
    consent for installation/update; preserve existing configuration and binaries.
@@ -90,11 +90,11 @@ Explain in plain language:
 - DNS is public, but the selected address is a private tailnet IP. This setup
   uses Serve, not Funnel or a public tunnel.
 
-List registered projects with `rdr projects --json` and their services/worktrees.
+List registered projects with `rundevrun projects --json` and their services/worktrees.
 Ask which projects should be accessible; do not expose all projects by default.
 New worktrees of a selected project inherit its exposure. When a short project
 URL has several eligible HTTP services or main/master worktrees, ask for the
-default service/primary worktree and save stable IDs returned by rdr. Keep full
+default service/primary worktree and save stable IDs returned by rundevrun. Keep full
 service URLs alongside the alias. If no projects exist, explain how to register
 an HTTP service, and resume after the user chooses one.
 
@@ -108,10 +108,10 @@ Use the installed CLI's `--help` and JSON envelopes as the command/schema source
 Typical flow:
 
 ```sh
-rdr network plan --file desired.json --json
-rdr network apply --file settings-plan.json --json
-rdr network setup-plan --json
-rdr network setup-apply --file approved-setup-plan.json --json
+rundevrun network plan --file desired.json --json
+rundevrun network apply --file settings-plan.json --json
+rundevrun network setup-plan --json
+rundevrun network setup-apply --file approved-setup-plan.json --json
 ```
 
 Save the returned **`plan` member**, not the whole envelope, as each apply file.
@@ -144,7 +144,7 @@ of attempts. Preserve working local routes and application processes.
 
 ## 5. Verify and hand over
 
-Check `rdr network setup-check --json`, `rdr proxy status --json`, the actual DNS
+Check `rundevrun network setup-check --json`, `rundevrun proxy status --json`, the actual DNS
 record and `tailscale serve status --json`. Verify DNS-only status, the selected
 tailnet IP, the certificate expiry, intended raw forwarding and challenge cleanup.
 `setup-check` alone is locally known state, not remote acceptance evidence.

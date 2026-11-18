@@ -22,8 +22,8 @@ import (
 
 func TestHookLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	c := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	c := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if b, e := c.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
@@ -45,7 +45,7 @@ cwd = 'old'
 env = { VALUE = 'old' }
 hooks = { before_start = 'echo before_start:$VALUE:$RDR_REASON >> ../events', after_start = 'echo after_start:$VALUE:$RDR_REASON >> ../events', before_stop = 'echo before_stop:$VALUE:$RDR_REASON >> ../events', after_stop = 'echo after_stop:$VALUE:$RDR_REASON >> ../events' }
 `
-	path := filepath.Join(root, "dev.toml")
+	path := filepath.Join(root, "rundevrun.toml")
 	if e := os.WriteFile(path, []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -103,15 +103,15 @@ hooks = { before_start = 'echo before_start:$VALUE:$RDR_REASON >> ../events', af
 }
 
 func TestHookFailures(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(t.TempDir(), "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build %v %s", e, b)
 	}
 	for _, name := range []string{"before_start", "after_start", "before_stop", "after_stop"} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			cfg := "version = 1\n[project]\nname = 'demo'\n[services.app]\ncommand = 'sleep 60'\nhooks = { " + name + " = 'echo hit >> hits; exit 1' }\n"
-			if e := os.WriteFile(filepath.Join(dir, "dev.toml"), []byte(cfg), 0600); e != nil {
+			if e := os.WriteFile(filepath.Join(dir, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 				t.Fatal(e)
 			}
 			p, e := discovery.Discover(dir)
@@ -195,7 +195,7 @@ func TestHookFailures(t *testing.T) {
 				t.Fatalf("hook replay: %q %v", hits, e)
 			}
 			changed := strings.Replace(cfg, "echo hit >> hits; exit 1", "echo new >> hits; exit 1", 1)
-			if e = os.WriteFile(filepath.Join(dir, "dev.toml"), []byte(changed), 0600); e != nil {
+			if e = os.WriteFile(filepath.Join(dir, "rundevrun.toml"), []byte(changed), 0600); e != nil {
 				t.Fatal(e)
 			}
 			r.RetryHooks = true
@@ -212,8 +212,8 @@ func TestHookFailures(t *testing.T) {
 
 func TestInterruptedHookDoesNotReplay(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -227,7 +227,7 @@ name = 'demo'
 command = 'sleep 60'
 hooks = { before_start = 'echo hit >> hits; sleep 60 & echo $! > child; wait' }
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	runtime := filepath.Join(dir, "state")
@@ -294,8 +294,8 @@ hooks = { before_start = 'echo hit >> hits; sleep 60 & echo $! > child; wait' }
 
 func TestHookTimeoutCleansDescendants(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -310,7 +310,7 @@ command = 'sleep 60'
 hook_timeout = '300ms'
 hooks = { before_start = 'sleep 60 & echo $! > child; wait' }
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	cli := func(args ...string) *exec.Cmd {
@@ -348,8 +348,8 @@ hooks = { before_start = 'sleep 60 & echo $! > child; wait' }
 
 func TestHookOperationIDSharedAcrossBatch(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -366,7 +366,7 @@ hooks = { before_start = 'echo $RDR_OPERATION_ID > a-up', before_stop = 'echo $R
 command = 'sleep 60'
 hooks = { before_start = 'echo $RDR_OPERATION_ID > b-up', before_stop = 'echo $RDR_OPERATION_ID > b-down' }
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)
@@ -413,8 +413,8 @@ hooks = { before_start = 'echo $RDR_OPERATION_ID > b-up', before_stop = 'echo $R
 
 func TestAfterStartFailureBlocksConsumerUntilRestart(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -431,7 +431,7 @@ hooks = { after_start = 'exit 1' }
 command = 'touch started; sleep 60'
 depends_on = ['api']
 `
-	path := filepath.Join(root, "dev.toml")
+	path := filepath.Join(root, "rundevrun.toml")
 	if e := os.WriteFile(path, []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -481,8 +481,8 @@ depends_on = ['api']
 
 func TestInterruptedStopHookRequiresRetry(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -496,7 +496,7 @@ name = 'demo'
 command = 'sleep 60'
 hooks = { before_stop = 'echo hit >> hits; sleep 60 & echo $! > child; wait' }
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	runtime := filepath.Join(dir, "state")
@@ -581,8 +581,8 @@ hooks = { before_stop = 'echo hit >> hits; sleep 60 & echo $! > child; wait' }
 
 func TestStopHookRetryRunsOnce(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -596,7 +596,7 @@ name = 'demo'
 command = 'sleep 60'
 hooks = { before_stop = 'if [ -f flag ]; then echo pass >> hits; else touch flag; echo fail >> hits; exit 1; fi' }
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)

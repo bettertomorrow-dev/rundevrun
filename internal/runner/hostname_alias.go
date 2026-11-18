@@ -5,12 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 
-	"github.com/bettertomorrow-dev/rundevrun/internal/config"
+	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
@@ -74,7 +73,7 @@ func (r *Runner) planHostnameAlias(ctx context.Context, reg state.Registry, sele
 	if root == "" {
 		return HostnameAliasPlan{}, &Error{"NOT_FOUND", errors.New("worktree is not registered")}
 	}
-	cfg, err := config.Load(filepath.Join(root, "dev.toml"))
+	cfg, err := discovery.LoadConfig(root)
 	if err != nil {
 		return HostnameAliasPlan{}, &Error{"CONFIG_INVALID", fmt.Errorf("worktree configuration: %w", err)}
 	}

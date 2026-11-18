@@ -90,45 +90,45 @@ func (e *envelope) fail(code, message string, actions ...string) {
 func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 	if asJSON {
 		if err := json.NewEncoder(out).Encode(e); err != nil {
-			fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+			fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
 			return 4
 		}
 	} else {
 		lifecycle := e.Command == "up" || e.Command == "down" || e.Command == "restart"
 		if lifecycle && !e.DryRun {
 			if err := writeLifecycleTable(out, e); err != nil {
-				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+				fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
 				return 4
 			}
 		} else {
 			if err := writeTextResults(out, e); err != nil {
-				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+				fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
 				return 4
 			}
 		}
 		for _, err := range e.Errors {
 			if e.Command == "switch" && err.InstanceID != "" {
-				fmt.Fprintf(errOut, "rdr: %s: %s: %s\n", e.instanceLabel(err.InstanceID), err.Code, err.Message)
+				fmt.Fprintf(errOut, "rundevrun: %s: %s: %s\n", e.instanceLabel(err.InstanceID), err.Code, err.Message)
 			} else if lifecycle && err.InstanceID != "" {
-				fmt.Fprintf(errOut, "rdr: %s: %s: %s\n", singleLine(serviceName(err.InstanceID)), err.Code, err.Message)
+				fmt.Fprintf(errOut, "rundevrun: %s: %s: %s\n", singleLine(serviceName(err.InstanceID)), err.Code, err.Message)
 			} else {
-				fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
+				fmt.Fprintf(errOut, "rundevrun: %s: %s\n", err.Code, err.Message)
 			}
 		}
 		for _, err := range e.ProxyErrors {
-			fmt.Fprintf(errOut, "rdr: proxy: %s: %s\n", err.Code, err.Message)
+			fmt.Fprintf(errOut, "rundevrun: proxy: %s: %s\n", err.Code, err.Message)
 		}
 		for _, err := range e.RoutingErrors {
-			fmt.Fprintf(errOut, "rdr: routing: %s: %s\n", err.Code, err.Message)
+			fmt.Fprintf(errOut, "rundevrun: routing: %s: %s\n", err.Code, err.Message)
 		}
 		for _, item := range e.Publications {
 			if _, err := fmt.Fprintln(out, item.ID, publicationResult{Status: item}); err != nil {
-				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
+				fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
 				return 4
 			}
 		}
 		for _, err := range e.PublicationErrors {
-			fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
+			fmt.Fprintf(errOut, "rundevrun: %s: %s\n", err.Code, err.Message)
 		}
 	}
 	for _, err := range e.Errors {
@@ -235,7 +235,7 @@ func writeLifecycleTable(out io.Writer, e envelope) error {
 			}
 		}
 		if row.restart {
-			fmt.Fprintf(&table, "  Restart required. Run rdr restart %s to apply changes.\n", row.service)
+			fmt.Fprintf(&table, "  Restart required. Run rundevrun restart %s to apply changes.\n", row.service)
 		}
 	}
 	_, err := io.WriteString(out, table.String())

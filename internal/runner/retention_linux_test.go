@@ -161,15 +161,15 @@ func TestPruneFailureReturnsActualResult(t *testing.T) {
 
 func TestRetentionAfterSuccessfulRestarts(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("binary: %v %s", err, out)
 	}
 	projectDir := filepath.Join(dir, "project")
 	if err := os.Mkdir(projectDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(projectDir, "dev.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'sleep 60'\nstart_timeout = '3s'\nstop_timeout = '1s'\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, "rundevrun.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'sleep 60'\nstart_timeout = '3s'\nstop_timeout = '1s'\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(projectDir)

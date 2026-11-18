@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bettertomorrow-dev/rundevrun/internal/config"
 	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
@@ -88,7 +87,7 @@ func (r *Runner) planAlias(ctx context.Context, reg state.Registry, project *dis
 	if wi < 0 {
 		return AliasPlan{}, &Error{"NOT_FOUND", errors.New("worktree is not registered")}
 	}
-	cfg, err := config.Load(filepath.Join(saved.Worktrees[wi].Root, "dev.toml"))
+	cfg, err := discovery.LoadConfig(saved.Worktrees[wi].Root)
 	if err != nil {
 		return AliasPlan{}, &Error{"CONFIG_INVALID", fmt.Errorf("worktree configuration: %w", err)}
 	}

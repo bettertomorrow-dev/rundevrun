@@ -20,7 +20,7 @@ func TestRoutePreviewListsOwnedChangesAndRejectsStaleRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := "version=1\n[project]\nname=\"demo\"\n[services.web]\ncommand=\"echo ready\"\nport=\"auto\"\n"
-	if err := os.WriteFile(filepath.Join(projectDir, "dev.toml"), []byte(content), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, "rundevrun.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(projectDir)

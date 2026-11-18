@@ -19,8 +19,8 @@ import (
 
 func TestBuildTimeoutCleansChild(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("build binary: %v %s", err, output)
 	}
 	l, err := openLog(filepath.Join(dir, "build.log"))
@@ -48,8 +48,8 @@ func TestBuildTimeoutCleansChild(t *testing.T) {
 
 func TestBuildExitBeforeOutputDrainPreservesExitResult(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("build binary: %v %s", err, output)
 	}
 	for _, code := range []int{0, 7} {

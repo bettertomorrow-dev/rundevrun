@@ -56,7 +56,7 @@ func git(dir string, args ...string) (string, error) {
 func findConfig(start string) (string, error) {
 	p := start
 	for {
-		f := filepath.Join(p, "dev.toml")
+		f := filepath.Join(p, "rundevrun.toml")
 		if _, e := os.Stat(f); e == nil {
 			return f, nil
 		} else if !errors.Is(e, os.ErrNotExist) {
@@ -74,12 +74,25 @@ func Discover(start string) (*Project, error) {
 	if e != nil {
 		return nil, e
 	}
-	cf, e := findConfig(root)
-	if e != nil {
-		return nil, e
+	external := ""
+	if repo, file, err := ExternalConfigPath(root); err == nil {
+		if _, err = os.Lstat(file); err == nil {
+			root, external = repo, file
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
 	}
-	root = filepath.Dir(cf)
-	cfg, e := config.Load(cf)
+	cf := external
+	if cf == "" {
+		cf, e = findConfig(root)
+		if e != nil {
+			return nil, e
+		}
+		root = filepath.Dir(cf)
+	}
+	cfg, e := config.LoadForRoot(cf, root)
 	if e != nil {
 		return nil, e
 	}
@@ -128,8 +141,11 @@ func Discover(start string) (*Project, error) {
 				continue
 			}
 			w := Worktree{ID: id("w_", wt), Root: wt, Branch: branch, Detached: det}
-			f := filepath.Join(wt, "dev.toml")
-			if b, er := config.Load(f); er == nil {
+			f := filepath.Join(wt, "rundevrun.toml")
+			if external != "" {
+				f = external
+			}
+			if b, er := config.LoadForRoot(f, wt); er == nil {
 				if b.Project.Name != cfg.Project.Name {
 					w.ConfigError = &config.Error{Code: "CONFIG_INVALID", Field: "project.name", Err: fmt.Errorf("%q differs from %q", b.Project.Name, cfg.Project.Name)}
 				} else {
@@ -200,7 +216,7 @@ func ResolveDescriptor(p *Project, selector string) (*Worktree, error) {
 }
 func selected(w *Worktree) (*Worktree, error) {
 	if w.Config == nil {
-		return nil, fmt.Errorf("worktree %q has invalid or missing dev.toml: %w", w.Root, errors.Join(w.ConfigError))
+		return nil, fmt.Errorf("worktree %q has invalid or missing rundevrun.toml: %w", w.Root, errors.Join(w.ConfigError))
 	}
 	return w, nil
 }

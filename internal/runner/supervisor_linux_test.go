@@ -17,8 +17,8 @@ import (
 
 func TestSupervisorRealBinary(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	build := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	build := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build binary: %v: %s", err, out)
 	}

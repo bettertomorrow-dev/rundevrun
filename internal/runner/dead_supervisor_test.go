@@ -22,8 +22,8 @@ import (
 
 func TestDeadSupervisorRecovery(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v: %s", err, out)
 	}
 	store, err := state.New(filepath.Join(dir, "state"))
