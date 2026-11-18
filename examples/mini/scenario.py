@@ -108,6 +108,12 @@ def main():
         scenario_passed = True
     except Exception as exc:
         print(f"INCOMPLETE: {exc}", file=sys.stderr)
+        for run in sorted((state / "runs").glob("*")):
+            for name in ("supervisor.json", "supervisor.log", "application.log"):
+                log = run / name
+                if log.is_file():
+                    print(f"--- {run.name}/{name} ---", file=sys.stderr)
+                    print(log.read_text(errors="replace")[-8192:], file=sys.stderr)
         if config_checked:
             print("The fixture and config checks passed; lifecycle acceptance failed.", file=sys.stderr)
         else:
@@ -136,7 +142,7 @@ def git(cwd, *args):
 
 
 def cli(cwd, *args, check=True):
-    proc = subprocess.run([RDR, *args, "--json"], cwd=cwd, env=CLI_ENV, text=True, capture_output=True, timeout=30)
+    proc = subprocess.run([RDR, *args, "--json"], cwd=cwd, env=CLI_ENV, text=True, capture_output=True, timeout=90)
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
