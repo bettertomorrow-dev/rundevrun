@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs rdr from this worktree or restores the previous local binary.
+# Installs rundevrun from this worktree or restores the previous local binary.
 set -eu
 
 action=${1:-}
@@ -25,14 +25,14 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
 if [ "$action" = rollback ]; then
-    if [ ! -f "$dest/rdr.previous" ]; then
-        echo "No previous binary at $dest/rdr.previous" >&2
+    if [ ! -f "$dest/rundevrun.previous" ]; then
+        echo "No previous binary at $dest/rundevrun.previous" >&2
         exit 1
     fi
-    cp -p "$dest/rdr.previous" "$lock/rdr"
-    "$lock/rdr" version --json
-    mv -f "$lock/rdr" "$dest/rdr"
-    echo "Rolled back $dest/rdr"
+    cp -p "$dest/rundevrun.previous" "$lock/rundevrun"
+    "$lock/rundevrun" version --json
+    mv -f "$lock/rundevrun" "$dest/rundevrun"
+    echo "Rolled back $dest/rundevrun"
     exit 0
 fi
 
@@ -49,17 +49,21 @@ elif [ -n "$(git -C "$repo" status --porcelain)" ]; then
 fi
 (
     cd "$source"
-    go build -trimpath -ldflags "-X github.com/bettertomorrow-dev/rundevrun/internal/cli.Version=0.1.0-dev+$revision" -o "$lock/rdr" ./cmd/rdr
+    go build -trimpath -ldflags "-X github.com/bettertomorrow-dev/rundevrun/internal/cli.Version=0.1.0-dev+$revision" -o "$lock/rundevrun" ./cmd/rundevrun
 )
-"$lock/rdr" version --json
-"$lock/rdr" --help >/dev/null
-if [ -f "$dest/rdr" ] && cmp -s "$dest/rdr" "$lock/rdr"; then
+"$lock/rundevrun" version --json
+"$lock/rundevrun" --help >/dev/null
+if [ -f "$dest/rundevrun" ] && cmp -s "$dest/rundevrun" "$lock/rundevrun"; then
     echo "Already installed: $revision"
     exit 0
 fi
-if [ -f "$dest/rdr" ]; then
-    cp -p "$dest/rdr" "$lock/previous"
-    mv -f "$lock/previous" "$dest/rdr.previous"
+previous="$dest/rundevrun"
+if [ ! -f "$previous" ] && [ -f "$dest/rdr" ]; then
+    previous="$dest/rdr"
 fi
-mv -f "$lock/rdr" "$dest/rdr"
-echo "Installed $revision at $dest/rdr"
+if [ -f "$previous" ]; then
+    cp -p "$previous" "$lock/previous"
+    mv -f "$lock/previous" "$dest/rundevrun.previous"
+fi
+mv -f "$lock/rundevrun" "$dest/rundevrun"
+echo "Installed $revision at $dest/rundevrun"

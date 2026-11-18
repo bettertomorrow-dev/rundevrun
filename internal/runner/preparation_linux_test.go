@@ -24,9 +24,9 @@ import (
 )
 
 func TestPublicCLIRecoversKilledBuild(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "rdr")
-	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
-		t.Fatalf("build rdr: %v: %s", err, output)
+	binary := filepath.Join(t.TempDir(), "rundevrun")
+	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
+		t.Fatalf("build rundevrun: %v: %s", err, output)
 	}
 	marker := filepath.Join(t.TempDir(), "forbidden")
 	read, write, err := os.Pipe()
@@ -68,7 +68,7 @@ func TestPublicCLIRecoversKilledBuild(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(configRoot, "rundevrun", "networking.json"), []byte(networking), 0600); err != nil {
 				t.Fatal(err)
 			}
-			configPath := filepath.Join(dir, "dev.toml")
+			configPath := filepath.Join(dir, "rundevrun.toml")
 			writeConfig := func(build bool) {
 				text := "version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'python3 -m http.server {port} --bind 127.0.0.1'\nport = 'auto'\nstop_timeout = '1s'\nbuild_timeout = '30s'\n"
 				if build {

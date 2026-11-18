@@ -42,8 +42,8 @@ func TestPublicationFrontendChild(t *testing.T) {
 }
 func TestKilledFrontendBeforeActivationCanUnshare(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	fakeDir := filepath.Join(dir, "bin")
@@ -70,7 +70,7 @@ exec sleep 60
 		t.Fatal(e)
 	}
 	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n")
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)
@@ -197,8 +197,8 @@ exec sleep 60
 
 func TestKilledFrontendDuringSnapshotBuild(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); err != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	bin := filepath.Join(dir, "bin")
@@ -217,7 +217,7 @@ func TestKilledFrontendDuringSnapshotBuild(t *testing.T) {
 	}
 	marker := filepath.Join(dir, "building")
 	cfg := isolatedHTTPPorts(t, "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'python3 -m http.server {port} --bind {host}'\nport = 'auto'\n[services.api.share]\nmode = 'snapshot'\nbuild = 'sleep 60 & echo $! > "+marker+"; wait'\ndir = 'dist'\n")
-	if err := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(root)

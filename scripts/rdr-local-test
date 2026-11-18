@@ -1,5 +1,5 @@
 #!/bin/sh
-# Checks local rdr update and rollback behavior in a disposable repository.
+# Checks local rundevrun update and rollback behavior in a disposable repository.
 set -eu
 source_repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/rdr-install-test.XXXXXXXX")
@@ -36,17 +36,18 @@ mkdir "$RDR_INSTALL_DIR"
 printf '#!/bin/sh\necho old\n' > "$RDR_INSTALL_DIR/rdr"
 chmod +x "$RDR_INSTALL_DIR/rdr"
 ./scripts/rdr-local update
-[ "$("$RDR_INSTALL_DIR/rdr")" = new ]
-[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = new ]
+[ "$("$RDR_INSTALL_DIR/rundevrun.previous")" = old ]
+[ "$("$RDR_INSTALL_DIR/rdr")" = old ]
 ./scripts/rdr-local update
-[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+[ "$("$RDR_INSTALL_DIR/rundevrun.previous")" = old ]
 if FAIL_BUILD=1 ./scripts/rdr-local update; then exit 1; fi
 if FAIL_SMOKE=1 ./scripts/rdr-local update; then exit 1; fi
-[ "$("$RDR_INSTALL_DIR/rdr")" = new ]
-[ "$("$RDR_INSTALL_DIR/rdr.previous")" = old ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = new ]
+[ "$("$RDR_INSTALL_DIR/rundevrun.previous")" = old ]
 ./scripts/rdr-local rollback
 ./scripts/rdr-local rollback
-[ "$("$RDR_INSTALL_DIR/rdr")" = old ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = old ]
 mkdir "$RDR_INSTALL_DIR/.install-lock"
 if ./scripts/rdr-local update; then exit 1; fi
 rmdir "$RDR_INSTALL_DIR/.install-lock"
@@ -55,17 +56,17 @@ git worktree add -q "$test_root/feature" feature
 cd "$test_root/feature"
 echo feature-dirty > marker
 EXPECT_MARKER=feature-dirty BUILD_LABEL=feature ./scripts/rdr-local update
-[ "$("$RDR_INSTALL_DIR/rdr")" = feature ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = feature ]
 BUILD_LABEL=unexpected ./.githooks/post-merge
 BUILD_LABEL=unexpected ./.githooks/post-rewrite rebase
-[ "$("$RDR_INSTALL_DIR/rdr")" = feature ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = feature ]
 EXPECT_MARKER=committed BUILD_LABEL=committed ./scripts/rdr-local update --committed
-[ "$("$RDR_INSTALL_DIR/rdr")" = committed ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = committed ]
 cd "$test_root/repo"
 EXPECT_MARKER=committed BUILD_LABEL=merge ./.githooks/post-merge
-[ "$("$RDR_INSTALL_DIR/rdr")" = merge ]
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = merge ]
 EXPECT_MARKER=committed BUILD_LABEL=rebase ./.githooks/post-rewrite rebase
-[ "$("$RDR_INSTALL_DIR/rdr")" = rebase ]
-rm "$RDR_INSTALL_DIR/rdr.previous"
+[ "$("$RDR_INSTALL_DIR/rundevrun")" = rebase ]
+rm "$RDR_INSTALL_DIR/rundevrun.previous"
 if ./scripts/rdr-local rollback; then exit 1; fi
 echo 'PASS: worktree source, committed source, update, unchanged update, build/smoke failure, rollback, lock, main-only hooks, missing backup'

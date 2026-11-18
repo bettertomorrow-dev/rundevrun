@@ -23,8 +23,8 @@ import (
 
 func TestClaimedWithoutChildCwdFailureRecovers(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	root := filepath.Join(dir, "project")
@@ -44,7 +44,7 @@ cwd = 'sub'
 start_timeout = '600ms'
 hooks = { before_start = 'cd ..; rmdir sub', before_stop = 'touch ../stop-hook-ran', after_stop = 'touch ../stop-hook-ran' }
 `
-	path := filepath.Join(root, "dev.toml")
+	path := filepath.Join(root, "rundevrun.toml")
 	if e := os.WriteFile(path, []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -139,7 +139,7 @@ func TestClaimedWithoutChildUnknownSurvivor(t *testing.T) {
 	if e := os.Mkdir(root, 0700); e != nil {
 		t.Fatal(e)
 	}
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.app]\ncommand = 'sleep 60'\n"), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte("version = 1\n[project]\nname = 'demo'\n[services.app]\ncommand = 'sleep 60'\n"), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)

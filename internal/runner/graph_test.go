@@ -33,7 +33,7 @@ command = 'echo worker'
 depends_on = ['api']
 env = { API = '{dependencies.api.direct_url}', SECRET = 'private-value' }
 `
-	if err := os.WriteFile(filepath.Join(project, "dev.toml"), []byte(cfg), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(project, "rundevrun.toml"), []byte(cfg), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(project)
@@ -93,7 +93,7 @@ env = { API = '{dependencies.api.direct_url}', SECRET = 'private-value' }
 	}
 	fixed := strings.Replace(cfg, "port = 'auto'", "port = 23456", 1)
 	fixed = strings.Replace(fixed, "command = 'echo worker'", "command = 'echo worker'\nport = 23456", 1)
-	if err = os.WriteFile(filepath.Join(project, "dev.toml"), []byte(fixed), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(project, "rundevrun.toml"), []byte(fixed), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err = r.PlanGraph(context.Background(), "up", []Selection{selection}, false)
@@ -147,10 +147,10 @@ port = 'auto'
 command = 'echo worker'
 depends_on = ['api']
 `
-	if err := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(cfg), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(cfg), 0600); err != nil {
 		t.Fatal(err)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	p, err := discovery.Discover(main)
@@ -299,11 +299,11 @@ depends_on = ['api']
 	}
 
 	withURL := strings.Replace(cfg, "depends_on = ['api']", "depends_on = ['api']\nenv = { API = '{dependencies.api.url}' }", 1)
-	if err = os.WriteFile(filepath.Join(main, "dev.toml"), []byte(withURL), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(withURL), 0600); err != nil {
 		t.Fatal(err)
 	}
 	noPort := strings.Replace(cfg, "port = 'auto'\n", "", 1)
-	if err = os.WriteFile(filepath.Join(other, "dev.toml"), []byte(noPort), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(other, "rundevrun.toml"), []byte(noPort), 0600); err != nil {
 		t.Fatal(err)
 	}
 	before, err = os.ReadFile(filepath.Join(store.Root, "registry.json"))
@@ -340,7 +340,7 @@ depends_on = ['api']
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(main, "dev.toml"), []byte("invalid"), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte("invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	active, err := r.PlanGraph(context.Background(), "up", []Selection{{p, a, "api"}}, false)
@@ -369,18 +369,18 @@ func TestConcurrentBindCycle(t *testing.T) {
 	git("config", "user.email", "test@example.invalid")
 	git("config", "user.name", "Test")
 	base := "version = 1\n[project]\nname = 'demo'\n[services.alpha]\ncommand = 'true'\n[services.beta]\ncommand = 'true'\n"
-	if err := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(base), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(base), 0600); err != nil {
 		t.Fatal(err)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "init")
 	git("worktree", "add", "-qb", "other", other)
 	ca := strings.Replace(base, "[services.beta]", "depends_on = ['beta']\n[services.beta]", 1)
 	cb := base + "depends_on = ['alpha']\n"
-	if err := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(ca), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(ca), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(other, "dev.toml"), []byte(cb), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(other, "rundevrun.toml"), []byte(cb), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p, err := discovery.Discover(main)

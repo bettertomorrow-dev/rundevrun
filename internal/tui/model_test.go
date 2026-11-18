@@ -459,7 +459,7 @@ func TestRejectedRouteCandidateKeepsNetworkConfigAndRegistry(t *testing.T) {
 		if err := os.MkdirAll(worktree, 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(worktree, "dev.toml"), []byte("version = 1\n[project]\nname = 'shared'\n[services.web]\ncommand = 'sleep 60'\nprotocol = 'http'\nport = 'auto'\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(worktree, "rundevrun.toml"), []byte("version = 1\n[project]\nname = 'shared'\n[services.web]\ncommand = 'sleep 60'\nprotocol = 'http'\nport = 'auto'\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
 		project, err := discovery.Discover(worktree)

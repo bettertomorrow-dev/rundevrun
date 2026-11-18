@@ -1,4 +1,4 @@
-// Dispatches rdr commands and assembles their results.
+// Dispatches rundevrun commands and assembles their results.
 package cli
 
 import (
@@ -84,6 +84,9 @@ func (w worktreeInfo) String() string {
 }
 
 type instanceInfo struct {
+	ConfigFile        string            `json:"config_file,omitempty"`
+	ConfigMode        string            `json:"config_mode,omitempty"`
+	WorktreeRoot      string            `json:"worktree_root,omitempty"`
 	ID                string            `json:"instance_id"`
 	ProjectID         string            `json:"project_id"`
 	WorktreeID        string            `json:"worktree_id"`
@@ -151,8 +154,12 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.fail("USAGE", "--to-worktree is only supported by bind or switch")
 		return
 	}
-	if (opts.file != "" || opts.allServices) && e.Command != "switch" && !strings.HasPrefix(e.Command, "network ") {
-		e.fail("USAGE", "--file and --all-services are only valid with switch")
+	if opts.allServices && e.Command != "switch" {
+		e.fail("USAGE", "--all-services is only valid with switch")
+		return
+	}
+	if opts.file != "" && e.Command != "switch" && e.Command != "config external" && !strings.HasPrefix(e.Command, "network ") {
+		e.fail("USAGE", "--file is only valid with switch, config external, or network commands")
 		return
 	}
 	if (opts.follow || opts.tailSet) && e.Command != "logs" {
@@ -165,7 +172,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	if e.Command == "version" {
 		if validArity(args, 1, 1, e) {
-			e.Results = append(e.Results, versionInfo{"rdr", Version, APIVersion})
+			e.Results = append(e.Results, versionInfo{"rundevrun", Version, APIVersion})
 		}
 		return
 	}
@@ -176,6 +183,8 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	store := &state.Store{Root: root}
 	switch e.Command {
+	case "config external":
+		externalConfigCommand(args[2:], opts, e)
 	case "network inspect", "network check", "network plan", "network apply", "network setup-plan", "network setup-apply", "network setup-check", "network credential-store", "network setup-recover", "network adopt-dns", "network adopt-serve", "network resolve-challenge", "network credential-replace", "network adopt-existing-dns", "network cleanup-plan", "network cleanup-apply", "network resolve-finalization":
 		networkingCommand(ctx, store, args, opts, e)
 	case "proxy status", "proxy reload", "proxy stop", "proxy abort":
@@ -195,7 +204,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			return
 		}
 		if opts.toWorktree == "" {
-			e.fail("USAGE", "bind requires --to-worktree", "see rdr --help")
+			e.fail("USAGE", "bind requires --to-worktree", "see rundevrun --help")
 			return
 		}
 		d, w := resolveCommandSelection(store, opts, true, e)
@@ -286,7 +295,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		}
 		listConfiguration(ctx, store, opts, e)
 	default:
-		e.fail("USAGE", "unknown or not yet implemented command: "+e.Command, "see rdr --help")
+		e.fail("USAGE", "unknown or not yet implemented command: "+e.Command, "see rundevrun --help")
 	}
 	if e.text && (opts.dryRun || e.Command == "bind" || e.Command == "switch" || e.Command == "alias" || e.Command == "network plan") {
 		if reg, err := store.Read(); err == nil {
@@ -1082,7 +1091,7 @@ func validLifecycleArity(args []string, command string, e *envelope) bool {
 		min = 1
 	}
 	if len(args) < min {
-		e.fail("USAGE", "missing service selector", "see rdr --help")
+		e.fail("USAGE", "missing service selector", "see rundevrun --help")
 		return false
 	}
 	return true
@@ -1701,14 +1710,14 @@ func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) ma
 		addGraphInstanceError(e, result.InstanceID, "NOT_FOUND", "worktree metadata disappeared after up")
 		return fields
 	}
-	cfg, err := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+	cfg, err := discovery.LoadConfig(worktree.Root)
 	if err != nil {
 		fields["config_error"] = err.Error()
 		return fields
 	}
 	service, ok := cfg.Services[instance.Service]
 	if !ok {
-		fields["config_error"] = "service is absent from current dev.toml"
+		fields["config_error"] = "service is absent from current rundevrun.toml"
 		return fields
 	}
 	changed, restartRequired := configDrift(store, instance, cfg.Digest, e)
@@ -1865,7 +1874,7 @@ func register(store *state.Store, path string, dryRun bool, e *envelope) {
 		info := worktreeInfo{ID: w.ID, ProjectID: p.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached, ConfigValid: w.Config != nil}
 		if w.ConfigError != nil {
 			info.ConfigError = w.ConfigError.Error()
-			e.fail("CONFIG_INVALID", w.Root+": "+w.ConfigError.Error(), "fix dev.toml in this worktree")
+			e.fail("CONFIG_INVALID", w.Root+": "+w.ConfigError.Error(), "fix rundevrun.toml in this worktree")
 		}
 		e.Results = append(e.Results, info)
 	}
@@ -1975,7 +1984,7 @@ func selectProject(r state.Registry, selector string, e *envelope) *state.Projec
 		}
 	}
 	if len(matches) == 0 {
-		e.fail("NOT_FOUND", "registered project not found: "+selector, "use rdr projects --json")
+		e.fail("NOT_FOUND", "registered project not found: "+selector, "use rundevrun projects --json")
 		return nil
 	}
 	if len(matches) > 1 {
@@ -2054,13 +2063,20 @@ func listConfiguration(ctx context.Context, store *state.Store, opts options, e 
 			continue
 		}
 		if w.Config == nil {
-			e.fail("CONFIG_INVALID", "missing dev.toml in "+w.Root)
+			e.fail("CONFIG_INVALID", "missing rundevrun.toml in "+w.Root)
 			continue
 		}
 		for _, name := range sortedKeys(w.Config.Services) {
 			id := p.ID + "/" + w.ID + "/" + name
 			service := w.Config.Services[name]
 			info := instanceInfo{ID: id, ProjectID: p.ID, WorktreeID: w.ID, Service: name, State: "stopped", Protocol: service.Protocol}
+			if e.Command == "config check" {
+				info.ConfigFile, info.WorktreeRoot = w.Config.Filename, w.Root
+				info.ConfigMode = "shared"
+				if w.Config.Filename != filepath.Join(w.Root, "rundevrun.toml") {
+					info.ConfigMode = "external"
+				}
+			}
 			instance := state.Instance{ID: id, Service: name, WorktreeID: w.ID}
 			if savedInstance, ok := saved.Instances[id]; ok {
 				instance = savedInstance
@@ -2212,7 +2228,7 @@ func listRegistry(ctx context.Context, store *state.Store, opts options, e *enve
 			i.State = observed
 			if worktree, ok := findWorktree(p, i.WorktreeID); ok {
 				info.worktreeLabel = worktreeName(worktree.Branch, worktree.Root)
-				cfg, configErr := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+				cfg, configErr := discovery.LoadConfig(worktree.Root)
 				if configErr != nil {
 					info.ConfigError = configErr.Error()
 					addDependencyDetails(store, p, worktree, nil, i, true, &info, e)
@@ -2223,7 +2239,7 @@ func listRegistry(ctx context.Context, store *state.Store, opts options, e *enve
 						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
 						addDependencyDetails(store, p, worktree, &service, i, true, &info, e)
 					} else {
-						info.ConfigError = "service is absent from current dev.toml"
+						info.ConfigError = "service is absent from current rundevrun.toml"
 						info.ConfigChanged, info.RestartRequired = configDrift(store, i, cfg.Digest, e)
 						addDependencyDetails(store, p, worktree, nil, i, true, &info, e)
 					}
@@ -2502,7 +2518,7 @@ func dependencyTarget(project state.Project, targetID, dependency string, regist
 	if !ok || worktree.Root == "" {
 		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target worktree is missing: %s", dependency, targetID)
 	}
-	cfg, err := config.Load(filepath.Join(worktree.Root, "dev.toml"))
+	cfg, err := discovery.LoadConfig(worktree.Root)
 	if err != nil {
 		return state.Worktree{}, state.Instance{}, fmt.Errorf("dependency %s target config is invalid: %s", dependency, targetID)
 	}

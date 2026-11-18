@@ -13,7 +13,7 @@ import (
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	d := t.TempDir()
-	p := filepath.Join(d, "dev.toml")
+	p := filepath.Join(d, "rundevrun.toml")
 	if e := os.WriteFile(p, []byte(body), 0600); e != nil {
 		t.Fatal(e)
 	}
@@ -72,7 +72,7 @@ command="run"
 command="run"
 depends_on=["api-v1","api_v1"]
 `
-	p := filepath.Join(d, "dev.toml")
+	p := filepath.Join(d, "rundevrun.toml")
 	os.WriteFile(p, []byte(body), 0600)
 	if _, e := Load(p); e == nil || !strings.Contains(e.Error(), "normalization") {
 		t.Fatalf("collision: %v", e)
@@ -153,7 +153,7 @@ command="./scripts/worker"
 depends_on=["api"]
 env={API_URL="{dependencies.api.direct_url}"}
 `
-	p := filepath.Join(d, "dev.toml")
+	p := filepath.Join(d, "rundevrun.toml")
 	if e := os.WriteFile(p, []byte(body), 0600); e != nil {
 		t.Fatal(e)
 	}

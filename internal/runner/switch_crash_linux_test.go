@@ -51,8 +51,8 @@ func TestSwitchFrontendChild(t *testing.T) {
 	}
 }
 func TestSwitchJournalSurvivesKilledFrontend(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(t.TempDir(), "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	for _, stage := range []string{"prepare", "stop", "start"} {
@@ -78,10 +78,10 @@ func TestSwitchJournalSurvivesKilledFrontend(t *testing.T) {
 			if stage == "stop" {
 				base += "hooks = { before_stop = 'echo invoked >> marker; sleep 60' }\n"
 			}
-			if e := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(base), 0600); e != nil {
+			if e := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(base), 0600); e != nil {
 				t.Fatal(e)
 			}
-			git("add", "dev.toml")
+			git("add", "rundevrun.toml")
 			git("commit", "-qm", "initial")
 			git("worktree", "add", "-qb", "other", other)
 			target := "version = 1\n[project]\nname = 'demo'\n[services.api]\ncommand = 'sleep 60'\n"
@@ -91,7 +91,7 @@ func TestSwitchJournalSurvivesKilledFrontend(t *testing.T) {
 			if stage == "start" {
 				target += "hooks = { before_start = 'echo invoked >> marker; sleep 60' }\n"
 			}
-			if e := os.WriteFile(filepath.Join(other, "dev.toml"), []byte(target), 0600); e != nil {
+			if e := os.WriteFile(filepath.Join(other, "rundevrun.toml"), []byte(target), 0600); e != nil {
 				t.Fatal(e)
 			}
 			p, e := discovery.Discover(main)

@@ -19,7 +19,7 @@ from urllib.parse import urlencode, urlsplit
 HERE = Path(__file__).resolve().parent
 ENV = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 ENV.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rdr")
+RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rundevrun")
 RDR = shutil.which(RDR) or str(Path(RDR).expanduser().resolve())
 CLOUDFLARED = os.environ.get("CLOUDFLARED_BIN") or shutil.which("cloudflared")
 
@@ -34,11 +34,11 @@ def cli(cwd, *args, ok=True):
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ScenarioError(f"rdr {args[0]} returned invalid JSON (exit {proc.returncode})") from exc
+        raise ScenarioError(f"rundevrun {args[0]} returned invalid JSON (exit {proc.returncode})") from exc
     if (proc.returncode == 0) != ok:
         codes = ",".join(item.get("code", "UNKNOWN") for item in data.get("errors", []))
         logs = [path for item in data.get("results", []) for path in item.get("log_paths", [])]
-        raise ScenarioError(f"rdr {args[0]} returned exit {proc.returncode}, errors={codes}, logs={logs}")
+        raise ScenarioError(f"rundevrun {args[0]} returned exit {proc.returncode}, errors={codes}, logs={logs}")
     return data
 
 
@@ -162,7 +162,7 @@ def main():
         shutil.copyfile(HERE / "service.py", repo / "service.py")
         shutil.copyfile(HERE / "build_snapshot.py", repo / "build_snapshot.py")
         (repo / "source-marker.txt").write_text("cloudflare-snapshot-A\n")
-        dev = (HERE / "dev.toml").read_text()
+        dev = (HERE / "rundevrun.toml").read_text()
         start = dev.index("[services.reports]")
         end = dev.index("[services.indexer]")
         reports = dev[start:end].replace('depends_on = ["catalog"]', 'depends_on = ["catalog"]\nroutes = [{ path = "/catalog", dependency = "catalog", strip_prefix = true }]')
@@ -176,7 +176,7 @@ def main():
                 listener.bind(("127.0.0.1", 0))
                 held.append(listener)
                 dev = dev.replace('port = "auto"', f'port = {listener.getsockname()[1]}', 1)
-            (repo / "dev.toml").write_text(dev)
+            (repo / "rundevrun.toml").write_text(dev)
         finally:
             for listener in held:
                 listener.close()
@@ -184,10 +184,10 @@ def main():
         template.mkdir()
         git(repo, "init", "--initial-branch=main", f"--template={template}")
         for name, value in (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"),
-                            ("commit.gpgSign", "false"), ("user.name", "rdr cloudflare fixture"),
+                            ("commit.gpgSign", "false"), ("user.name", "rundevrun cloudflare fixture"),
                             ("user.email", "cloudflare-fixture@invalid")):
             git(repo, "config", name, value)
-        git(repo, "add", "dev.toml", "service.py", "build_snapshot.py", "source-marker.txt")
+        git(repo, "add", "rundevrun.toml", "service.py", "build_snapshot.py", "source-marker.txt")
         git(repo, "commit", "-m", "synthetic Cloudflare share acceptance fixture")
         cleanup_needed = True
         registration = cli(repo, "register", ".")

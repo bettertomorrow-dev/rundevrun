@@ -18,8 +18,8 @@ import (
 
 func TestRestartGraphPendingBindAndBuildFailure(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	c := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	c := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, e := c.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, out)
 	}
@@ -55,10 +55,10 @@ command = 'sleep 60'
 build = 'false'
 depends_on = ['api']
 `
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	git("worktree", "add", "-qb", "third", third)
@@ -194,7 +194,7 @@ depends_on = ['api']
 	if failedConfig == cfg {
 		t.Fatal("fixture replacement failed")
 	}
-	if e = os.WriteFile(filepath.Join(b.Root, "dev.toml"), []byte(failedConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(b.Root, "rundevrun.toml"), []byte(failedConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	failed, e := r.RestartGraph(ctx, roots)

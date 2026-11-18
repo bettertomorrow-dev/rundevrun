@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Keep the one-time token response inside this process and rdr's stdin.
+// Keep the one-time token response inside this process and rundevrun's stdin.
 import { spawnSync } from 'node:child_process';
 import { lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -40,12 +40,12 @@ try {
     'credential-ref': { type: 'string', default: 'cloudflare-dns-token' },
     name: { type: 'string', default: 'rundevrun DNS' },
     cf: { type: 'string', default: 'cf' },
-    rdr: { type: 'string', default: 'rdr' },
+    rundevrun: { type: 'string', default: 'rundevrun' },
     apply: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   } })); } catch { throw new Error('Invalid arguments; run --help.'); }
   if (values.help) {
-    console.log('Usage: node create-cloudflare-token.mjs --zone DOMAIN [--credential-ref REF] [--name NAME] [--cf PATH] [--rdr PATH] [--apply]\nWithout --apply, only inspect and preview. OAuth login must already be complete.');
+    console.log('Usage: node create-cloudflare-token.mjs --zone DOMAIN [--credential-ref REF] [--name NAME] [--cf PATH] [--rundevrun PATH] [--apply]\nWithout --apply, only inspect and preview. OAuth login must already be complete.');
     process.exit(0);
   }
   const zoneName = values.zone?.trim().toLowerCase().replace(/\.$/, '');
@@ -54,19 +54,19 @@ try {
     throw new Error('Supply --zone DOMAIN and a valid credential reference file name.');
   }
   cf = args => run(values.cf, args, `cf ${args.slice(0, 3).join(' ')}`);
-  const snapshot = run(values.rdr, ['network', 'inspect', '--json'], 'rdr network inspect');
-  if (!snapshot.results?.[0]?.config) throw new Error('A compatible rdr network CLI is required.');
+  const snapshot = run(values.rundevrun, ['network', 'inspect', '--json'], 'rundevrun network inspect');
+  if (!snapshot.results?.[0]?.config) throw new Error('A compatible rundevrun network CLI is required.');
 
   if (values.apply) {
     const root = path.join(process.env.XDG_CONFIG_HOME || path.join(homedir(), '.config'), 'rundevrun');
     for (const directory of [root, path.join(root, 'credentials')]) {
       const info = statIfPresent(directory);
       if (info && (!info.isDirectory() || (info.mode & 0o077) !== 0)) {
-        throw new Error('rdr configuration/credential directories must be private real directories before token creation.');
+        throw new Error('rundevrun configuration/credential directories must be private real directories before token creation.');
       }
     }
     if (statIfPresent(path.join(root, 'credentials', ref))) {
-      throw new Error('Credential reference already exists. Reuse it or explicitly rotate it with rdr network credential-replace; no token was created.');
+      throw new Error('Credential reference already exists. Reuse it or explicitly rotate it with rundevrun network credential-replace; no token was created.');
     }
   }
 
@@ -101,8 +101,8 @@ try {
     if (!createdId || typeof created?.value !== 'string' || !created.value) {
       throw new Error('Token creation response is incomplete. Inspect tokens with the requested name before retrying; response withheld.');
     }
-    const result = run(values.rdr, ['network', 'credential-store', ref, '--json'], 'rdr credential-store', created.value);
-    if (result.results?.[0]?.credential_ref !== ref) throw new Error('rdr did not confirm the expected credential reference.');
+    const result = run(values.rundevrun, ['network', 'credential-store', ref, '--json'], 'rundevrun credential-store', created.value);
+    if (result.results?.[0]?.credential_ref !== ref) throw new Error('rundevrun did not confirm the expected credential reference.');
     stored = true;
     delete created.value;
     console.log(JSON.stringify({ status: 'stored', ...summary, token_id: createdId, expires_on: created.expires_on ?? null }, null, 2));

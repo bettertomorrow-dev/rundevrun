@@ -20,7 +20,7 @@ import (
 
 func networkingCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
 	if len(args) < 2 || len(args) > 4 || (len(args) > 2 && args[1] != "credential-store" && args[1] != "credential-replace" && args[1] != "adopt-dns" && args[1] != "adopt-existing-dns" && args[1] != "adopt-serve" && args[1] != "resolve-challenge") {
-		e.fail("USAGE", "usage: rdr network inspect|check|plan|apply|setup-check|setup-plan|setup-apply|credential-store")
+		e.fail("USAGE", "usage: rundevrun network inspect|check|plan|apply|setup-check|setup-plan|setup-apply|credential-store")
 		return
 	}
 	command := args[1]
@@ -131,16 +131,16 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 			rollbackErr := rollbackNetworkSettings(ctx, service, before.Config, snapshot.Revision)
 			if rollbackErr == nil {
 				e.Results = e.Results[:len(e.Results)-1]
-				e.fail("ROUTE_CONFLICT", "registry changed before route commit; networking settings were rolled back", "inspect `rdr network check --json` and create a fresh plan")
+				e.fail("ROUTE_CONFLICT", "registry changed before route commit; networking settings were rolled back", "inspect `rundevrun network check --json` and create a fresh plan")
 				return
 			}
 			e.Status = "partial"
 			message := "route plan could not be committed after settings were saved: " + err.Error() + "; settings rollback also failed: " + rollbackErr.Error()
-			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: message, Actions: []string{"run `rdr network inspect --json`, then create and apply a fresh plan"}})
+			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: message, Actions: []string{"run `rundevrun network inspect --json`, then create and apply a fresh plan"}})
 		} else {
 			if err := activation.Finish(ctx); err != nil {
 				e.Status = "partial"
-				e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "network settings and routes were saved, but proxy reload failed: " + err.Error(), Actions: []string{"run `rdr network check --json`, then `rdr proxy reload`"}})
+				e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "network settings and routes were saved, but proxy reload failed: " + err.Error(), Actions: []string{"run `rundevrun network check --json`, then `rundevrun proxy reload`"}})
 			}
 		}
 	case "setup-plan":
@@ -181,7 +181,7 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 				e.fail("STATE_CONFLICT", "network ownership or settings changed after this cleanup plan; inspect and create a new plan")
 			} else if strings.Contains(err.Error(), "failed after") {
 				e.Status = "partial"
-				e.Errors = append(e.Errors, commandError{Code: "TUNNEL_FAILED", Message: err.Error(), Actions: []string{"run `rdr network setup-check --json`, inspect owned resources, then create a new cleanup plan"}})
+				e.Errors = append(e.Errors, commandError{Code: "TUNNEL_FAILED", Message: err.Error(), Actions: []string{"run `rundevrun network setup-check --json`, inspect owned resources, then create a new cleanup plan"}})
 			} else {
 				failError(e, err)
 			}
@@ -224,7 +224,7 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 				e.fail("STATE_CONFLICT", "network settings changed after this setup plan; inspect and create a new plan")
 			} else if strings.Contains(err.Error(), "failed after") {
 				e.Status = "partial"
-				e.Errors = append(e.Errors, commandError{Code: "TUNNEL_FAILED", Message: err.Error(), Actions: []string{"run `rdr network setup-check --json`, inspect the named resource, then use setup-recover before retrying"}})
+				e.Errors = append(e.Errors, commandError{Code: "TUNNEL_FAILED", Message: err.Error(), Actions: []string{"run `rundevrun network setup-check --json`, inspect the named resource, then use setup-recover before retrying"}})
 			} else {
 				failError(e, err)
 			}
@@ -233,14 +233,14 @@ func networkingCommand(ctx context.Context, store *state.Store, args []string, o
 		e.Results = append(e.Results, result)
 		if err := activation.Commit(ctx); err != nil {
 			e.Status = "partial"
-			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "tailnet setup completed, but route commit failed: " + err.Error(), Actions: []string{"inspect `rdr network check --json` and reconcile routes after correcting the error"}})
+			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "tailnet setup completed, but route commit failed: " + err.Error(), Actions: []string{"inspect `rundevrun network check --json` and reconcile routes after correcting the error"}})
 		} else if err := activation.Finish(ctx); err != nil {
 			e.Status = "partial"
-			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "tailnet setup completed, but local route reconciliation failed: " + err.Error(), Actions: []string{"inspect `rdr network check --json` and reconcile routes after correcting the error"}})
+			e.Errors = append(e.Errors, commandError{Code: "ROUTE_RECONCILE_FAILED", Message: "tailnet setup completed, but local route reconciliation failed: " + err.Error(), Actions: []string{"inspect `rundevrun network check --json` and reconcile routes after correcting the error"}})
 		}
 	case "credential-store", "credential-replace":
 		if path != "" || opts.dryRun || len(args) != 3 {
-			e.fail("USAGE", "usage: rdr network credential-store REF, with the token supplied on stdin")
+			e.fail("USAGE", "usage: rundevrun network credential-store REF, with the token supplied on stdin")
 			return
 		}
 		ref := args[2]

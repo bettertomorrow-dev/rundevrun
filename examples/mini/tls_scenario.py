@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 HERE = Path(__file__).resolve().parent
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 ENV.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rdr")
+RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rundevrun")
 RDR = shutil.which(RDR) or str(Path(RDR).expanduser().resolve())
 
 
@@ -38,9 +38,9 @@ def cli(cwd, *args, ok=True):
     try:
         result = json.loads(p.stdout)
     except json.JSONDecodeError as exc:
-        raise Incomplete(f"rdr {args[0]} returned invalid JSON: {p.stderr.strip()}") from exc
+        raise Incomplete(f"rundevrun {args[0]} returned invalid JSON: {p.stderr.strip()}") from exc
     if (p.returncode == 0) != ok:
-        raise Incomplete(f"rdr {' '.join(args)} exit {p.returncode}: {result.get('errors')}")
+        raise Incomplete(f"rundevrun {' '.join(args)} exit {p.returncode}: {result.get('errors')}")
     return result
 
 
@@ -135,16 +135,16 @@ def main():
     clean = False
     try:
         repo.mkdir()
-        shutil.copyfile(HERE / "dev.toml", repo / "dev.toml")
+        shutil.copyfile(HERE / "rundevrun.toml", repo / "rundevrun.toml")
         shutil.copyfile(HERE / "service.py", repo / "service.py")
         template = temp / "empty-template"
         template.mkdir()
         git(repo, "init", "--initial-branch=main", f"--template={template}")
         for key, value in (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"),
-                           ("commit.gpgSign", "false"), ("user.name", "rdr fixture"),
+                           ("commit.gpgSign", "false"), ("user.name", "rundevrun fixture"),
                            ("user.email", "fixture@invalid")):
             git(repo, "config", key, value)
-        git(repo, "add", "dev.toml", "service.py")
+        git(repo, "add", "rundevrun.toml", "service.py")
         git(repo, "commit", "-m", "synthetic TLS mini fixture")
         git(repo, "worktree", "add", "-b", "tls-a", str(roots["a"]))
 
@@ -167,7 +167,7 @@ def main():
         )
 
         for root in roots.values():
-            dev = root / "dev.toml"
+            dev = root / "rundevrun.toml"
             text = dev.read_text().replace(
                 'depends_on = ["catalog"]\nhealth = { http = "/health" }',
                 'depends_on = ["catalog"]\nroutes = [{ path = "/catalog", dependency = "catalog", strip_prefix = true }]\nhealth = { http = "/health" }',

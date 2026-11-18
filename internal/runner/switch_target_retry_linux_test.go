@@ -18,8 +18,8 @@ import (
 
 func TestSwitchRetriesStoppedTargetHook(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	c := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+	binary := filepath.Join(dir, "rundevrun")
+	c := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 	if out, e := c.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, out)
 	}
@@ -56,15 +56,15 @@ build = 'false'
 depends_on = ['api']
 `
 	cfg = strings.Replace(cfg, "[services.api]\n", "[services.api]\nhooks = { after_stop = 'if [ -f flag ]; then echo $RDR_NEW_WORKTREE > retry-path; else touch flag; exit 1; fi' }\n", 1)
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	git("worktree", "add", "-qb", "third", third)
 	clean := strings.Replace(cfg, "hooks = { after_stop = 'if [ -f flag ]; then echo $RDR_NEW_WORKTREE > retry-path; else touch flag; exit 1; fi' }\n", "", 1)
-	if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(clean), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(clean), 0600); e != nil {
 		t.Fatal(e)
 	}
 	p, e := discovery.Discover(root)

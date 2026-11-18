@@ -150,7 +150,7 @@ func (t tailscaleClient) apply(ctx context.Context, action, ownedTarget string) 
 		return nil
 	case "remove":
 		if ownedTarget == "" || !ok || target != ownedTarget {
-			return errors.New("tailnet port 443 is not the recorded rdr forwarding")
+			return errors.New("tailnet port 443 is not the recorded rundevrun forwarding")
 		}
 		_, err = t.command(ctx, "serve", "--bg", "--tcp=443", "off")
 		if err != nil {

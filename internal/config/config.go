@@ -21,6 +21,7 @@ type Config struct {
 	Services map[string]Service `toml:"services"`
 	Routing  *Routing           `toml:"routing"`
 	Filename string             `toml:"-"`
+	Root     string             `toml:"-"`
 	Digest   string             `toml:"-"`
 }
 type Project struct {
@@ -56,6 +57,10 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 var envRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func Load(filename string) (*Config, error) {
+	return LoadForRoot(filename, filepath.Dir(filename))
+}
+
+func LoadForRoot(filename, root string) (*Config, error) {
 	b, e := os.ReadFile(filename)
 	if e != nil {
 		return nil, e
@@ -71,6 +76,7 @@ func Load(filename string) (*Config, error) {
 		return nil, configFailure(filename, "toml", e)
 	}
 	c.Filename = filename
+	c.Root = root
 	if e := validateEmptyFields(raw); e != nil {
 		field := strings.SplitN(e.Error(), ":", 2)[0]
 		return nil, configFailure(filename, field, e)
@@ -101,9 +107,13 @@ func (c *Config) Validate() error {
 	if len(c.Services) == 0 {
 		return fmt.Errorf("services: must not be empty")
 	}
-	root, e := filepath.EvalSymlinks(filepath.Dir(c.Filename))
+	base := c.Root
+	if base == "" {
+		base = filepath.Dir(c.Filename)
+	}
+	root, e := filepath.EvalSymlinks(base)
 	if e != nil {
-		return fmt.Errorf("dev.toml directory: %w", e)
+		return fmt.Errorf("worktree directory: %w", e)
 	}
 	var names []string
 	for n := range c.Services {

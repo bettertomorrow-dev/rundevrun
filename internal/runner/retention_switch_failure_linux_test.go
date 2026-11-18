@@ -19,8 +19,8 @@ import (
 
 func TestSwitchPruneFailureKeepsActualResult(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	main := filepath.Join(dir, "main")
@@ -40,10 +40,10 @@ func TestSwitchPruneFailureKeepsActualResult(t *testing.T) {
 	git("config", "user.name", "Test")
 	git("config", "user.email", "test@example.invalid")
 	cfg := "version = 1\n[project]\nname = 'demo'\n[services.worker]\ncommand = 'sleep 60'\n"
-	if e := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", other)
 	p, e := discovery.Discover(main)
@@ -94,7 +94,7 @@ func TestSwitchPruneFailureKeepsActualResult(t *testing.T) {
 	}
 	bad := filepath.Join(store.Root, "operations", "bad.json")
 	targetConfig := cfg + "env = { TARGET = " + strconv.Quote(bad) + " }\nhooks = { after_start = 'touch \"$TARGET\"' }\n"
-	if e = os.WriteFile(filepath.Join(b.Root, "dev.toml"), []byte(targetConfig), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(b.Root, "rundevrun.toml"), []byte(targetConfig), 0600); e != nil {
 		t.Fatal(e)
 	}
 	result, err := r.SwitchGraph(ctx, []SwitchMapping{{From: Selection{p, a, "worker"}, To: Selection{p, b, "worker"}}})

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise switch forms using only rdr's public JSON interface."""
+"""Exercise switch forms using only rundevrun's public JSON interface."""
 import json
 import os
 import shutil
@@ -11,7 +11,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 ENV.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rdr")
+RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rundevrun")
 RDR = shutil.which(RDR) or str(Path(RDR).expanduser().resolve())
 
 
@@ -25,12 +25,12 @@ def run_cli(cwd, *args, ok=True):
     try:
         data = json.loads(p.stdout)
     except json.JSONDecodeError as exc:
-        raise Incomplete(f"rdr {args[0]} returned invalid JSON: {p.stderr.strip()}") from exc
+        raise Incomplete(f"rundevrun {args[0]} returned invalid JSON: {p.stderr.strip()}") from exc
     if ok and p.returncode:
         errors = "; ".join(x.get("message", "") for x in data.get("errors", []))
-        raise Incomplete(f"rdr {' '.join(args)} failed ({p.returncode}): {errors}")
+        raise Incomplete(f"rundevrun {' '.join(args)} failed ({p.returncode}): {errors}")
     if not ok and p.returncode == 0:
-        raise Incomplete(f"rdr {' '.join(args)} unexpectedly succeeded")
+        raise Incomplete(f"rundevrun {' '.join(args)} unexpectedly succeeded")
     return data
 
 
@@ -64,16 +64,16 @@ def main():
     passed = False
     try:
         repo.mkdir()
-        for name in ("dev.toml", "service.py"):
+        for name in ("rundevrun.toml", "service.py"):
             shutil.copyfile(HERE / name, repo / name)
         template = temp / "empty-template"
         template.mkdir()
         git(repo, "init", "--initial-branch=main", f"--template={template}")
         for key, value in (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"),
-                           ("commit.gpgSign", "false"), ("user.name", "rdr example"),
+                           ("commit.gpgSign", "false"), ("user.name", "rundevrun example"),
                            ("user.email", "example@invalid")):
             git(repo, "config", key, value)
-        git(repo, "add", "dev.toml", "service.py")
+        git(repo, "add", "rundevrun.toml", "service.py")
         git(repo, "commit", "-m", "synthetic mini services")
         for name in ("a", "b", "c"):
             git(repo, "worktree", "add", "-b", f"switch-{name}", str(roots[name]))
@@ -155,7 +155,7 @@ def main():
         old_id = before["catalog"].get("run_id")
         if not old_id:
             raise Incomplete("public status omitted the source catalog run ID")
-        target_config = roots["a"] / "dev.toml"
+        target_config = roots["a"] / "rundevrun.toml"
         config_text = target_config.read_text()
         target_config.write_text(config_text.replace('command = "python3 service.py catalog"',
                                                       'command = "python3 service.py catalog"\nbuild = "false"', 1))

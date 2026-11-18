@@ -14,7 +14,7 @@ import (
 
 func TestHostnameAliasResolvesNormalizedCollision(t *testing.T) {
 	r, p, w := aliasFixture(t)
-	path := filepath.Join(w.Root, "dev.toml")
+	path := filepath.Join(w.Root, "rundevrun.toml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestHostnameAliasLiveAndFailures(t *testing.T) {
 func TestHostnameAliasBypassesOverlongDefault(t *testing.T) {
 	r, p, w := aliasFixture(t)
 	name := strings.Repeat("x", 60)
-	path := filepath.Join(w.Root, "dev.toml")
+	path := filepath.Join(w.Root, "rundevrun.toml")
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

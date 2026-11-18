@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlsplit
 HERE = Path(__file__).resolve().parent
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 ENV.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rdr")
+RDR = os.environ.get("RDR_BIN") or (sys.argv[1] if len(sys.argv) > 1 else "rundevrun")
 RDR = shutil.which(RDR) or str(Path(RDR).expanduser().resolve())
 
 
@@ -32,10 +32,10 @@ def cli(cwd, *args, ok=True):
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ScenarioError(f"rdr {args[0]} returned invalid JSON: {proc.stderr.strip()}") from exc
+        raise ScenarioError(f"rundevrun {args[0]} returned invalid JSON: {proc.stderr.strip()}") from exc
     if (proc.returncode == 0) != ok:
         errors = "; ".join(item.get("message", "") for item in data.get("errors", []))
-        raise ScenarioError(f"rdr {' '.join(args)} exited {proc.returncode}: {errors}")
+        raise ScenarioError(f"rundevrun {' '.join(args)} exited {proc.returncode}: {errors}")
     return data
 
 
@@ -182,22 +182,22 @@ def main():
     passed = False
     try:
         shutil.copyfile(HERE / "service.py", repo / "service.py")
-        dev = (HERE / "dev.toml").read_text().replace(
+        dev = (HERE / "rundevrun.toml").read_text().replace(
             'depends_on = ["catalog"]\nhealth = { http = "/health" }',
             'depends_on = ["catalog"]\nroutes = [{ path = "/catalog", dependency = "catalog", strip_prefix = true }]\nhealth = { http = "/health" }',
         )
         dev += '\n[services.reports.share]\nmode = "snapshot"\nbuild = "python3 build_snapshot.py"\ndir = "dist"\nenv = { SHARE_ONLY = "synthetic-share-override" }\n'
-        (repo / "dev.toml").write_text(dev)
+        (repo / "rundevrun.toml").write_text(dev)
         shutil.copyfile(HERE / "build_snapshot.py", repo / "build_snapshot.py")
         (repo / "source-marker.txt").write_text("snapshot-source-A\n")
         template = temp / "empty-template"
         template.mkdir()
         git(repo, "init", "--initial-branch=main", f"--template={template}")
         for name, value in (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"),
-                            ("commit.gpgSign", "false"), ("user.name", "rdr offline share"),
+                            ("commit.gpgSign", "false"), ("user.name", "rundevrun offline share"),
                             ("user.email", "offline-share@invalid")):
             git(repo, "config", name, value)
-        git(repo, "add", "dev.toml", "service.py", "build_snapshot.py", "source-marker.txt")
+        git(repo, "add", "rundevrun.toml", "service.py", "build_snapshot.py", "source-marker.txt")
         git(repo, "commit", "-m", "synthetic live share fixture")
         registration = cli(repo, "register", ".")
         project, registered = registration["scope"]["project"], True

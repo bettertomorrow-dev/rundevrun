@@ -33,4 +33,4 @@ Use current provider UI/CLI behavior, not remembered button labels or timers.
 Completion: the user's zone is active and correctly delegated, with existing
 services accounted for. Then return to the wizard's prerequisites. This migration
 is separate from the later rdr-owned wildcard/TXT operations; use the official
-provider migration process here and rdr's backend for project-domain setup.
+provider migration process here and rundevrun's backend for project-domain setup.

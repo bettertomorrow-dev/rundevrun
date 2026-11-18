@@ -20,8 +20,8 @@ func TestSwitchGraphHookFailures(t *testing.T) {
 	for _, hook := range []string{"before_stop", "after_stop", "before_start", "after_start", "consumer_before_stop"} {
 		t.Run(hook, func(t *testing.T) {
 			dir := t.TempDir()
-			binary := filepath.Join(dir, "rdr")
-			c := exec.Command("go", "build", "-o", binary, "../../cmd/rdr")
+			binary := filepath.Join(dir, "rundevrun")
+			c := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun")
 			if out, e := c.CombinedOutput(); e != nil {
 				t.Fatalf("build: %v %s", e, out)
 			}
@@ -62,10 +62,10 @@ depends_on = ['api']
 			} else if strings.HasSuffix(hook, "_stop") {
 				cfg = strings.Replace(cfg, "[services.api]\n", "[services.api]\nhooks = { "+hook+" = 'exit 1' }\n", 1)
 			}
-			if e := os.WriteFile(filepath.Join(root, "dev.toml"), []byte(cfg), 0600); e != nil {
+			if e := os.WriteFile(filepath.Join(root, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 				t.Fatal(e)
 			}
-			git("add", "dev.toml")
+			git("add", "rundevrun.toml")
 			git("commit", "-qm", "initial")
 			git("worktree", "add", "-qb", "other", other)
 			git("worktree", "add", "-qb", "third", third)
@@ -152,7 +152,7 @@ depends_on = ['api']
 			}()
 			if strings.HasSuffix(hook, "_start") {
 				changed := strings.Replace(cfg, "[services.api]\n", "[services.api]\nhooks = { "+hook+" = 'exit 1' }\n", 1)
-				if e = os.WriteFile(filepath.Join(b.Root, "dev.toml"), []byte(changed), 0600); e != nil {
+				if e = os.WriteFile(filepath.Join(b.Root, "rundevrun.toml"), []byte(changed), 0600); e != nil {
 					t.Fatal(e)
 				}
 			}
@@ -215,8 +215,8 @@ depends_on = ['api']
 
 func TestSwitchGraphIndependentBranchContinues(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "rdr")
-	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rdr").CombinedOutput(); e != nil {
+	binary := filepath.Join(dir, "rundevrun")
+	if b, e := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}
 	main := filepath.Join(dir, "main")
@@ -245,10 +245,10 @@ hooks = { before_stop = 'exit 1' }
 [services.worker]
 command = 'sleep 60'
 `
-	if e := os.WriteFile(filepath.Join(main, "dev.toml"), []byte(cfg), 0600); e != nil {
+	if e := os.WriteFile(filepath.Join(main, "rundevrun.toml"), []byte(cfg), 0600); e != nil {
 		t.Fatal(e)
 	}
-	git("add", "dev.toml")
+	git("add", "rundevrun.toml")
 	git("commit", "-qm", "initial")
 	git("worktree", "add", "-qb", "other", bdir)
 	git("worktree", "add", "-qb", "third", cdir)

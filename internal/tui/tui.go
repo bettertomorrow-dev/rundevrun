@@ -31,7 +31,7 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-const help = "rdrtop shows rdr-managed services.\n\nUsage: rdrtop\n\n↑/k ↓/j move  Tab switches tabs  a toggles all projects\nn networking  l logs  o opens local URL  O opens tailnet URL\ns stops selected service  q quits\nLogs: ↑/k ↓/j or PgUp/PgDown scroll; q/Esc returns; Ctrl-C quits."
+const help = "rundevtop shows rundevrun-managed services.\n\nUsage: rundevtop\n\n↑/k ↓/j move  Tab switches tabs  a toggles all projects\nn networking  l logs  o opens local URL  O opens tailnet URL\ns stops selected service  q quits\nLogs: ↑/k ↓/j or PgUp/PgDown scroll; q/Esc returns; Ctrl-C quits."
 
 func Help() string { return help }
 
@@ -104,7 +104,7 @@ func newApp(ctx context.Context, store *state.Store, cwd string, out io.Writer) 
 func Run(ctx context.Context, store *state.Store, cwd string, in *os.File, out io.Writer) error {
 	f, ok := out.(*os.File)
 	if !ok || !term.IsTerminal(in.Fd()) || !term.IsTerminal(f.Fd()) {
-		return fmt.Errorf("rdrtop requires an interactive terminal")
+		return fmt.Errorf("rundevtop requires an interactive terminal")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -177,10 +177,10 @@ func (m *app) applySetup(plan networking.SetupPlan) tea.Cmd {
 			return setupMsg{err: err, applied: true}
 		}
 		if err = activation.Commit(m.ctx); err != nil {
-			return setupMsg{result: result, applied: true, partial: "Tailnet setup completed, but route commit failed: " + err.Error() + ". Run rdr network check --json and reconcile routes."}
+			return setupMsg{result: result, applied: true, partial: "Tailnet setup completed, but route commit failed: " + err.Error() + ". Run rundevrun network check --json and reconcile routes."}
 		}
 		if err = activation.Finish(m.ctx); err != nil {
-			return setupMsg{result: result, applied: true, partial: "Tailnet setup completed, but TLS activation failed: " + err.Error() + ". Run rdr network setup-check --json, then rdr proxy reload."}
+			return setupMsg{result: result, applied: true, partial: "Tailnet setup completed, but TLS activation failed: " + err.Error() + ". Run rundevrun network setup-check --json, then rundevrun proxy reload."}
 		}
 		return setupMsg{result: result, applied: true}
 	}
@@ -692,7 +692,7 @@ func (m *app) syncView() {
 }
 
 func (m *app) View() string {
-	brand := m.renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render("rdrtop")
+	brand := m.renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render("rundevtop")
 	scope := "all projects"
 	if !m.AllProjects && m.Snapshot.CurrentProjectID != "" {
 		scope = "current project"
@@ -930,7 +930,7 @@ func listLines(m Model) ([]string, int) {
 		}
 	}
 	if len(lines) == 0 {
-		message := "No running rdr services."
+		message := "No running rundevrun services."
 		if m.Tab == 1 {
 			message = "No last launch errors."
 		}

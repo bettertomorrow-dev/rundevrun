@@ -82,7 +82,7 @@ func reservePort(t *testing.T) (net.Listener, int) {
 
 func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds and runs real rdr service processes")
+		t.Skip("builds and runs real rundevrun service processes")
 	}
 
 	tmp, err := os.MkdirTemp("", "rdr-accept-")
@@ -96,11 +96,11 @@ func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 	}
 	_, source, _, _ := runtime.Caller(0)
 	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	binary := filepath.Join(base, "rdr")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/rdr")
+	binary := filepath.Join(base, "rundevrun")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/rundevrun")
 	build.Dir = repo
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build rdr: %v\n%s", err, out)
+		t.Fatalf("build rundevrun: %v\n%s", err, out)
 	}
 	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
@@ -125,7 +125,7 @@ func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if (err == nil) != success || !json.Valid(out) {
-			t.Fatalf("rdr %v: err=%v output=%s", args, err, out)
+			t.Fatalf("rundevrun %v: err=%v output=%s", args, err, out)
 		}
 	}
 	git := func(dir string, args ...string) {
@@ -158,7 +158,7 @@ env = { POC_HTTP_HELPER = "1", POC_ID = %q }
 command = "sleep 60"
 build = "printf 'poc build failure\\n'; exit 1"
 `, name, strconv.Quote(command), port, name)
-		if err := os.WriteFile(filepath.Join(dir, "dev.toml"), []byte(config), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "rundevrun.toml"), []byte(config), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -171,7 +171,7 @@ build = "printf 'poc build failure\\n'; exit 1"
 	writeConfig(first, "first", firstPort)
 	writeConfig(second, "second", secondPort)
 	git(first, "init", "-b", "main")
-	git(first, "add", "dev.toml")
+	git(first, "add", "rundevrun.toml")
 	git(first, "-c", "user.name=PoC", "-c", "user.email=poc@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	git(first, "worktree", "add", "-b", "feature", feature)
 	writeConfig(feature, "first", featurePort)
@@ -534,7 +534,7 @@ build = "printf 'poc build failure\\n'; exit 1"
 
 func TestLocalLaunchURLs(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds and runs real rdr service processes")
+		t.Skip("builds and runs real rundevrun service processes")
 	}
 	base, err := os.MkdirTemp("", "rdr-launch-")
 	if err != nil {
@@ -547,11 +547,11 @@ func TestLocalLaunchURLs(t *testing.T) {
 	}
 	_, source, _, _ := runtime.Caller(0)
 	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	binary := filepath.Join(base, "rdr")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/rdr")
+	binary := filepath.Join(base, "rundevrun")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/rundevrun")
 	build.Dir = repo
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build rdr: %v\n%s", err, out)
+		t.Fatalf("build rundevrun: %v\n%s", err, out)
 	}
 	project, configRoot := filepath.Join(base, "project"), filepath.Join(base, "config", "rundevrun")
 	for _, dir := range []string{project, configRoot} {
@@ -609,7 +609,7 @@ health = { http = "/" }
 depends_on = ["api"]
 env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VALUE = "{dependencies.api.url}", REPORT_MODE = "external" }
 `, strconv.Quote(command), apiPort, strconv.Quote(command), webPort)
-	if err := os.WriteFile(filepath.Join(project, "dev.toml"), []byte(config), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(project, "rundevrun.toml"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}
 	invoke := func(args ...string) {
@@ -617,7 +617,7 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 		cmd := exec.Command(binary, append(args, "--json")...)
 		cmd.Dir = project
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("rdr %v: %v %s", args, err, out)
+			t.Fatalf("rundevrun %v: %v %s", args, err, out)
 		}
 	}
 	t.Cleanup(func() {
@@ -745,10 +745,10 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 		cmd.Dir = project
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("rdr %v: %v %s", args, err, out)
+			t.Fatalf("rundevrun %v: %v %s", args, err, out)
 		}
 		if strings.Contains(string(out), "\x1b[") {
-			t.Fatalf("rdr %v output uses color when piped: %q", args, out)
+			t.Fatalf("rundevrun %v output uses color when piped: %q", args, out)
 		}
 		return string(out)
 	}
@@ -757,20 +757,20 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 		got := textOutput(command)
 		for _, want := range []string{"SERVICE", "WORKTREE", "STATE", "URL", "● api", "ready", wantOwned + "\n", connectedURL + "\n"} {
 			if !strings.Contains(got, want) {
-				t.Fatalf("rdr %s output missing %q: %s", command, want, got)
+				t.Fatalf("rundevrun %s output missing %q: %s", command, want, got)
 			}
 		}
 	}
 	if got := textOutput("proxy", "status"); !strings.Contains(got, fmt.Sprintf("HTTP  127.0.0.1:%d", oldPort)) {
-		t.Fatalf("rdr proxy status output missing listener: %s", got)
+		t.Fatalf("rundevrun proxy status output missing listener: %s", got)
 	}
 	if got := textOutput("network", "inspect"); !strings.Contains(got, "Connected domain  dev.example.com") {
-		t.Fatalf("rdr network inspect output missing domain: %s", got)
+		t.Fatalf("rundevrun network inspect output missing domain: %s", got)
 	}
 	for _, tc := range []struct{ command, symbol string }{{"up", "●"}, {"restart", "✓"}} {
 		wantTable := "  SERVICE  URL\n" + tc.symbol + " api      " + wantOwned + "\n           " + connectedURL + "\n"
 		if got := textOutput(tc.command, "api"); !strings.HasPrefix(got, wantTable) {
-			t.Fatalf("rdr %s api output = %q, want prefix %q", tc.command, got, wantTable)
+			t.Fatalf("rundevrun %s api output = %q, want prefix %q", tc.command, got, wantTable)
 		}
 	}
 	services, manifests, envs = read()
@@ -811,9 +811,9 @@ env = { POC_LAUNCH_TEST = "1", MARKER = "web.json", OWN_VALUE = "{url}", DEP_VAL
 		t.Fatalf("owned announcement after restart: got %q, want %q", got, wantOwned)
 	}
 	if got, want := textOutput("down", "web", "api"), "  SERVICE\n✓ web\n✓ api\n"; got != want {
-		t.Fatalf("rdr down web api output = %q, want %q", got, want)
+		t.Fatalf("rundevrun down web api output = %q, want %q", got, want)
 	}
 	if got, want := textOutput("down", "api"), "  SERVICE\n● api\n"; got != want {
-		t.Fatalf("rdr down api output = %q, want %q", got, want)
+		t.Fatalf("rundevrun down api output = %q, want %q", got, want)
 	}
 }
