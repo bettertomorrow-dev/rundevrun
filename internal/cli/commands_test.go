@@ -1683,7 +1683,7 @@ func TestHookStatusIsWhitelistedAndReadOnly(t *testing.T) {
 		}
 		assertPublicHook(t, encoded, expectedLog)
 	}
-	upResult := graphInstanceInfo(context.Background(), store, runner.Result{InstanceID: instanceID, StateUnknown: true}, &envelope{Results: []any{}, Errors: []commandError{}})
+	upResult := graphInstanceInfo(store, runner.Result{InstanceID: instanceID, StateUnknown: true}, &envelope{Results: []any{}, Errors: []commandError{}})
 	encoded, err := json.Marshal(upResult)
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
+	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -48,7 +49,7 @@ type envelope struct {
 	Credentials       *shareCredentials    `json:"credentials,omitempty"`
 	Publications      []publication.Status `json:"publications,omitempty"`
 	PublicationErrors []commandError       `json:"publication_errors,omitempty"`
-	upURLs            map[string][]string
+	lifecycleURLs     map[string][]string
 }
 
 type shareCredentials struct {
@@ -71,8 +72,8 @@ type proxyInfoView struct {
 func result(command string, opts options) envelope {
 	e := envelope{Version: 1, Command: command, Scope: scope{opts.project, opts.worktree},
 		Status: "ok", DryRun: opts.dryRun, Results: []any{}, Errors: []commandError{}}
-	if command == "up" && !opts.json && !opts.dryRun {
-		e.upURLs = make(map[string][]string)
+	if (command == "up" || command == "restart") && !opts.json && !opts.dryRun {
+		e.lifecycleURLs = make(map[string][]string)
 	}
 	return e
 }
@@ -92,8 +93,9 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 			return 4
 		}
 	} else {
-		if e.Command == "up" && !e.DryRun {
-			if err := writeUpTable(out, e); err != nil {
+		lifecycle := e.Command == "up" || e.Command == "down" || e.Command == "restart"
+		if lifecycle && !e.DryRun {
+			if err := writeLifecycleTable(out, e); err != nil {
 				fmt.Fprintln(errOut, "rdr: cannot write result:", err)
 				return 4
 			}
@@ -106,13 +108,13 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 			}
 		}
 		for _, err := range e.Errors {
-			if e.Command == "up" && err.InstanceID != "" {
+			if lifecycle && err.InstanceID != "" {
 				fmt.Fprintf(errOut, "rdr: %s: %s: %s\n", serviceName(err.InstanceID), err.Code, err.Message)
 			} else {
 				fmt.Fprintf(errOut, "rdr: %s: %s\n", err.Code, err.Message)
 			}
 		}
-		if e.Command == "up" {
+		if e.Command == "up" || e.Command == "restart" {
 			for _, err := range e.ProxyErrors {
 				fmt.Fprintf(errOut, "rdr: proxy: %s: %s\n", err.Code, err.Message)
 			}
@@ -154,7 +156,7 @@ func serviceName(id string) string {
 	return id[strings.LastIndexByte(id, '/')+1:]
 }
 
-func upSymbol(status string, color bool) string {
+func lifecycleSymbol(status string, color bool) string {
 	symbol, code := "?", "33"
 	switch status {
 	case "completed":
@@ -172,7 +174,7 @@ func upSymbol(status string, color bool) string {
 	return symbol
 }
 
-func writeUpTable(out io.Writer, e envelope) error {
+func writeLifecycleTable(out io.Writer, e envelope) error {
 	if len(e.Results) == 0 {
 		return nil
 	}
@@ -195,12 +197,22 @@ func writeUpTable(out io.Writer, e envelope) error {
 	rows := make([]row, 0, len(e.Results))
 	serviceWidth := len("SERVICE")
 	for _, raw := range e.Results {
-		item, _ := raw.(map[string]any)
-		id, _ := item["instance_id"].(string)
-		status, _ := item["status"].(string)
-		restart, _ := item["restart_required"].(bool)
+		var id, status string
+		var restart bool
+		switch item := raw.(type) {
+		case runner.Result:
+			id, status = item.InstanceID, item.Status
+		case map[string]any:
+			id, _ = item["instance_id"].(string)
+			status, _ = item["status"].(string)
+			restart, _ = item["restart_required"].(bool)
+		}
+		if e.Command == "down" && id == "" && status == "unchanged" {
+			_, err := fmt.Fprintln(out, "No running services.")
+			return err
+		}
 		var urls []string
-		for _, address := range e.upURLs[id] {
+		for _, address := range e.lifecycleURLs[id] {
 			address = clean(address)
 			if address != "" && !slices.Contains(urls, address) {
 				urls = append(urls, address)
@@ -208,10 +220,14 @@ func writeUpTable(out io.Writer, e envelope) error {
 		}
 		service := clean(serviceName(id))
 		serviceWidth = max(serviceWidth, utf8.RuneCountInString(service))
-		rows = append(rows, row{service, upSymbol(status, color), urls, restart})
+		rows = append(rows, row{service, lifecycleSymbol(status, color), urls, restart})
 	}
 	var table strings.Builder
-	fmt.Fprintf(&table, "  %-*s  URL\n", serviceWidth, "SERVICE")
+	if e.Command == "down" {
+		table.WriteString("  SERVICE\n")
+	} else {
+		fmt.Fprintf(&table, "  %-*s  URL\n", serviceWidth, "SERVICE")
+	}
 	urlIndent := strings.Repeat(" ", serviceWidth+4)
 	for _, row := range rows {
 		if len(row.urls) == 0 {

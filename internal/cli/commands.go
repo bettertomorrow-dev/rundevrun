@@ -1399,7 +1399,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 	}
 	for _, item := range result.Results {
 		if action == "up" {
-			e.Results = append(e.Results, graphInstanceInfo(ctx, store, item, e))
+			e.Results = append(e.Results, graphInstanceInfo(store, item, e))
 		} else {
 			e.Results = append(e.Results, item)
 		}
@@ -1458,8 +1458,52 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 				ensureProxyAfterStart(ctx, store, routePath, e)
 			}
 		}
+		if e.lifecycleURLs != nil {
+			collectLifecycleURLs(ctx, store, result.Results, e.lifecycleURLs)
+		}
 	}
 	return result
+}
+
+func collectLifecycleURLs(ctx context.Context, store *state.Store, results []runner.Result, urls map[string][]string) {
+	reg, err := store.Read()
+	if err != nil {
+		return
+	}
+	for _, item := range results {
+		if !successfulLiveResult(item) {
+			continue
+		}
+		projectID, _, ok := strings.Cut(item.InstanceID, "/")
+		if !ok {
+			continue
+		}
+		project, err := reg.Project(projectID)
+		if err != nil {
+			continue
+		}
+		instance, ok := project.Instances[item.InstanceID]
+		if !ok || instance.RunID == "" || (item.RunID != "" && instance.RunID != item.RunID) {
+			continue
+		}
+		manifest, err := store.ReadManifest(instance.RunID)
+		if err != nil || manifest.InstanceID != instance.ID {
+			continue
+		}
+		view := monitor.Service{ProjectID: projectID, RunID: instance.RunID}
+		_ = view.LoadURLs(ctx, store, instance, manifest)
+		local, reported := view.LocalURL, view.ReportedURL
+		if local == "" {
+			local = instance.RouteURL
+			if local == "" {
+				local = view.DirectURL
+			}
+			if url, ok := runner.TransferOwnedReportedURL(store, projectID, instance, local, reported); ok {
+				local, reported = url, ""
+			}
+		}
+		urls[item.InstanceID] = []string{local, view.TailnetURL, view.LocalAliasURL, view.TailnetAliasURL, reported}
+	}
 }
 
 func ensureProxyAfterStart(ctx context.Context, store *state.Store, path string, e *envelope) {
@@ -1477,11 +1521,15 @@ func ensureProxyAfterStart(ctx context.Context, store *state.Store, path string,
 
 func hasSuccessfulLiveResult(results []runner.Result) bool {
 	for _, r := range results {
-		if (r.Status == "completed" || r.Status == "unchanged") && !r.StateUnknown && liveState(r.State) {
+		if successfulLiveResult(r) {
 			return true
 		}
 	}
 	return false
+}
+
+func successfulLiveResult(r runner.Result) bool {
+	return (r.Status == "completed" || r.Status == "unchanged") && !r.StateUnknown && liveState(r.State)
 }
 
 func graphNeedsProxy(store *state.Store, results []runner.Result) (bool, error) {
@@ -1492,7 +1540,7 @@ func graphNeedsProxy(store *state.Store, results []runner.Result) (bool, error) 
 	queue := []string{}
 	seen := map[string]bool{}
 	for _, result := range results {
-		if (result.Status != "completed" && result.Status != "unchanged") || result.StateUnknown || !liveState(result.State) {
+		if !successfulLiveResult(result) {
 			continue
 		}
 		if result.URLs["url"] != "" && result.URLs["url"] != result.URLs["direct_url"] {
@@ -1557,7 +1605,7 @@ func graphFailureCode(ctx context.Context, err error) string {
 	return "PROCESS_FAILED"
 }
 
-func graphInstanceInfo(ctx context.Context, store *state.Store, result runner.Result, e *envelope) map[string]any {
+func graphInstanceInfo(store *state.Store, result runner.Result, e *envelope) map[string]any {
 	fields := map[string]any{
 		"instance_id": result.InstanceID,
 		"status":      result.Status,
@@ -1602,23 +1650,6 @@ func graphInstanceInfo(ctx context.Context, store *state.Store, result runner.Re
 	instance.State = result.State
 	if result.RunID != "" {
 		instance.RunID = result.RunID
-	}
-	if e.upURLs != nil && (result.Status == "completed" || result.Status == "unchanged") && liveState(result.State) && instance.RunID != "" {
-		if manifest, err := store.ReadManifest(instance.RunID); err == nil && manifest.InstanceID == instance.ID {
-			view := monitor.Service{ProjectID: project.ID, RunID: instance.RunID}
-			_ = view.LoadURLs(ctx, store, instance, manifest)
-			local, reported := view.LocalURL, view.ReportedURL
-			if local == "" {
-				local = instance.RouteURL
-				if local == "" {
-					local = view.DirectURL
-				}
-				if url, ok := runner.TransferOwnedReportedURL(store, project.ID, instance, local, reported); ok {
-					local, reported = url, ""
-				}
-			}
-			e.upURLs[result.InstanceID] = []string{local, view.TailnetURL, view.LocalAliasURL, view.TailnetAliasURL, reported}
-		}
 	}
 	worktree, ok := findWorktree(project, instance.WorktreeID)
 	if !ok {
