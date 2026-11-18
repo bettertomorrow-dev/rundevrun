@@ -24,6 +24,7 @@ cp -a "$source_dir/." /root/rundevrun-ci/
 cd /root/rundevrun-ci
 uname -r | grep -i 'microsoft.*WSL2'
 go test -race -count=1 -timeout=10m ./...
+python3 scripts/test-mini-service.py
 go build -o /tmp/rundevrun ./cmd/rundevrun
 python3 examples/mini/scenario.py /tmp/rundevrun
 python3 scripts/rdrtop_smoke.py

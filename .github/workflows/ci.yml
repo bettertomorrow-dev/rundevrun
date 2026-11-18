@@ -99,6 +99,7 @@ jobs:
       - run: go test -race -count=1 -timeout=10m ./...
       - name: Exercise public CLI and terminal monitor
         run: |
+          python3 scripts/test-mini-service.py
           go build -o "$RUNNER_TEMP/rundevrun" ./cmd/rundevrun
           python3 examples/mini/scenario.py "$RUNNER_TEMP/rundevrun"
           python3 scripts/rdrtop_smoke.py

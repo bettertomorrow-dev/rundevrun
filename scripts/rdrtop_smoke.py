@@ -131,7 +131,7 @@ hooks = { before_stop = "printf done > before-stopped", after_stop = "printf don
 
             web = root / "http-project"
             web.mkdir()
-            (web / "server.py").write_text('''import http.server, os
+            (web / "server.py").write_text('''import http.server, os, socketserver
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         body = ("local-route-ok:" + self.headers.get("Host", "")).encode()
@@ -140,7 +140,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def log_message(self, *_): pass
-http.server.HTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serve_forever()
+class LoopbackHTTPServer(http.server.HTTPServer):
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+LoopbackHTTPServer(("127.0.0.1", int(os.environ["RDR_PORT"])), Handler).serve_forever()
 ''')
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
