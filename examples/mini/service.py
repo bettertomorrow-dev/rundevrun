@@ -7,6 +7,7 @@ import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from urllib.request import urlopen
 
 
@@ -22,6 +23,12 @@ def identity(role):
 def request_json(url):
     with urlopen(url, timeout=3) as response:
         return json.load(response)
+
+
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -100,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(role):
     Handler.role = role
-    server = ThreadingHTTPServer((os.environ.get("RDR_HOST", "127.0.0.1"), int(os.environ["RDR_PORT"])), Handler)
+    server = LoopbackHTTPServer((os.environ.get("RDR_HOST", "127.0.0.1"), int(os.environ["RDR_PORT"])), Handler)
     print(json.dumps({"event": "listening", **identity(role), "port": server.server_port}), flush=True)
     server.serve_forever()
 

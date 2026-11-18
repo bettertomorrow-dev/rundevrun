@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.select.outputs.go }}
+      node: ${{ steps.select.outputs.node }}
+      installer: ${{ steps.select.outputs.installer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 scripts/test-ci-changes.py
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            if base=$(git merge-base "$BASE" "$HEAD"); then
+              python3 scripts/ci-changes.py "$base" "$HEAD" >> "$GITHUB_OUTPUT"
+            else
+              python3 scripts/ci-changes.py >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$EVENT" = push ] && [ "$GITHUB_REF_TYPE" != tag ]; then
+            python3 scripts/ci-changes.py "$BEFORE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci-changes.py >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l .)
+          test -z "$files" || { printf 'Run gofmt on:\n%s\n' "$files"; exit 1; }
+      - run: go mod verify
+      - name: Check module files
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - run: go vet ./...
+      - name: Validate release archives for every target
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
+        with:
+          version: v2.20.2
+          args: release --snapshot --clean
+        env:
+          TAP_GITHUB_TOKEN: ''
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - run: go test -race -count=1 -timeout=10m ./...
+      - name: Exercise public CLI and terminal monitor
+        run: |
+          python3 scripts/test-mini-service.py
+          go build -o "$RUNNER_TEMP/rundevrun" ./cmd/rundevrun
+          python3 examples/mini/scenario.py "$RUNNER_TEMP/rundevrun"
+          python3 scripts/rdrtop_smoke.py
+
+  wsl:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        id: go
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: false
+      - name: Install Ubuntu under WSL 2
+        shell: pwsh
+        run: |
+          wsl --set-default-version 2
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot select WSL 2' }
+          wsl --install -d Ubuntu --web-download --no-launch
+          if ($LASTEXITCODE -ne 0) { throw 'WSL installation failed' }
+      - name: Test inside WSL 2
+        shell: pwsh
+        env:
+          GO_VERSION: ${{ steps.go.outputs.go-version }}
+        run: |
+          $workspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          $source = wsl -d Ubuntu -u root -- wslpath -u $workspace
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) { throw 'Cannot locate checkout in WSL' }
+          $source = $source.Trim()
+          wsl -d Ubuntu -u root -- bash "$source/scripts/ci-wsl.sh" "$source" $env:GO_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'WSL acceptance failed' }
+
+  node:
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: node --test scripts/domain-wizard-token.test.mjs
+
+  installer:
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: sh scripts/rdr-local-test
+      - run: python3 scripts/test-install.py
+
+  security:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    uses: ./.github/workflows/security.yml
+
+  ci:
+    name: CI
+    if: always()
+    needs: [changes, check, test, wsl, node, installer, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          jobs = json.loads(os.environ["NEEDS"])
+          assert jobs["changes"]["result"] == "success", "Change detection failed"
+          flags = jobs["changes"]["outputs"]
+          for flag in ("go", "node", "installer"):
+              assert flags.get(flag) in ("true", "false"), f"Missing selection: {flag}"
+          for job, flag in {"check": "go", "test": "go", "wsl": "go", "security": "go", "node": "node", "installer": "installer"}.items():
+              expected = "success" if flags[flag] == "true" else "skipped"
+              assert jobs[job]["result"] == expected, f"{job}: {jobs[job]['result']}, expected {expected}"
+          PYTHON

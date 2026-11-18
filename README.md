@@ -1,12 +1,23 @@
 # rundevrun
 
 Run development services across projects and existing Git worktrees.
-Development software for Linux and macOS; requires Go 1.27 or newer and Git.
+Development software for macOS, Linux, and WSL 2. Git is required at runtime.
+Building from source requires Go 1.27 or newer.
+
+Install both commands from a published release:
 
 ```sh
-go build -trimpath -o /tmp/rundevrun ./cmd/rundevrun
-/tmp/rundevrun --help
+curl -fsSL https://raw.githubusercontent.com/bettertomorrow-dev/rundevrun/main/install.sh | bash
 ```
+
+Or, on macOS, after Homebrew publication is configured:
+
+```sh
+brew install --cask bettertomorrow-dev/tap/rundevrun
+```
+
+See [installation](docs/INSTALL.md) for version pinning, source builds, and
+updates. See [CI and releases](docs/CI.md) for checks and the release procedure.
 
 The CLI is `rundevrun`; the terminal monitor is `rundevtop`. For shorter commands,
 add these optional aliases to `~/.zshrc` or `~/.bashrc`:

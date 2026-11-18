@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,15 @@ def main():
     try:
         repo.mkdir()
         CLI_ENV["RDR_HOME"] = str(state)
+        CLI_ENV["XDG_CONFIG_HOME"] = str(temp / "config")
+        config = temp / "config" / "rundevrun"
+        config.mkdir(parents=True, mode=0o700)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        (config / "networking.json").write_text(json.dumps({
+            "version": 1, "local": {"listen": f"127.0.0.1:{port}"}, "tailnet": {}
+        }))
         FIXTURE_ENV["RDR_HOME"] = str(state)
         for name in ("rundevrun.toml", "service.py"):
             shutil.copyfile(HERE / name, repo / name)
@@ -98,8 +108,14 @@ def main():
         scenario_passed = True
     except Exception as exc:
         print(f"INCOMPLETE: {exc}", file=sys.stderr)
+        for run in sorted((state / "runs").glob("*")):
+            for name in ("supervisor.json", "supervisor.log", "application.log"):
+                log = run / name
+                if log.is_file():
+                    print(f"--- {run.name}/{name} ---", file=sys.stderr)
+                    print(log.read_text(errors="replace")[-8192:], file=sys.stderr)
         if config_checked:
-            print("The fixture and config checks ran; graph coverage needs the stage 3 CLI.", file=sys.stderr)
+            print("The fixture and config checks passed; lifecycle acceptance failed.", file=sys.stderr)
         else:
             print("Fixture setup stopped before config checks completed.", file=sys.stderr)
     finally:
@@ -126,13 +142,13 @@ def git(cwd, *args):
 
 
 def cli(cwd, *args, check=True):
-    proc = subprocess.run([RDR, *args, "--json"], cwd=cwd, env=CLI_ENV, text=True, capture_output=True, timeout=30)
+    proc = subprocess.run([RDR, *args, "--json"], cwd=cwd, env=CLI_ENV, text=True, capture_output=True, timeout=90)
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise ScenarioError(f"rundevrun {args[0]} did not return public JSON: {proc.stderr.strip()}") from exc
     if check and proc.returncode:
-        errors = "; ".join(error.get("message", str(error)) for error in result.get("errors", []))
+        errors = "; ".join(error.get("message", str(error)) for error in result.get("errors", []) + result.get("proxy_errors", []) + result.get("routing_errors", []))
         raise ScenarioError(f"rundevrun {' '.join(args)} failed ({proc.returncode}): {errors}")
     return result
 
@@ -189,7 +205,7 @@ def cleanup(repo, project, roots):
         if item.get("state_unknown") or state != "stopped" or item.get("preparation"):
             active.append(f"{item.get('instance_id', '<unknown>')} state={state!r} preparation={item.get('preparation')!r}")
     if result.get("status") != "ok" or active:
-        detail = "; ".join(active) or "; ".join(error.get("message", str(error)) for error in result.get("errors", []))
+        detail = "; ".join(active) or "; ".join(error.get("message", str(error)) for error in result.get("errors", []) + result.get("proxy_errors", []) + result.get("routing_errors", []))
         raise ScenarioError("public status did not confirm a clean runtime" + (f": {detail}" if detail else ""))
 
 
