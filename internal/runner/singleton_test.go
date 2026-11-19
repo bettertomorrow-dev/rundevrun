@@ -19,6 +19,10 @@ import (
 )
 
 func TestSingletonHandoff(t *testing.T) {
+	service, err := os.ReadFile("../../examples/mini/service.py")
+	if err != nil {
+		t.Fatal(err)
+	}
 	binary := filepath.Join(t.TempDir(), "rundevrun")
 	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, out)
@@ -50,10 +54,10 @@ func TestSingletonHandoff(t *testing.T) {
 [project]
 name = 'demo'
 [services.api]
-command = 'python3 -m http.server {port} --bind {host}'
+command = 'python3 service.py catalog'
 port = %d
 singleton = true
-health = { http = '/' }
+health = { http = '/health' }
 stop_timeout = '2s'
 env = { NEXTAUTH_URL = 'http://localhost:%d' }
 [services.worker]
@@ -68,9 +72,9 @@ stop_timeout = '2s'
 				cfg = strings.Replace(cfg, fmt.Sprintf("port = %d", port), "port = 'auto'", 1)
 			}
 			if scenario == "process" {
-				cfg = strings.Replace(cfg, "python3 -m http.server {port} --bind {host}", "sleep 60", 1)
+				cfg = strings.Replace(cfg, "python3 service.py catalog", "sleep 60", 1)
 				cfg = strings.Replace(cfg, fmt.Sprintf("port = %d\n", port), "", 1)
-				cfg = strings.Replace(cfg, "health = { http = '/' }\n", "", 1)
+				cfg = strings.Replace(cfg, "health = { http = '/health' }\n", "", 1)
 			}
 			if scenario == "disabled" {
 				cfg = strings.Replace(cfg, "singleton = true", "singleton = false", 1)
@@ -85,17 +89,18 @@ stop_timeout = '2s'
 				}
 			}
 			write(filepath.Join(root, "rundevrun.toml"), cfg)
+			write(filepath.Join(root, "service.py"), string(service))
 			git("init", "-q")
 			git("config", "user.name", "Test")
 			git("config", "user.email", "test@example.invalid")
-			git("add", "rundevrun.toml")
+			git("add", "rundevrun.toml", "service.py")
 			git("commit", "-qm", "initial")
 			git("worktree", "add", "-qb", "other", other)
 			if scenario == "build-failure" {
 				write(filepath.Join(other, "rundevrun.toml"), strings.Replace(cfg, "singleton = true", "singleton = true\nbuild = 'false'", 1))
 			}
 			if scenario == "start-failure" {
-				write(filepath.Join(other, "rundevrun.toml"), strings.Replace(cfg, "python3 -m http.server {port} --bind {host}", "false", 1))
+				write(filepath.Join(other, "rundevrun.toml"), strings.Replace(cfg, "python3 service.py catalog", "false", 1))
 			}
 			p, err := discovery.Discover(root)
 			if err != nil {
