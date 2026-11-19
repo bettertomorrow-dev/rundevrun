@@ -1197,6 +1197,9 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 		}
 		selections = append(selections, runner.Selection{Project: d, Worktree: w, Service: service})
 	}
+	for _, tree := range d.Worktrees {
+		e.rememberWorktree(d.ID, d.Name, tree.ID, tree.Branch, tree.Root)
+	}
 	if opts.dryRun {
 		if candidate != nil {
 			for _, sel := range selections {
@@ -1406,6 +1409,11 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 
 func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) runner.GraphResult {
 	r := runner.New(store, executablePath())
+	for _, selection := range selections {
+		for _, tree := range selection.Project.Worktrees {
+			e.rememberWorktree(selection.Project.ID, selection.Project.Name, tree.ID, tree.Branch, tree.Root)
+		}
+	}
 	var routeCfg *routing.Config
 	var routePath string
 	if action == "up" || action == "restart" {
@@ -1440,6 +1448,11 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 		} else {
 			e.Results = append(e.Results, item)
 		}
+	}
+	e.OperationID = result.OperationID
+	e.JournalPath = result.JournalPath
+	for _, step := range result.Steps {
+		e.Steps = append(e.Steps, operationStepView{ID: step.ID, Phase: step.Status, Status: terminalStepStatus(step.Status), Code: step.Code, Message: step.Message})
 	}
 	for _, failure := range result.Errors {
 		e.Errors = append(e.Errors, commandError{Code: failure.Code, Message: failure.Message, InstanceID: failure.InstanceID, Actions: []string{}})

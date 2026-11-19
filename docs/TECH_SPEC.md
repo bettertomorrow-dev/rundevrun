@@ -21,6 +21,7 @@ The table lists service fields without the `services.<name>.` prefix.
 | service.cwd | optional nonempty string | '.', confined to existing worktree directory. |
 | service.build | optional nonempty string | No build if absent. |
 | service.protocol, port | optional string, integer or 'auto' | Rules below. |
+| service.singleton | optional boolean | false; one active instance per project/service across linked worktrees, with automatic handoff on up. |
 | service.depends_on | optional string array | [], unique existing service names. |
 | service.env | optional string map | {}, valid shell variable names, no RDR_* or __RDR_* keys. |
 | service.build_timeout/start_timeout/stop_timeout/hook_timeout | optional duration strings | 5m/30s/20s/60s, positive. |
@@ -138,6 +139,33 @@ the TOML configuration digest. Restart services after editing env files to load
 new values; existing runs and their stop hooks retain the saved environment.
 
 ## Identity and lifecycle
+
+### Singleton services
+
+Set `singleton = true` on a service to keep one active instance across linked
+worktrees of the same project. The default is false. This setting is independent
+of port selection and also works for process services. Separate clones have
+separate project identities.
+
+When `up` selects another worktree, it prepares the target, stops the previous
+instance, then starts the target and checks readiness. Fixed ports can transfer
+from the source to the target without changing app URLs. Existing switch rules
+apply to affected consumers and dependency bindings. A request selecting several
+worktrees of the same singleton service is rejected. Starting the current
+instance again is unchanged. Concurrent starts of the same project/service
+return BUSY while a start or switch is in progress.
+
+Dry-run JSON includes a `switch` plan with source/target mappings, affected
+consumers, and ordered steps. Executed handoffs report operation IDs, journal
+paths, and step results through the usual lifecycle output.
+
+Preparation failure preserves the source. A stop failure blocks the target.
+Failure after stopping can leave the service down and is reported as partial;
+there is no automatic restart of the old instance. Unmanaged processes and
+unverifiable ownership remain conflicts. `restart` of a stopped worktree that
+requires a handoff directs the user to `up`.
+
+### Project identity
 
 Projects and worktrees use hashes of canonical paths, not display names or remote
 URLs. Separate clones remain distinct. Selector precedence is ID, canonical path,

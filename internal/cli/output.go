@@ -100,6 +100,15 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 				fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
 				return 4
 			}
+			if len(e.Steps) > 0 {
+				var details strings.Builder
+				e.Results = nil
+				writeSwitchResult(&details, e, colorEnabled(out))
+				if _, err := io.WriteString(out, details.String()); err != nil {
+					fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
+					return 4
+				}
+			}
 		} else {
 			if err := writeTextResults(out, e); err != nil {
 				fmt.Fprintln(errOut, "rundevrun: cannot write result:", err)
@@ -215,6 +224,9 @@ func writeLifecycleTable(out io.Writer, e envelope) error {
 		}
 		urls := displayURLs(e.lifecycleURLs[id])
 		service := singleLine(serviceName(id))
+		if e.OperationID != "" {
+			service = e.instanceLabel(id)
+		}
 		serviceWidth = max(serviceWidth, utf8.RuneCountInString(service))
 		rows = append(rows, row{service, lifecycleSymbol(status, color), urls, restart})
 	}

@@ -31,6 +31,7 @@ type PlannedInstance struct {
 	Steps          []string          `json:"steps"`
 	Hook           *HookStatus       `json:"hook,omitempty"`
 	env            map[string]string
+	singleton      bool
 	routeSelection Selection
 	route          routeAssignment
 }
@@ -44,6 +45,8 @@ type GraphPlan struct {
 	Revision     uint64            `json:"revision"`
 	Instances    []PlannedInstance `json:"instances"`
 	Publications []string          `json:"publications,omitempty"`
+	Switch       *SwitchPlan       `json:"switch,omitempty"`
+	mappings     []SwitchMapping
 }
 type BindResult struct {
 	ConsumerID      string `json:"consumer_id"`
@@ -69,6 +72,8 @@ type graphPlanner struct {
 	override map[string]map[string]string
 	desired  bool
 	replace  map[string]bool
+	retiring map[string]bool
+	selected map[string]bool
 }
 
 func liveState(s string) bool {
@@ -170,6 +175,10 @@ func (g *graphPlanner) load(s Selection, configured bool) (*graphNode, error) {
 		if !n.live || g.replace[id] {
 			n.plan.Digest = w.Config.Digest
 		}
+	}
+	n.plan.singleton = n.service.Singleton
+	if cfg := n.selection.Worktree.Config; cfg != nil {
+		n.plan.singleton = n.plan.singleton || cfg.Services[s.Service].Singleton
 	}
 	g.nodes[id] = n
 	return n, nil
@@ -294,10 +303,32 @@ func (r *Runner) planGraph(ctx context.Context, action string, selections []Sele
 			g.replace[id] = true
 		}
 	}
+	g.selected = map[string]bool{}
 	for _, s := range selections {
+		id, err := selectionID(s)
+		if err != nil {
+			return GraphPlan{}, err
+		}
+		g.selected[id] = true
 		if e = g.walk(s); e != nil {
 			return GraphPlan{}, e
 		}
+	}
+	mappings, e := g.singletonMappings()
+	if e != nil {
+		return GraphPlan{}, e
+	}
+	if len(mappings) != 0 {
+		if action != "up" {
+			return GraphPlan{}, &Error{"BINDING_INVALID", errors.New("singleton handoff requires up")}
+		}
+		plan, err := r.planSwitch(ctx, mappings, selections, &reg)
+		if err != nil {
+			return GraphPlan{}, err
+		}
+		result.Instances, result.Publications, result.Switch = plan.Graph, plan.Publications, &plan
+		result.mappings = mappings
+		return result, nil
 	}
 	if e = g.finalize(); e != nil {
 		return GraphPlan{}, e
@@ -325,6 +356,9 @@ func (g *graphPlanner) finalize() error {
 		}
 		for _, i := range p.Instances {
 			for runID, v := range i.Reservations {
+				if g.retiring[i.ID] && runID == i.RunID {
+					continue
+				}
 				if g.nodes[i.ID] != nil && i.Preparation != nil && i.Preparation.RunID == runID {
 					continue
 				}

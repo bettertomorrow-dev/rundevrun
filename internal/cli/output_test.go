@@ -22,6 +22,10 @@ func TestTextChangeSummaries(t *testing.T) {
 		results []any
 		want    string
 	}{
+		{"up", runner.GraphPlan{Action: "up", Switch: &runner.SwitchPlan{
+			Mappings: []runner.SwitchPair{{From: from, To: to}},
+			Steps:    []runner.SwitchStep{{Action: "stop", InstanceID: from}, {Action: "start", InstanceID: to}},
+		}}, nil, "Replace api (demo/main) → api (demo/feature)\n  Stop  api (demo/main)\n  Start  api (demo/feature)"},
 		{"switch", runner.SwitchPlan{
 			Mappings: []runner.SwitchPair{{From: from, To: to}},
 			Steps:    []runner.SwitchStep{{Action: "start", InstanceID: to}},
@@ -34,7 +38,7 @@ func TestTextChangeSummaries(t *testing.T) {
 			"Connected domain  dev.example.com\nDNS  create"},
 	} {
 		t.Run(tc.command, func(t *testing.T) {
-			e := result(tc.command, options{dryRun: tc.command == "switch"})
+			e := result(tc.command, options{dryRun: tc.plan != nil})
 			e.rememberWorktree("p", "demo", "w1", "main", "")
 			e.rememberWorktree("p", "demo", "w2", "feature", "")
 			e.Plan = tc.plan

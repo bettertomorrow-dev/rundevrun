@@ -22,9 +22,6 @@ import (
 type SwitchStepResult = state.OperationStep
 type SwitchResult struct {
 	GraphResult
-	OperationID string             `json:"operation_id,omitempty"`
-	JournalPath string             `json:"journal_path,omitempty"`
-	Steps       []SwitchStepResult `json:"steps"`
 }
 type switchWork struct {
 	plan     PlannedInstance
@@ -35,9 +32,14 @@ type switchWork struct {
 	oldPort  int
 	prepared *preparedRun
 	pending  bool
+	borrowed bool
 }
 
 func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out SwitchResult, retErr error) {
+	return r.switchGraph(ctx, mappings, nil)
+}
+
+func (r *Runner) switchGraph(ctx context.Context, mappings []SwitchMapping, starts []Selection) (out SwitchResult, retErr error) {
 	out.GraphResult = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
 	out.Steps = []SwitchStepResult{}
 	defer func() {
@@ -60,10 +62,15 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 			}
 		}
 	}()
-	initial, e := r.PlanSwitch(ctx, mappings)
+	initial, e := r.planSwitch(ctx, mappings, starts, nil)
 	if e != nil {
 		return out, e
 	}
+	serviceLocks, e := r.lockServiceStarts(initial.Graph)
+	if e != nil {
+		return out, e
+	}
+	defer serviceLocks.Close()
 	opID, e := randomID()
 	if e != nil {
 		return out, e
@@ -76,7 +83,7 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		return out, e
 	}
 	defer locks.Close()
-	lockedPlan, e := r.PlanSwitch(ctx, mappings)
+	lockedPlan, e := r.planSwitch(ctx, mappings, starts, nil)
 	if e != nil {
 		return out, e
 	}
@@ -258,7 +265,7 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		}
 
 	}
-	plan, e := r.PlanSwitch(ctx, mappings)
+	plan, e := r.planSwitch(ctx, mappings, starts, nil)
 	if e != nil {
 		return out, e
 	}
@@ -345,6 +352,10 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 		return out, e
 	}
 
+	sourceFor := map[string]string{}
+	for _, pair := range plan.Mappings {
+		sourceFor[pair.To] = pair.From
+	}
 	e = r.Store.Update(func(current *state.Registry) error {
 		if current.Revision != plan.Revision {
 			return &Error{"STATE_CONFLICT", errors.New("registry changed")}
@@ -373,7 +384,23 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 			if fixed, ok := svc.Port.(int64); ok {
 				port := int(fixed)
 				if owner := used[port]; owner != "" && !(owner == node.InstanceID && x.oldPort == port) {
-					return &Error{"PORT_CONFLICT", errors.New("fixed port reserved")}
+					if owner != sourceFor[node.InstanceID] {
+						return &Error{"PORT_CONFLICT", errors.New("fixed port reserved")}
+					}
+					p, err := current.Project(x.project.ID)
+					if err != nil {
+						return err
+					}
+					source := p.Instances[owner]
+					for runID, held := range source.Reservations {
+						if held == port && runID != source.RunID {
+							return &Error{"PORT_CONFLICT", errors.New("source has an additional port reservation")}
+						}
+					}
+					if source.Reservations[source.RunID] != port {
+						return &Error{"PORT_CONFLICT", errors.New("source does not own fixed port")}
+					}
+					x.port, x.borrowed = port, true
 				}
 				used[port] = node.InstanceID
 			}
@@ -422,7 +449,7 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 			if inst.Reservations == nil {
 				inst.Reservations = map[string]int{}
 			}
-			if x.port != 0 {
+			if x.port != 0 && !x.borrowed {
 				inst.Reservations[x.runID] = x.port
 			}
 			inst.Preparation = &state.Intent{RunID: x.runID, OperationID: opID, Phase: "preparing"}
@@ -501,10 +528,6 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 			}
 		}
 		addresses[node.InstanceID] = addr
-	}
-	sourceFor := map[string]string{}
-	for _, pair := range plan.Mappings {
-		sourceFor[pair.To] = pair.From
 	}
 	old := map[string]PlannedInstance{}
 	for _, p := range plan.OldStops {
@@ -713,6 +736,11 @@ func (r *Runner) switchStep(ctx context.Context, step SwitchStep, operationID st
 				return e
 			}
 		}
+		if x.borrowed {
+			if err := r.reserveHandoffPort(x); err != nil {
+				return err
+			}
+		}
 		x.prepared.plan.State = "stopped"
 		result, e := r.activateLocked(ctx, x.prepared)
 		if e == nil {
@@ -734,4 +762,36 @@ func (r *Runner) switchStep(ctx context.Context, step SwitchStep, operationID st
 	default:
 		return &Error{"STATE_CORRUPT", fmt.Errorf("unknown switch step %s", step.Action)}
 	}
+}
+
+func (r *Runner) reserveHandoffPort(x *switchWork) error {
+	return r.Store.Update(func(reg *state.Registry) error {
+		for pid := range reg.Projects {
+			p, err := reg.Project(pid)
+			if err != nil {
+				return err
+			}
+			for _, inst := range p.Instances {
+				for _, port := range inst.Reservations {
+					if port == x.port {
+						return &Error{"PORT_CONFLICT", errors.New("handoff port is still reserved")}
+					}
+				}
+			}
+		}
+		p, err := reg.Project(x.project.ID)
+		if err != nil {
+			return err
+		}
+		inst := p.Instances[x.plan.InstanceID]
+		if inst.Preparation == nil || inst.Preparation.RunID != x.runID {
+			return &Error{"STATE_CONFLICT", errors.New("handoff preparation changed")}
+		}
+		if inst.Reservations == nil {
+			inst.Reservations = map[string]int{}
+		}
+		inst.Reservations[x.runID] = x.port
+		p.Instances[inst.ID] = inst
+		return reg.SetProject(p.ID, p)
+	})
 }

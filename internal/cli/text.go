@@ -311,6 +311,16 @@ func writeTextPlan(b *strings.Builder, e envelope) {
 	switch plan := e.Plan.(type) {
 	case runner.GraphPlan:
 		fmt.Fprintf(b, "Plan for rundevrun %s\n", singleLine(plan.Action))
+		if plan.Switch != nil {
+			for _, pair := range plan.Switch.Mappings {
+				fmt.Fprintf(b, "  Replace %s → %s\n", e.instanceLabel(pair.From), e.instanceLabel(pair.To))
+			}
+			for _, step := range plan.Switch.Steps {
+				fmt.Fprintf(b, "  %s  %s\n", stepLabel(step.Action), e.instanceLabel(step.InstanceID))
+			}
+			writePublicationPlan(b, plan.Publications)
+			break
+		}
 		if len(plan.Instances) == 0 {
 			b.WriteString("  No services selected.\n")
 		}

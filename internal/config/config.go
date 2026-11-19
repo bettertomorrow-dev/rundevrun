@@ -37,6 +37,7 @@ type Service struct {
 	Build        string            `toml:"build"`
 	Protocol     string            `toml:"protocol"`
 	Port         any               `toml:"port"`
+	Singleton    bool              `toml:"singleton"`
 	DependsOn    []string          `toml:"depends_on"`
 	Env          map[string]string `toml:"env"`
 	BuildTimeout string            `toml:"build_timeout"`
