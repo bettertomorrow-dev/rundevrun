@@ -66,6 +66,9 @@ type preparedRun struct {
 }
 
 func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *discovery.Project, current *discovery.Worktree, service string, svc config.Service, plan Plan, runID, operationID string, port int, dependencies map[string]map[string]string, bindings map[string]string) (preparedRun, error) {
+	if r.OnStarting != nil {
+		r.OnStarting(service, current)
+	}
 	runDir := filepath.Join(r.Store.Root, "runs", runID)
 	values := map[string]string{"host": "127.0.0.1", "run_dir": runDir, "worktree": current.Root, "project": fresh.Name, "service": service}
 	addresses := map[string]string{"host": "127.0.0.1"}

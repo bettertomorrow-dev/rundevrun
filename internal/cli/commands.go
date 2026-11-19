@@ -1427,6 +1427,12 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 
 func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) runner.GraphResult {
 	r := runner.New(store, executablePath())
+	if e.progress != nil {
+		r.OnStarting = func(service string, worktree *discovery.Worktree) {
+			name := worktreeName(worktree.Branch, worktree.Root)
+			fmt.Fprintf(e.progress, "Starting %s from %s...\n", singleLine(service), singleLine(name))
+		}
+	}
 	var routeCfg *routing.Config
 	var routePath string
 	if action == "up" || action == "restart" {

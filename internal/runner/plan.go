@@ -15,6 +15,7 @@ type Runner struct {
 	Executable string
 	RetryHooks bool
 	Routing    *routing.Config
+	OnStarting func(service string, worktree *discovery.Worktree)
 
 	ExpectedRuns map[string]string
 
