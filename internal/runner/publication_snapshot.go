@@ -12,13 +12,13 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 )
 
-func SnapshotEnvironment(service config.Service, values map[string]string, dependencies map[string]map[string]string) (string, []string, error) {
+func SnapshotEnvironment(service config.Service, values map[string]string, dependencies map[string]map[string]string, project config.Project) (string, []string, error) {
 	for dep, addresses := range dependencies {
 		for key, value := range addresses {
 			values["dependencies."+dep+"."+key] = value
 		}
 	}
-	env, err := environment(service, values)
+	env, err := environment(service, values, project)
 	if err != nil {
 		return "", nil, err
 	}

@@ -50,6 +50,31 @@ health endpoint if available. Commands place rundevrun placeholders outside shel
 quotes. Use `depends_on = ["service-name"]` for actual startup dependencies.
 Keep credentials in the project's existing environment setup.
 
+### Shared environment files
+
+Inspect the main Git checkout and the selected worktree for actual dotenv files,
+including ignored files such as `.env`, `.env.local`, and service-specific files.
+Exclude templates such as `.env.example` and `.env.sample`. Use filenames when
+discussing candidates; keep secret values out of chat and runner configuration.
+
+Use `project.env_files = [".env"]`, with paths relative to each checkout root.
+Check the installed version's config documentation or schema for support before
+writing this setting. If unsupported, report the detected files and proposed
+selection, explain that a newer rundevrun is needed, and preserve the existing
+env setup.
+
+When supported, opt in the sole candidate automatically. If several distinct
+paths exist, ask which to share and in what order before configuring them. Count
+matching main-checkout and worktree paths as one candidate. If none exist, leave
+the setting unset and report any environment setup the app still requires.
+
+For selected files, load all shared files from the main checkout first, then all
+files from the worktree. Within each checkout, later files win; worktree values
+override all shared values. Missing files are allowed and
+explicit service `env` wins over file values. Explain that worktree files are
+optional overrides. Keep existing files intact; this setup needs no copies or
+symlinks. Apply the same selection process in Shared and External modes.
+
 For Shared mode, write `rundevrun.toml` in the repo. First run
 `rundevrun config external --json` in a Git repo to locate any existing external config.
 If that file exists, it currently takes precedence. Explain the conflict and

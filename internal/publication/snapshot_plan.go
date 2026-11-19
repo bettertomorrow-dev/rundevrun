@@ -141,7 +141,7 @@ func (m *Manager) PlanSnapshot(ctx context.Context, selection runner.Selection) 
 		}
 		addresses[dep] = fields
 	}
-	if _, _, err := runner.SnapshotEnvironment(service, values, addresses); err != nil {
+	if _, _, err := runner.SnapshotEnvironment(service, values, addresses, cfg.Project); err != nil {
 		return SnapshotPlan{}, &runner.Error{Code: "CONFIG_INVALID", Err: err}
 	}
 	locks := map[string]bool{}

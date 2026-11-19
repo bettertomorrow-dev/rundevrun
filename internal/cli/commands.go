@@ -2066,6 +2066,12 @@ func listConfiguration(ctx context.Context, store *state.Store, opts options, e 
 			e.fail("CONFIG_INVALID", "missing rundevrun.toml in "+w.Root)
 			continue
 		}
+		if e.Command == "config check" {
+			if _, err := discovery.Environment(w.Root, w.Config.Project); err != nil {
+				e.fail("CONFIG_INVALID", err.Error())
+				continue
+			}
+		}
 		for _, name := range sortedKeys(w.Config.Services) {
 			id := p.ID + "/" + w.ID + "/" + name
 			service := w.Config.Services[name]

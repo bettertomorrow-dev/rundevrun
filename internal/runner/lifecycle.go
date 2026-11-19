@@ -89,7 +89,7 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 			}
 		}
 	}
-	env, err := environment(svc, values)
+	env, err := environment(svc, values, current.Config.Project)
 	if err != nil {
 		return preparedRun{}, err
 	}
@@ -331,13 +331,20 @@ func randomID() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-func environment(s config.Service, values map[string]string) (map[string]string, error) {
+func environment(s config.Service, values map[string]string, project config.Project) (map[string]string, error) {
 	env := map[string]string{}
 	for _, entry := range os.Environ() {
 		k, v, ok := strings.Cut(entry, "=")
 		if ok && !strings.HasPrefix(k, "RDR_") && !strings.HasPrefix(k, "__RDR_") {
 			env[k] = v
 		}
+	}
+	files, err := discovery.Environment(values["worktree"], project)
+	if err != nil {
+		return nil, &Error{"CONFIG_INVALID", err}
+	}
+	for k, v := range files {
+		env[k] = v
 	}
 	for k, v := range s.Env {
 		expanded, _, err := substitute(v, values, false)
