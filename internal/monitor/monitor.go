@@ -98,14 +98,6 @@ func (svc *Service) LoadURLs(ctx context.Context, store *state.Store, inst state
 	return err
 }
 
-func RuntimeRoot() (string, error) {
-	root, err := state.RuntimeRoot()
-	if err != nil {
-		return "", err
-	}
-	return root, state.CheckLegacyRoot(root)
-}
-
 func contains(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
