@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -19,6 +17,7 @@ Discovery and registration:
   rundevrun worktrees             List existing worktrees; never change Git state.
   rundevrun services              List configured services, including stopped instances.
   rundevrun config check          Validate configuration without running project code.
+  rundevrun config state          Show the absolute runtime state directory without changing it.
   rundevrun config external [path] [--file PATH]
                                   Show the external config path, or import a config there.
   rundevrun up <service...>       Build and start services and their dependencies.
@@ -98,8 +97,8 @@ Quick Tunnels do not support server-sent events (SSE).
 Status shows switch journals without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
 down to recover explicitly. A failed after_start hook remains attached to its run.
-Runtime state: RDR_HOME, else XDG_STATE_HOME/rundevrun,
-else ~/.local/state/rundevrun. Registration runs no project commands.`
+Runtime state: RDR_HOME, else XDG_CONFIG_HOME/rundevrun/state,
+else ~/.config/rundevrun/state. Registration runs no project commands.`
 
 func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	opts, positional, err := parseArgs(args)
@@ -144,21 +143,6 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	execute(ctx, positional, opts, &e, out)
 	return writeResult(out, errOut, e, opts.json)
-}
-
-func runtimeRoot() (string, error) {
-	if root := os.Getenv("RDR_HOME"); root != "" {
-		return filepath.Abs(root)
-	}
-	base := os.Getenv("XDG_STATE_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		base = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Abs(filepath.Join(base, "rundevrun"))
 }
 
 func validArity(args []string, min, max int, e *envelope) bool {

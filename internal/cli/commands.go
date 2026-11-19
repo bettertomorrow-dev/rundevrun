@@ -42,6 +42,12 @@ type openResult struct {
 	URL string `json:"url"`
 }
 
+type stateDirectoryInfo struct {
+	StateDir string `json:"state_dir"`
+}
+
+func (i stateDirectoryInfo) String() string { return i.StateDir }
+
 func (r openResult) String() string { return r.URL }
 
 type publicationResult struct {
@@ -176,8 +182,23 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		}
 		return
 	}
-	root, err := runtimeRoot()
+	root, err := state.RuntimeRoot()
 	if err != nil {
+		failError(e, err)
+		return
+	}
+	if e.Command == "config state" {
+		if !validArity(args, 2, 2, e) {
+			return
+		}
+		if opts.project != "" || opts.worktree != "" || opts.dryRun {
+			e.fail("USAGE", "config state accepts only --json")
+			return
+		}
+		e.Results = append(e.Results, stateDirectoryInfo{StateDir: root})
+		return
+	}
+	if err := state.CheckLegacyRoot(root); err != nil {
 		failError(e, err)
 		return
 	}
