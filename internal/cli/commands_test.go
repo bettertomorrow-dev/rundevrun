@@ -53,6 +53,51 @@ func TestVersionWithoutRuntime(t *testing.T) {
 	}
 }
 
+func TestUpPrintsProgressBeforeBuild(t *testing.T) {
+	base := t.TempDir()
+	binary := filepath.Join(base, "rundevrun")
+	if out, err := exec.Command("go", "build", "-o", binary, "../../cmd/rundevrun").CombinedOutput(); err != nil {
+		t.Fatalf("build rundevrun: %v: %s", err, out)
+	}
+	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	root := filepath.Join(base, "project")
+	writeProject(t, root)
+	t.Chdir(root)
+	if err := os.WriteFile("rundevrun.toml", []byte(`version = 1
+[project]
+name = "example"
+[services.worker]
+command = "sleep 60"
+build = "grep -Fx 'Starting worker from project...' progress.log"
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		invokeBinary(t, binary, "down", "worker")
+	})
+	progress, err := os.Create("progress.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(binary, "up", "worker")
+	cmd.Stderr = progress
+	out, runErr := cmd.Output()
+	if err := progress.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile("progress.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runErr != nil || string(got) != "Starting worker from project...\n" {
+		t.Fatalf("up: %v; stdout=%q stderr=%q", runErr, out, got)
+	}
+	if out, err := exec.Command(binary, "up", "worker").CombinedOutput(); err != nil || bytes.Contains(out, []byte("Starting ")) {
+		t.Fatalf("up for a running service: %v: %s", err, out)
+	}
+}
+
 func cliRunIDs(t *testing.T, project string) map[string]string {
 	t.Helper()
 	e, code := invoke(t, "status", "--project", project, "--json")

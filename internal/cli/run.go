@@ -122,6 +122,9 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		}
 	}
 	e := result(command, opts)
+	if command == "up" && !opts.json && !opts.dryRun {
+		e.progress = errOut
+	}
 	if err != nil {
 		e.fail("USAGE", err.Error(), "see rundevrun --help")
 		return writeResult(out, errOut, e, opts.json)
