@@ -47,6 +47,7 @@ type envelope struct {
 	Credentials       *shareCredentials    `json:"credentials,omitempty"`
 	Publications      []publication.Status `json:"publications,omitempty"`
 	PublicationErrors []commandError       `json:"publication_errors,omitempty"`
+	progress          io.Writer
 	lifecycleURLs     map[string][]string
 	text              bool
 	worktreeLabels    map[string]string
