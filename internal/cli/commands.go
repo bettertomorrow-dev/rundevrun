@@ -1202,9 +1202,6 @@ func lifecycleCommand(ctx context.Context, store *state.Store, services []string
 	}
 	if opts.dryRun {
 		if candidate != nil {
-			for _, sel := range selections {
-				e.rememberWorktree(sel.Project.ID, sel.Project.Name, sel.Worktree.ID, sel.Worktree.Branch, sel.Worktree.Root)
-			}
 			r := runner.New(store, executablePath())
 			cfg, _, err := machineRouting()
 			if err != nil {
@@ -1409,11 +1406,6 @@ func setGraphPlan(ctx context.Context, store *state.Store, action string, select
 
 func runGraph(ctx context.Context, store *state.Store, action string, selections []runner.Selection, cascade, retryHooks, noProxy bool, e *envelope) runner.GraphResult {
 	r := runner.New(store, executablePath())
-	for _, selection := range selections {
-		for _, tree := range selection.Project.Worktrees {
-			e.rememberWorktree(selection.Project.ID, selection.Project.Name, tree.ID, tree.Branch, tree.Root)
-		}
-	}
 	var routeCfg *routing.Config
 	var routePath string
 	if action == "up" || action == "restart" {

@@ -76,7 +76,7 @@ func (g *graphPlanner) singletonMappings() ([]SwitchMapping, error) {
 }
 
 func (r *Runner) lockServiceStarts(instances []PlannedInstance) (*state.Locks, error) {
-	groups := map[string]bool{}
+	var keys []string
 	for _, instance := range instances {
 		if !instance.singleton {
 			continue
@@ -85,11 +85,7 @@ func (r *Runner) lockServiceStarts(instances []PlannedInstance) (*state.Locks, e
 		if len(parts) != 3 {
 			return nil, &Error{"STATE_CORRUPT", errors.New("invalid instance id")}
 		}
-		groups["service-start/"+parts[0]+"/"+parts[2]] = true
-	}
-	keys := make([]string, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
+		keys = append(keys, "service-start/"+parts[0]+"/"+parts[2])
 	}
 	locks, err := r.Store.LockInstances(keys...)
 	if errors.Is(err, state.ErrBusy) {

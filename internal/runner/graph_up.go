@@ -78,7 +78,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	}
 	if initial.Switch != nil {
 		result, err := r.switchGraph(ctx, initial.mappings, selections)
-		return result.GraphResult, err
+		return result, err
 	}
 	operationID, err := randomID()
 	if err != nil {

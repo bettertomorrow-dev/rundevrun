@@ -20,9 +20,7 @@ import (
 )
 
 type SwitchStepResult = state.OperationStep
-type SwitchResult struct {
-	GraphResult
-}
+type SwitchResult = GraphResult
 type switchWork struct {
 	plan     PlannedInstance
 	project  *discovery.Project
@@ -40,7 +38,7 @@ func (r *Runner) SwitchGraph(ctx context.Context, mappings []SwitchMapping) (out
 }
 
 func (r *Runner) switchGraph(ctx context.Context, mappings []SwitchMapping, starts []Selection) (out SwitchResult, retErr error) {
-	out.GraphResult = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
+	out = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
 	out.Steps = []SwitchStepResult{}
 	defer func() {
 		if retErr != nil {
@@ -592,7 +590,7 @@ func (r *Runner) switchGraph(ctx context.Context, mappings []SwitchMapping, star
 			if err := r.Store.WriteOperation(journal); err != nil {
 				return out, errors.Join(retErr, err)
 			}
-			err := r.switchStep(ctx, step, opID, work, old, sourceFor, addresses, plan.BindingRewrites, dead, &out.GraphResult)
+			err := r.switchStep(ctx, step, opID, work, old, sourceFor, addresses, plan.BindingRewrites, dead, &out)
 			if err != nil {
 				journal.Steps[idx].Status = "failed"
 				journal.Steps[idx].Code = graphErrorCode(err)
