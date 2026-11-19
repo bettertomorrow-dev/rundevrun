@@ -53,8 +53,7 @@ Discovery and registration:
   rundevrun share <service>       Create a live public link for one HTTP service.
   rundevrun unshare <service>     Remove its public link without stopping the service.
   rundevrun logs <service>        Show recent application output.
-  rundevrun ls                    Show known instances across registered projects.
-  rundevrun status                Show known instances, optionally scoped to a project.
+  rundevrun status                Show known instances and their URLs across registered projects.
 
 Options may appear before or after the command:
   --project ID|NAME       Select a registered project. Ambiguity is an error.
@@ -95,7 +94,7 @@ rundevrun proxy stop, then rundevrun up or reopen rundevtop to start the proxy a
 Sharing requires a running HTTP service. The password is shown once at creation;
 recreate replaces an existing link. rundevrun does not open the URL automatically.
 Quick Tunnels do not support server-sent events (SSE).
-Switch journals are shown by status and ls without replay. Interrupted switches
+Status shows switch journals without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
 down to recover explicitly. A failed after_start hook remains attached to its run.
 Runtime state: RDR_HOME, else XDG_CONFIG_HOME/rundevrun/state,
