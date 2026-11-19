@@ -59,6 +59,28 @@ External onboarding adds no runner files to the repo and changes no Git settings
 Services still run the configured commands, which may write their usual build
 artifacts to the checkout. Runtime state and logs remain in rundevrun's state directory.
 
+## Env files in worktrees
+
+To share env defaults with new worktrees, add the filenames you want to opt in:
+
+```toml
+[project]
+name = "example"
+env_files = [".env", ".env.local"]
+```
+
+This works in Shared and External modes. Keep your env files in the main Git
+checkout. New worktrees inherit their values automatically. To change a value
+for one worktree, put just that value in its own matching env file. Worktree
+values win over all main-checkout values; within each checkout, later files win.
+Missing files are fine. No files or symlinks are created.
+
+Paths are relative to the checkout root, even for services with another `cwd`.
+Explicit service `env` values override file values. Run `rundevrun config check`
+to validate your selection, and restart running services after env edits.
+See the [env-file reference](TECH_SPEC.md#shared-env-files-across-worktrees)
+for parsing and precedence details.
+
 ## Agent-assisted onboarding
 
 Install [rdr-onboard](../skills/rdr-onboard/SKILL.md) in your agent's personal skills
@@ -66,3 +88,6 @@ directory, outside the target repo. Ask it to onboard a repo in Shared or Extern
 mode. It inspects existing commands, writes the config, validates a launch plan,
 and registers the project. Starting services is a separate action unless included
 in your request.
+The skill also detects env files. It opts in a sole candidate and asks which
+files to use, and in what order, when several are present. Templates such as
+`.env.example` are excluded.

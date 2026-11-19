@@ -442,7 +442,10 @@ func (g *graphPlanner) finalize() error {
 }
 func (g *graphPlanner) environment(n *graphNode) error {
 	values := map[string]string{"worktree": n.selection.Worktree.Root, "project": n.selection.Project.Name, "service": n.selection.Service, "run_dir": "<run_dir>"}
-	env := map[string]string{}
+	env, err := discovery.Environment(n.selection.Worktree.Root, n.selection.Worktree.Config.Project)
+	if err != nil {
+		return &Error{"CONFIG_INVALID", err}
+	}
 	for k, v := range n.plan.Addresses {
 		if k != "tentative" {
 			values[k] = v

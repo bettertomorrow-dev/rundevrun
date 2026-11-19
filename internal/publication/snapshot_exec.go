@@ -106,7 +106,7 @@ func buildSnapshot(ctx context.Context, store *state.Store, p state.Publication,
 		}
 		deps[dep] = addresses
 	}
-	command, env, err := runner.SnapshotEnvironment(spec.Config, values, deps)
+	command, env, err := runner.SnapshotEnvironment(spec.Config, values, deps, cfg.Project)
 	if err != nil {
 		return err
 	}

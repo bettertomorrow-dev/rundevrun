@@ -13,7 +13,8 @@ The table lists service fields without the `services.<name>.` prefix.
 | Field | Type and requirement | Default and constraints |
 | --- | --- | --- |
 | version | required integer | Exactly 1. |
-| project | required table | Only required nonempty name. |
+| project | required table | Required nonempty name, optional env_files. |
+| project.env_files | optional string array | [], opted-in dotenv paths relative to the checkout root; absolute paths and paths escaping the root are rejected. |
 | services | required table of service tables | At least one service. |
 | routing | optional table | Only domain, a nonempty DNS domain override. Machine listener/key settings forbidden here. |
 | service.command | required nonempty string | Whitespace-only rejected. |
@@ -89,14 +90,52 @@ unquoted backslashes and comments. Plain `$VAR` and `${VAR}` remain shell syntax
 `{{` and `}}` escape literal braces. Environment values expand without a shell.
 Unknown or unavailable placeholders fail before build.
 
-Environment precedence is inherited values, service `env`, then computed
-`RDR_*` values. Configured keys cannot use `RDR_*` or `__RDR_*`.
+Environment precedence is inherited values, main-checkout env files, worktree
+env files, service `env`, then computed `RDR_*` values. Configured keys cannot
+use `RDR_*` or `__RDR_*`.
 Computed values include `RDR_HOST`, `RDR_PORT`, `RDR_DIRECT_URL`, `RDR_URL`, and
 `RDR_DEP_<NORMALIZED_NAME>_*` where applicable. No automatic `PORT` mapping exists.
 Hooks also receive reason, instance, old/new worktree, and operation IDs.
 Stop hooks use the run's saved commands, cwd, environment, and bindings even if
 configuration changes. Snapshot `share.env` overrides service environment;
 its dependency URLs must use declared publication routes, not local addresses.
+
+### Shared env files across worktrees
+
+Opt in once in the shared or external configuration:
+
+```toml
+[project]
+name = "example"
+env_files = [".env", ".env.local"]
+```
+
+All services receive these values during builds, launch, and hooks, including
+snapshot builds. Paths resolve from the checkout root, independently of service
+`cwd` or the external config's location. For each checkout, later files in the
+list override earlier ones. All main-checkout files load before all worktree
+files, so a worktree `.env` overrides even the main checkout's `.env.local`.
+Empty values explicitly replace earlier values.
+
+The main checkout is Git's primary working tree, regardless of its branch name.
+It is read once when selected directly. Without Git, or with a bare repository
+that has no primary working tree, only the selected directory's files load.
+Missing files are skipped. Existing files and symlinks are read without creating
+or changing files in either checkout. Without `env_files`, no files are loaded
+by rundevrun.
+
+Files use dotenv syntax, parsed with [godotenv](https://github.com/joho/godotenv),
+including comments, `export`, quoted values, and multiline strings. Variable
+references expand against earlier entries within the same file only. Files are
+data, never shell scripts; rundevrun placeholders are not expanded in them.
+Malformed files, invalid shell variable names, reserved `RDR_*`/`__RDR_*` keys,
+NUL values, and non-regular files fail config checks and startup planning.
+Parse errors identify the file without including its contents.
+
+Env values are saved in the run's private manifest for launch and stop hooks.
+They are excluded from status and dry-run output. File contents are not part of
+the TOML configuration digest. Restart services after editing env files to load
+new values; existing runs and their stop hooks retain the saved environment.
 
 ## Identity and lifecycle
 

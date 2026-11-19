@@ -25,7 +25,8 @@ type Config struct {
 	Digest   string             `toml:"-"`
 }
 type Project struct {
-	Name string `toml:"name"`
+	Name     string   `toml:"name"`
+	EnvFiles []string `toml:"env_files"`
 }
 type Routing struct {
 	Domain string `toml:"domain"`
@@ -103,6 +104,11 @@ func (c *Config) Validate() error {
 	}
 	if !nameRE.MatchString(c.Project.Name) {
 		return fmt.Errorf("project.name: invalid name")
+	}
+	for _, path := range c.Project.EnvFiles {
+		if !filepath.IsLocal(path) || filepath.Clean(path) == "." {
+			return fmt.Errorf("project.env_files: paths must name files relative to the checkout root")
+		}
 	}
 	if len(c.Services) == 0 {
 		return fmt.Errorf("services: must not be empty")

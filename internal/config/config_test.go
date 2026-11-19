@@ -256,3 +256,17 @@ command="run {host}"
 		t.Fatal(e)
 	}
 }
+
+func TestEnvFilePaths(t *testing.T) {
+	for _, path := range []string{".env", "apps/web/.env.local", "", ".", "../.env", "/tmp/.env"} {
+		body := strings.Replace(base, `name = "demo"`, fmt.Sprintf("name = \"demo\"\nenv_files = [%q]", path), 1)
+		cfg, err := Load(writeConfig(t, body))
+		valid := path == ".env" || path == "apps/web/.env.local"
+		if (err == nil) != valid {
+			t.Fatalf("path %q: %v", path, err)
+		}
+		if valid && (len(cfg.Project.EnvFiles) != 1 || cfg.Project.EnvFiles[0] != path) {
+			t.Fatalf("env_files not retained: %v", cfg.Project.EnvFiles)
+		}
+	}
+}
