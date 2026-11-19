@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/cli"
-	"github.com/bettertomorrow-dev/rundevrun/internal/monitor"
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
@@ -42,7 +41,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rundevtop: unexpected argument:", os.Args[1])
 		os.Exit(2)
 	}
-	root, err := monitor.RuntimeRoot()
+	root, err := state.RuntimeRoot()
+	if err == nil {
+		err = state.CheckLegacyRoot(root)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
