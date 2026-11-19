@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/config"
@@ -28,11 +29,7 @@ func Environment(root string, project config.Project) (map[string]string, error)
 		}
 		first, _, _ := strings.Cut(out, "\x00\x00")
 		fields := strings.Split(first, "\x00")
-		bare := false
-		for _, field := range fields {
-			bare = bare || field == "bare"
-		}
-		if len(fields) > 0 && strings.HasPrefix(fields[0], "worktree ") && !bare {
+		if strings.HasPrefix(fields[0], "worktree ") && !slices.Contains(fields, "bare") {
 			rel, err := filepath.Rel(top, root)
 			if err != nil {
 				return nil, fmt.Errorf("project.env_files: resolve checkout: %w", err)
