@@ -93,12 +93,22 @@ when it matches the requested workflow.
 
 ### Shared environment files
 
-Inspect the main Git checkout and the selected worktree for actual dotenv files,
-including ignored files such as `.env`, `.env.local`, and service-specific files.
-Exclude templates such as `.env.example` and `.env.sample`. Use filenames when
-discussing candidates; keep secret values out of chat and runner configuration.
+Inspect the main Git checkout and the selected worktree for actual dotenv files
+at the repo root and in app/service directories, including ignored files such as
+`.env` and `.env.local`. Exclude templates such as `.env.example` and `.env.sample`.
+Present candidates as repo-relative paths; keep secret values out of chat and
+runner configuration.
 
-Use `project.env_files = [".env"]`, with paths relative to each checkout root.
+Use `project.env_files` for any number of selected files; there is no configured
+file-count limit. Each path is relative to the repo root, independently of service
+`cwd` or the external config's location. For example, under `[project]`:
+
+```toml
+env_files = [".env", "apps/web/.env.local", "services/api/.env"]
+```
+
+Absolute paths and paths escaping the repo root are rejected. All selected values
+apply to every service; a file's directory does not scope it to that service.
 Check the installed version's config documentation or schema for support before
 writing this setting. If unsupported, report the detected files and proposed
 selection, explain that a newer rundevrun is needed, and preserve the existing
@@ -107,7 +117,8 @@ env setup.
 On re-onboarding, preserve the existing `env_files` selection unless changing it
 is requested or necessary for the setup. For a new selection, when supported,
 opt in the sole candidate automatically. If several distinct
-paths exist, ask which to share and in what order before configuring them. Count
+paths exist, ask which files to share and in what order before configuring them;
+the user may select several files together. Count
 matching main-checkout and worktree paths as one candidate. If none exist, leave
 the setting unset and report any environment setup the app still requires.
 
