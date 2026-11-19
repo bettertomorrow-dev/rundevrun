@@ -49,15 +49,25 @@ type SwitchPlan struct {
 }
 
 func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (SwitchPlan, error) {
+	return r.planSwitch(ctx, mappings, nil, nil)
+}
+
+func (r *Runner) planSwitch(ctx context.Context, mappings []SwitchMapping, starts []Selection, snapshot *state.Registry) (SwitchPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return SwitchPlan{}, &Error{"CANCELLED", err}
 	}
 	if r == nil || r.Store == nil || len(mappings) == 0 {
 		return SwitchPlan{}, &Error{"USAGE", errors.New("missing switch mappings")}
 	}
-	reg, err := r.Store.Read()
-	if err != nil {
-		return SwitchPlan{}, err
+	var reg state.Registry
+	var err error
+	if snapshot != nil {
+		reg = *snapshot
+	} else {
+		reg, err = r.Store.Read()
+		if err != nil {
+			return SwitchPlan{}, err
+		}
 	}
 	out := SwitchPlan{Version: 1, Action: "switch", Revision: reg.Revision, Digests: map[string]string{}, Mappings: []SwitchPair{}, Locks: []string{}, OldStops: []PlannedInstance{}, NewStarts: []PlannedInstance{}, Preparations: []string{}, BindingRewrites: []BindingRewrite{}, Steps: []SwitchStep{}}
 	info := newGraph(r, reg)
@@ -88,6 +98,17 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 		if targets[id] {
 			return SwitchPlan{}, &Error{"BINDING_INVALID", errors.New("source and target sets overlap")}
 		}
+	}
+	for _, s := range starts {
+		id, err := selectionID(s)
+		if err != nil {
+			return SwitchPlan{}, err
+		}
+		if mapped[id] != "" {
+			return SwitchPlan{}, &Error{"BINDING_INVALID", errors.New("cannot start a stopping source")}
+		}
+		selections[id] = s
+		projectIDs[s.Project.ID] = true
 	}
 
 	projects := map[string]state.Project{}
@@ -276,6 +297,7 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 
 	g := newGraph(r, reg)
 	g.replace = map[string]bool{}
+	g.retiring = affected
 	g.override = overrides
 	for _, id := range replacements {
 		g.replace[id] = true
@@ -287,6 +309,10 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 	}
 	var roots []string
 	for _, id := range replacements {
+		roots = append(roots, id)
+	}
+	for _, s := range starts {
+		id, _ := selectionID(s)
 		roots = append(roots, id)
 	}
 	sort.Strings(roots)
@@ -366,6 +392,17 @@ func (r *Runner) PlanSwitch(ctx context.Context, mappings []SwitchMapping) (Swit
 	for _, n := range metadataOnly {
 		if err = g.environment(n); err != nil {
 			return SwitchPlan{}, err
+		}
+	}
+	singletons, err := g.singletonMappings()
+	if err != nil {
+		return SwitchPlan{}, err
+	}
+	for _, pair := range singletons {
+		from, _ := selectionID(pair.From)
+		to, _ := selectionID(pair.To)
+		if mapped[from] != to {
+			return SwitchPlan{}, &Error{"BINDING_INVALID", errors.New("singleton dependency requires an additional switch mapping")}
 		}
 	}
 	for id, n := range g.nodes {

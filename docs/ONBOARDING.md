@@ -88,6 +88,39 @@ directory, outside the target repo. Ask it to onboard a repo in Shared or Extern
 mode. It inspects existing commands, writes the config, validates a launch plan,
 and registers the project. Starting services is a separate action unless included
 in your request.
-The skill also detects env files. It opts in a sole candidate and asks which
+The skill also supports re-onboarding. It first locates external configuration
+with `rundevrun config external --json`, inspects that file and the checkout's
+config, then updates the active source while preserving unrelated settings.
+Existing external config takes precedence. Re-onboarding repeats validation
+and launch dry-runs without starting or stopping services unless requested.
+
+The skill also detects env files. It preserves existing selections, opts in a
+sole candidate for new selections, and asks which
 files to use, and in what order, when several are present. Templates such as
 `.env.example` are excluded.
+
+## Fixed auth URLs and one active worktree
+
+Some apps require fixed URLs because their auth callbacks or cross-app links
+are registered as `http://localhost:8010` or `http://localhost:8011`. Keep those
+URLs and ports when the backend's redirect support has not been changed.
+For each service that must run in only one linked worktree, add:
+
+```toml
+[services.web]
+command = "existing-development-command"
+port = 8010
+singleton = true
+```
+
+Use the app's supported command flags or environment to bind the configured
+port on loopback. Keep its existing `NEXTAUTH_URL` and cross-app URLs intact;
+the setting does not rewrite them. Use the accepted localhost URL for login
+rather than substituting a routed hostname.
+
+Starting `web` in another linked worktree automatically prepares it, stops the
+previous instance, and starts the target on the same port. This causes a brief
+interruption. Preview the handoff with `rundevrun up web --dry-run --json`.
+Separate clones remain independent projects, and unmanaged port owners remain
+conflicts. See [singleton behavior](TECH_SPEC.md#singleton-services) for failure
+and recovery details.

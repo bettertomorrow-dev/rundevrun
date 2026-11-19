@@ -55,6 +55,21 @@ func TestLoadAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSingletonConfig(t *testing.T) {
+	for _, value := range []string{"", "singleton = false", "singleton = true", "singleton = 'true'"} {
+		c, err := Load(writeConfig(t, base+"\n"+value+"\n"))
+		if value == "singleton = 'true'" {
+			if err == nil {
+				t.Fatal("accepted string singleton setting")
+			}
+			continue
+		}
+		if err != nil || c.Services["api"].Singleton != (value == "singleton = true") {
+			t.Fatalf("%q: %+v %v", value, c, err)
+		}
+	}
+}
 func TestConfigConfinementAndNormalizedDependencyCollision(t *testing.T) {
 	d := t.TempDir()
 	outside := t.TempDir()

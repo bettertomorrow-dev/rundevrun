@@ -22,9 +22,12 @@ type GraphError struct {
 	Message    string `json:"message"`
 }
 type GraphResult struct {
-	Status  string       `json:"status"`
-	Results []Result     `json:"results"`
-	Errors  []GraphError `json:"errors"`
+	Status      string             `json:"status"`
+	Results     []Result           `json:"results"`
+	Errors      []GraphError       `json:"errors"`
+	OperationID string             `json:"operation_id,omitempty"`
+	JournalPath string             `json:"journal_path,omitempty"`
+	Steps       []SwitchStepResult `json:"steps,omitempty"`
 }
 type upWork struct {
 	plan               PlannedInstance
@@ -73,14 +76,25 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	if err != nil {
 		return out, err
 	}
+	if initial.Switch != nil {
+		result, err := r.switchGraph(ctx, initial.mappings, selections)
+		return result, err
+	}
 	operationID, err := randomID()
 	if err != nil {
 		return out, err
 	}
 	ids := make([]string, len(initial.Instances))
+	singletons := map[string]bool{}
 	for i, p := range initial.Instances {
 		ids[i] = p.InstanceID
+		singletons[p.InstanceID] = p.singleton
 	}
+	serviceLocks, err := r.lockServiceStarts(initial.Instances)
+	if err != nil {
+		return out, err
+	}
+	defer serviceLocks.Close()
 	locks, err := r.Store.LockInstances(ids...)
 	if err != nil {
 		if errors.Is(err, state.ErrBusy) {
@@ -113,6 +127,9 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	if err != nil {
 		return out, err
 	}
+	if plan.Switch != nil {
+		return out, &Error{"STATE_CONFLICT", errors.New("singleton owner changed after planning")}
+	}
 	if len(plan.Instances) != len(ids) {
 		return out, &Error{"STATE_CONFLICT", errors.New("graph changed after locking")}
 	}
@@ -123,6 +140,9 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	for _, p := range plan.Instances {
 		if !old[p.InstanceID] {
 			return out, &Error{"STATE_CONFLICT", errors.New("graph changed after locking")}
+		}
+		if p.singleton != singletons[p.InstanceID] {
+			return out, &Error{"STATE_CONFLICT", errors.New("singleton configuration changed after locking")}
 		}
 	}
 
