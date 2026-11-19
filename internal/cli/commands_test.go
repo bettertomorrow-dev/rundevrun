@@ -130,7 +130,7 @@ func TestRegistrationDiscoveryAndStoppedStatus(t *testing.T) {
 	}
 	t.Chdir(base)
 	var instanceID string
-	for _, args := range [][]string{{"services", "--project", "example", "--json"}, {"status", "--project", "example", "--json"}, {"ls", "--json"}} {
+	for _, args := range [][]string{{"services", "--project", "example", "--json"}, {"status", "--project", "example", "--json"}, {"status", "--json"}} {
 		e, code := invoke(t, args...)
 		if code != 0 || len(e.Results) != 1 {
 			t.Fatalf("%v: exit=%d result=%+v", args, code, e)
@@ -868,19 +868,17 @@ func TestPublicationStatusIsWhitelistedAndReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"status", "ls"} {
-		e, code := invoke(t, command, "--json")
-		if code != 0 || len(e.Publications) != 2 || e.Publications[0].State != "starting" || e.Publications[1].State != "starting" {
-			t.Fatalf("%s publications: %d %+v", command, code, e)
-		}
-		encoded, err := json.Marshal(e)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, secret := range []string{"SigningKey", "signing_key", "Verifier", "verifier", "Salt", "salt", "Owner", "owner", "Cloudflared", "cloudflared", "secret-password"} {
-			if bytes.Contains(encoded, []byte(secret)) {
-				t.Fatalf("%s exposed publication secret %q: %s", command, secret, encoded)
-			}
+	e, code := invoke(t, "status", "--json")
+	if code != 0 || len(e.Publications) != 2 || e.Publications[0].State != "starting" || e.Publications[1].State != "starting" {
+		t.Fatalf("status publications: %d %+v", code, e)
+	}
+	encoded, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"SigningKey", "signing_key", "Verifier", "verifier", "Salt", "salt", "Owner", "owner", "Cloudflared", "cloudflared", "secret-password"} {
+		if bytes.Contains(encoded, []byte(secret)) {
+			t.Fatalf("status exposed publication secret %q: %s", secret, encoded)
 		}
 	}
 	scoped, code := invoke(t, "status", "--project", project.ID, "--worktree", root, "--json")
@@ -1632,7 +1630,7 @@ func TestSwitchJournalStatusIsReadOnlyAndWhitelisted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, code := invoke(t, "ls", "--json")
+	e, code := invoke(t, "status", "--json")
 	if code != 4 || len(e.Operations) != 1 || len(e.Errors) != 1 || e.Errors[0].Code != "OWNERSHIP_UNKNOWN" {
 		t.Fatalf("status: %d %+v", code, e)
 	}
@@ -1689,7 +1687,6 @@ func TestHookStatusIsWhitelistedAndReadOnly(t *testing.T) {
 	for _, command := range [][]string{
 		{"status", "--json"},
 		{"services", "--project", "example", "--worktree", root, "--json"},
-		{"ls", "--json"},
 	} {
 		e, code := invoke(t, command...)
 		if code != 0 || len(e.Results) != 1 {

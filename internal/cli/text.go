@@ -86,7 +86,7 @@ func textStatus(state string, color bool) string {
 func writeTextResults(out io.Writer, e envelope) error {
 	var b strings.Builder
 	switch e.Command {
-	case "status", "ls", "services":
+	case "status", "services":
 		writeServiceList(&b, e, colorEnabled(out))
 	case "projects", "register", "worktrees", "config check":
 		writeDiscovery(&b, e)

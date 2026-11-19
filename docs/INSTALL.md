@@ -86,6 +86,8 @@ rundevrun open api --json
 rundevrun down api --json
 ```
 
+Run `rundevrun status` for a table of known services and their URLs.
+
 Review project commands before `up`. It registers the project automatically;
 `rundevrun register .` supports explicit registration. `open --json` returns the URL;
 text-mode `open` launches a browser. Use `doctor` for diagnostics and `--project`

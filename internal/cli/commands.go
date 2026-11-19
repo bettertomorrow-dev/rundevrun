@@ -268,7 +268,7 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			path = args[1]
 		}
 		register(store, path, opts.dryRun, e)
-	case "projects", "ls", "status":
+	case "projects", "status":
 		if !validArity(args, 1, 1, e) {
 			return
 		}
@@ -2269,7 +2269,7 @@ func listRegistry(ctx context.Context, store *state.Store, opts options, e *enve
 	if len(e.Errors) > 0 && len(e.Results) > 0 {
 		e.Status = "partial"
 	}
-	if e.Command == "status" || e.Command == "ls" {
+	if e.Command == "status" {
 		addOperationViews(store, ids, e)
 		addPublicationViews(ctx, store, ids, selectedWorktrees, e)
 	}
