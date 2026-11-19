@@ -59,6 +59,9 @@ config with `rundevrun config external --file /path/to/rundevrun.toml`. Then run
 `rundevtop` from the repo as usual. See [Shared and External setup](docs/ONBOARDING.md)
 and the [onboarding skill](skills/rdr-onboard/SKILL.md).
 
+Install the [rundevrun skill](skills/rundevrun/SKILL.md) in your agent's personal
+skills directory to manage services through the CLI.
+
 - [Installation and state](docs/INSTALL.md)
 - [Terminal interface](docs/RDRTOP.md)
 - [Local and tailnet networking](docs/NETWORKING.md)

@@ -99,18 +99,11 @@ func (svc *Service) LoadURLs(ctx context.Context, store *state.Store, inst state
 }
 
 func RuntimeRoot() (string, error) {
-	if root := os.Getenv("RDR_HOME"); root != "" {
-		return filepath.Abs(root)
+	root, err := state.RuntimeRoot()
+	if err != nil {
+		return "", err
 	}
-	base := os.Getenv("XDG_STATE_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		base = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Abs(filepath.Join(base, "rundevrun"))
+	return root, state.CheckLegacyRoot(root)
 }
 
 func contains(root, path string) bool {
