@@ -30,6 +30,48 @@ alias rdrtop='rundevtop'
 Use the full executable names in scripts and agent integrations. Shell aliases
 usually apply only in interactive shells, and another tool may already use `rdr`.
 
+## Use rundevrun with an agent
+
+### Onboard a project
+
+Run `rundevrun guide` to list the available guides.
+Ask an agent to run `rundevrun guide onboard` from the project checkout and follow the
+returned instructions. No skill installation is required. Choose Shared mode for
+a `rundevrun.toml` the team can commit, or External mode for personal config.
+
+> Onboard this repo with rundevrun in External mode.
+
+The agent validates the config, previews the launch, and registers the project.
+Include a start request if you want it to launch services. See
+[project setup](docs/ONBOARDING.md) for guide updates and local overrides.
+
+### Install the optional service skill
+
+The [rundevrun skill](skills/rundevrun/SKILL.md) helps agents operate configured
+services. Install the CLI first, then copy the skill from this checkout:
+
+```sh
+skills_dir="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$skills_dir"
+cp -R skills/rundevrun "$skills_dir/"
+```
+
+Start a new session to use it. Other agents that support `SKILL.md` can use
+their personal skills directory as the destination.
+
+### Run services
+
+Ask the agent to use the [rundevrun skill](skills/rundevrun/SKILL.md) once the
+project has a config. Name the services and the branch or worktree when relevant.
+
+> Use the rundevrun skill to start the API in the `feature/login` worktree and report its URL.
+
+The agent checks the target worktree, runs the requested operation, and verifies
+the result. Use the same skill to read logs, stop services, or move them between
+worktrees.
+
+## Configure a project by hand
+
 Create `rundevrun.toml` in your project:
 
 ```toml
@@ -57,7 +99,7 @@ when names are ambiguous.
 For repos where runner files must stay outside the checkout, import a personal
 config with `rundevrun config external --file /path/to/rundevrun.toml`. Then run `rundevrun` and
 `rundevtop` from the repo as usual. See [Shared and External setup](docs/ONBOARDING.md)
-and the [onboarding skill](skills/rdr-onboard/SKILL.md).
+and [agent-assisted onboarding](docs/ONBOARDING.md#agent-assisted-onboarding).
 
 Install the [rundevrun skill](skills/rundevrun/SKILL.md) in your agent's personal
 skills directory to manage services through the CLI.

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const helper = fileURLToPath(new URL('../skills/rundevrun-domain-setup-wizard/scripts/create-cloudflare-token.mjs', import.meta.url));
+const helper = fileURLToPath(new URL('../internal/guides/domain/scripts/create-cloudflare-token.mjs', import.meta.url));
 const secret = 'dummy-one-time-secret-not-for-output';
 
 function fixture(t, overrides = {}) {

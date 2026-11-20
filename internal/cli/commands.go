@@ -136,6 +136,14 @@ type hookInfo struct {
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
 func execute(ctx context.Context, args []string, opts options, e *envelope, out io.Writer) {
+	if args[0] == "guide" {
+		guideCommand(args, opts, e)
+		return
+	}
+	if opts.noUpdate {
+		e.fail("USAGE", "--no-update is only valid with guide commands")
+		return
+	}
 	if opts.all && e.Command != "down" {
 		e.fail("USAGE", "--all is only valid with down")
 		return
@@ -2045,7 +2053,11 @@ func listConfiguration(ctx context.Context, store *state.Store, opts options, e 
 	}
 	p, err := discovery.Discover(start)
 	if err != nil {
-		failError(e, err)
+		if e.Command == "config check" && errors.Is(err, os.ErrNotExist) && missingProjectConfig(start) {
+			e.fail("NOT_FOUND", err.Error(), "run rundevrun guide onboard")
+		} else {
+			failError(e, err)
+		}
 		return
 	}
 	e.Scope.Project = p.ID

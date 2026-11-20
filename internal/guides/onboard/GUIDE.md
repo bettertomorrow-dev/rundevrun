@@ -1,8 +1,3 @@
----
-name: rdr-onboard
-description: Onboard or re-onboard a repository to rundevrun, discover and update existing shared or external configuration, and configure fixed-port services that must run in only one worktree.
----
-
 # Onboard a repo to rundevrun
 
 Configure the installed `rundevrun` for the repository's existing development commands.
@@ -40,8 +35,9 @@ These are the only two modes. A locally ignored `rundevrun.toml` is still a repo
 
 ## Inspect and configure
 
-Read existing run instructions, manifests, environment examples, and service
-entry points. Reuse the project's commands and dependency tooling. Identify
+Read the README, manifests, Compose files, scripts, environment examples, and
+service entry points. Use source evidence to identify likely services, dependencies,
+and port support. Reuse the project's commands and dependency tooling. Identify
 which services are needed, their working directories, dependency order, and
 how they accept a loopback host and a port. Check existing runner configuration
 before replacing anything.

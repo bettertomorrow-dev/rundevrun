@@ -83,21 +83,21 @@ for parsing and precedence details.
 
 ## Agent-assisted onboarding
 
-Install [rdr-onboard](../skills/rdr-onboard/SKILL.md) in your agent's personal skills
-directory, outside the target repo. Ask it to onboard a repo in Shared or External
-mode. It inspects existing commands, writes the config, validates a launch plan,
-and registers the project. Starting services is a separate action unless included
-in your request.
-The skill also supports re-onboarding. It first locates external configuration
-with `rundevrun config external --json`, inspects that file and the checkout's
-config, then updates the active source while preserving unrelated settings.
-Existing external config takes precedence. Re-onboarding repeats validation
-and launch dry-runs without starting or stopping services unless requested.
+Ask an agent to run `rundevrun guide onboard` from the checkout and follow the
+returned instructions. No skill installation is required. The command reports
+the active config and returns a guide without writing project config or
+registering the project. The agent inspects existing commands, validates a launch
+plan, and registers the project. Starting services requires a separate request.
+The guide also covers re-onboarding, env files, fixed ports, and singleton services.
 
-The skill also detects env files. It preserves existing selections, opts in a
-sole candidate for new selections, and asks which
-files to use, and in what order, when several are present. Templates such as
-`.env.example` are excluded.
+The CLI checks for compatible guide updates at most once per 24 hours. Run
+`rundevrun guide onboard --no-update` to skip the network check. The result includes
+`guide_dir`, `source`, and `revision`. To freeze a guide, copy the reported
+`guide_dir` to `$XDG_CONFIG_HOME/rundevrun/guides/onboard.local/`, or
+`~/.config/rundevrun/guides/onboard.local/` if `XDG_CONFIG_HOME` is unset.
+Copy the whole directory, including its entry point and supporting files. The CLI
+prefers this user-owned copy while it continues checking for updates. Remove the
+local copy to use the downloaded or bundled guide again.
 
 ## Fixed auth URLs and one active worktree
 

@@ -9,6 +9,11 @@ def classify(paths):
     selected = set()
     for path in paths:
         name = PurePosixPath(path)
+        if path.startswith("internal/guides/"):
+            selected.add("go")
+            if name.suffix in {".mjs", ".js"}:
+                selected.add("node")
+            continue
         if path in {"README.md", "AGENTS.md", "RTK.md", "LICENSE"} or (
             name.parts[0] in {"docs", "skills"} and name.suffix in {".md", ".txt"}
         ) or (path.startswith("skills/") and name.name == "openai.yaml"):

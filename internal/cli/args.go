@@ -20,6 +20,7 @@ type options struct {
 	noProxy     bool
 	recreate    bool
 	json        bool
+	noUpdate    bool
 	dryRun      bool
 	help        bool
 	follow      bool
@@ -47,13 +48,15 @@ func parseArgs(args []string) (options, []string, error) {
 		}
 		seen[name] = true
 		switch name {
-		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services", "--no-proxy", "--recreate":
+		case "--json", "--dry-run", "--help", "-h", "--follow", "--all", "--cascade", "--retry-hooks", "--all-services", "--no-proxy", "--recreate", "--no-update":
 			if hasValue {
 				return opts, positional, fmt.Errorf("%s does not take a value", name)
 			}
 			switch name {
 			case "--json":
 				opts.json = true
+			case "--no-update":
+				opts.noUpdate = true
 			case "--dry-run":
 				opts.dryRun = true
 			case "--follow":

@@ -11,6 +11,11 @@ import (
 const help = `rundevrun manages development services configured in rundevrun.toml.
 
 Discovery and registration:
+  rundevrun guide                 List available guides.
+  rundevrun guide onboard [--no-update]
+                                  Retrieve project onboarding instructions.
+  rundevrun guide domain [--no-update]
+                                  Retrieve private HTTPS setup and recovery instructions.
   rundevrun version               Show the binary version and public API version.
   rundevrun register [path]       Register a project and its existing worktrees.
   rundevrun projects              List registered projects and their stable IDs.
@@ -61,6 +66,7 @@ Options may appear before or after the command:
   --to-worktree ID|PATH|NAME Select bind target or switch destination.
   --file PATH              Read a config to import, switch mappings, or a network plan.
   --all-services           Select live source services for switch.
+  --no-update             Skip the guide update check.
   --json                  Write one versioned JSON result to stdout.
   --dry-run               Show a lifecycle plan without changing state.
   --cascade               Include live consumers in a down plan.
@@ -114,11 +120,14 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	command := "help"
 	if len(positional) > 0 {
 		command = positional[0]
-		if command == "config" && len(positional) > 1 {
-			command += " " + positional[1]
+		if len(positional) > 1 {
+			switch command {
+			case "config", "proxy", "network", "guide":
+				command += " " + positional[1]
+			}
 		}
-		if (command == "proxy" || command == "network") && len(positional) > 1 {
-			command += " " + positional[1]
+		if positional[0] == "guide" && !opts.help {
+			opts.json = true
 		}
 	}
 	e := result(command, opts)

@@ -46,16 +46,32 @@ func ExternalConfigPath(start string) (root, filename string, err error) {
 	return root, filename, err
 }
 
+func ActiveConfig(start string) (root, file, mode string, err error) {
+	root, external, err := ExternalConfigPath(start)
+	if err != nil {
+		return "", "", "", err
+	}
+	if _, err := os.Lstat(external); err == nil {
+		return root, external, "external", nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", "", err
+	}
+	shared := filepath.Join(root, "rundevrun.toml")
+	if _, err := os.Lstat(shared); err == nil {
+		return root, shared, "shared", nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", "", err
+	}
+	return root, "", "", nil
+}
+
 func LoadConfig(root string) (*config.Config, error) {
-	_, file, err := ExternalConfigPath(root)
-	if err == nil {
-		if _, err = os.Lstat(file); err == nil {
-			return config.LoadForRoot(file, root)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-	} else if !errors.Is(err, ErrNotFound) {
+	_, file, _, err := ActiveConfig(root)
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	return config.LoadForRoot(filepath.Join(root, "rundevrun.toml"), root)
+	if file == "" {
+		file = filepath.Join(root, "rundevrun.toml")
+	}
+	return config.LoadForRoot(file, root)
 }

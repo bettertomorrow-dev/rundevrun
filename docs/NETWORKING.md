@@ -7,12 +7,15 @@ DNS. Settings live in `$XDG_CONFIG_HOME/rundevrun/networking.json`, or
 
 ## Guided setup
 
-Install the complete [`rundevrun-domain-setup-wizard`](../skills/rundevrun-domain-setup-wizard/SKILL.md)
-directory through your agent host, then explicitly invoke
-`$rundevrun-domain-setup-wizard` or its slash-command equivalent. It checks
-prerequisites, guides Cloudflare onboarding, and previews changes before applying.
-The [`rdr-network-setup`](../skills/rdr-network-setup/SKILL.md) skill covers direct
-setup and recovery. Neither runs automatically.
+Run `rundevrun guide domain` from any directory for private HTTPS setup,
+verification, recovery, or a domain change. An agent can follow the instructions
+without installing a skill. Retrieval leaves provider settings untouched.
+
+Use `--no-update` to skip the update check. To freeze the guide, copy its
+reported `guide_dir` in full to `$XDG_CONFIG_HOME/rundevrun/guides/domain.local`,
+or `~/.config/rundevrun/guides/domain.local` when unset. The CLI prefers
+that copy while it continues checking for updates. Remove it to use the downloaded
+or bundled guide again.
 
 ## Settings and provider setup
 
