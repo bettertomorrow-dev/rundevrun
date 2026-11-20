@@ -1,7 +1,20 @@
 # rundevrun
 
-Run development services across projects and existing Git worktrees.
-Development software for macOS, Linux, and WSL 2. Git is required at runtime.
+rundevrun runs local dev services from the Git worktree you want to test.
+Reviewing a PR? Open an agent chat in its worktree and type `rundevrun`.
+An agent with the rundevrun skill reads the project config, starts the services
+you need, and sends you the links. If you're working on your own, you can start
+the same services from the terminal and see what's running in each worktree
+with `rundevtop`.
+
+---
+
+Set up your existing launch commands once in `rundevrun.toml`.
+Testing two PRs at once? rundevrun can assign free ports so both can run
+side by side.
+When you're done, stop that worktree's services with one command.
+
+rundevrun runs on macOS, Linux, and WSL 2. Git is required at runtime.
 Building from source requires Go 1.27 or newer.
 
 Install both commands from a published release:
