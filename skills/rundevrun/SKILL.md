@@ -1,6 +1,6 @@
 ---
 name: rundevrun
-description: Runs, switches, stops and inspects a project's dev services across Git branches and worktrees with `rundevrun`. Use when the user wants to start or stop an app, run the UI or API from a branch, PR or worktree, move running services to another worktree, check what is running or on which port, read service logs, or mentions rundevrun, rundevtop, rdr, `up`, `down` or `switch`. Do NOT use to onboard a repo that has no rundevrun config (use rdr-onboard) or to set up networking (use rdr-network-setup).
+description: Runs, switches, stops and inspects a project's dev services across Git branches and worktrees with `rundevrun`. Use when the user wants to start or stop an app, run the UI or API from a branch, PR or worktree, move running services to another worktree, check what is running or on which port, read service logs, or mentions rundevrun, rundevtop, rdr, `up`, `down` or `switch`. Do NOT use to onboard a repo that has no rundevrun config (use rundevrun guide onboard) or to set up networking (use rundevrun guide domain).
 ---
 
 # rundevrun
@@ -24,7 +24,7 @@ user's global instructions require it.
    Take service names from this output. Never assume them.
 3. `config_mode` of `external` means the config lives under
    `~/.config/rundevrun/`. Never add a `rundevrun.toml` to the repo for it.
-4. If the check says there is no config, stop and use `rdr-onboard`.
+4. If the check says there is no config, run `rundevrun guide onboard` in the target checkout.
 5. `rundevrun worktrees --json` lists worktrees. Pick the one the user named by
    branch, directory name or PR number. If nothing matches, report it. Do not
    create a worktree unless the user asks.
@@ -64,7 +64,8 @@ Follow the port rule below.
 ## Rules
 
 - A service with a fixed port can run from one worktree at a time. `up` for the
-  same service in a second worktree clashes. Use `switch` to move it.
+  same service in a second worktree can clash. For a singleton, `up` can stop
+  the previous instance. Preview the interruption with `--dry-run --json`.
 - If a port belongs to a process rundevrun did not start, report the conflict
   and the owning process. Leave it alone. Stop it only after the user agrees.
   Then run `up` again.

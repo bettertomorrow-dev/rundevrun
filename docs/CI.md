@@ -14,6 +14,7 @@ changes, and manual/release runs select every check.
 - Root README, agent instructions, license, prose in `docs/` and `skills/`, and
   skill `agents/openai.yaml` metadata skip app checks.
 - Go files, `go.mod`, `go.sum`, and executable example fixtures run Go checks.
+- Embedded guide files run Go checks. Embedded JavaScript helpers also run Node tests.
 - Skill/helper JavaScript runs the Node tests.
 - Installer scripts and local Git hooks run installer tests on macOS and Linux.
 - GoReleaser configuration runs Go and installer checks.
@@ -75,3 +76,14 @@ v2.20.2; reproduce packaging locally with:
 ```sh
 TAP_GITHUB_TOKEN='' goreleaser release --snapshot --clean
 ```
+
+## Publish guide updates
+
+The CLI checks the protected `main` branch of `bettertomorrow-dev/rundevrun`
+for guide updates. Compatible edits under `internal/guides/` become available on
+the next check without a binary release. The manifest sets `guide_protocol` and
+`min_cli_api_version`. Bump the guide protocol for backward-incompatible command
+expectations, even when the CLI JSON envelope version stays the same. Set the
+minimum CLI API version when the guide needs a newer API. Older clients retain
+their last compatible download or use the bundled guide. Treat write access to
+these files as release authority: guides can instruct agents to run scripts.

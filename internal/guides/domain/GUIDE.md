@@ -1,10 +1,4 @@
----
-name: rundevrun-domain-setup-wizard
-description: Guided setup of your own project domain through Cloudflare and Tailscale on macOS and Linux.
-disable-model-invocation: true
----
-
-# Rundevrun domain setup wizard
+# Private HTTPS for dev runs
 
 Configure a user-owned subdomain for private HTTPS access to rundevrun projects. Run
 only when explicitly invoked. Speak the user's language. Ask one short question
@@ -22,8 +16,13 @@ before migrating DNS or installing tools.
 
 ## 1. Find the user's starting point
 
-First establish whether they own a domain and use Cloudflare DNS. Offer these
-choices in their language:
+Run `rundevrun network inspect --json` and `rundevrun network setup-check --json`
+to identify the current domain, selected projects and locally known setup state.
+Reuse verified settings and skip completed steps. If setup was interrupted or
+the user wants to switch domains, start with [recovery and cleanup](#recovery-and-cleanup).
+If the requested setup is already complete, go to [verification](#5-verify-and-hand-over).
+
+For a new setup, ask whether they own a domain and use Cloudflare DNS:
 
 - I own a domain; it is not connected to Cloudflare.
 - I own a domain; it is connected to Cloudflare.
@@ -116,8 +115,9 @@ rundevrun network setup-apply --file approved-setup-plan.json --json
 
 Save the returned **`plan` member**, not the whole envelope, as each apply file.
 Keep temporary plans in a private directory. They contain settings and credential
-references, never secret values. Show the settings and concrete route/alias
-changes before applying the settings plan. Before first issuance, a settings
+references, never secret values. Keep tokens out of arguments, logs and chat.
+Never inspect Cloudflare CLI credential files. Show the settings and concrete route/alias
+changes and obtain approval before applying the settings plan. Before first issuance, a settings
 apply can report `partial` because no managed certificate exists yet; inspect
 the result to distinguish saved settings/pending TLS from other failures.
 
@@ -135,12 +135,10 @@ its identity and values. Use the backend's explicit adoption operation only
 after the user authorizes adoption and the record meets its checks. A conflict
 that cannot be adopted needs a new subdomain or the user's reviewed resolution.
 
-For a changed previously managed domain, use `cleanup-plan` and `cleanup-apply`
-before switching, after reviewing removals with the user. Preserve credentials,
-certificates, unrelated DNS and Serve entries. Recover interrupted operations
-with the supported `setup-recover`/resolution commands; do not edit ownership
-files. Retry only an explicitly safe, understood failure with a bounded number
-of attempts. Preserve working local routes and application processes.
+If the plan needs a token, use secret delivery and pipe it to
+`rundevrun network credential-store cloudflare-dns-token`. For rotation use
+`credential-replace` with the same stdin delivery. Save only the reference as
+`credential_ref` and generate a fresh plan.
 
 ## 5. Verify and hand over
 
@@ -160,6 +158,15 @@ available. Report this check as unverified until there is actual evidence;
 separate same-computer HTTPS from second-device/policy acceptance.
 
 Finish with working links, selected projects/alias target, renewal requirements
-and any pending checks/recovery step. Leave healthy apps/proxy running. This
-wizard's invocation does not authorize installing the skill into another agent's
-directory, buying domains, changing tailnet policy or creating public exposure.
+and any pending checks/recovery step. Leave healthy apps/proxy running. Invoking this guide does not authorize buying domains, changing tailnet policy
+or creating public exposure.
+
+## Recovery and cleanup
+
+If setup reports an interrupted operation, run `rundevrun network setup-recover --json` first. When recovery reports an ambiguous resource, inspect it using provider status and ask the user before resolving it with `adopt-dns ID`, `adopt-serve`, `resolve-challenge ID`, or `resolve-finalization`. Pass only the resource ID returned by the provider. Resolving an ambiguous ACME finalization may consume another certificate issuance against CA rate limits. Do not adopt or delete a resource based on its name alone.
+
+For an existing wildcard DNS record, do not adopt it automatically. Inspect the record ID and verify it is the intended DNS-only A record for the current Tailscale IP. After the user confirms, run `rundevrun network adopt-existing-dns ID`. If a proxy listener reservation remains after an interrupted reload, inspect `rundevrun proxy status`, then run `rundevrun proxy abort` to release the pending reservation before retrying.
+
+If proxy reload reports `TLS mode or listener addresses changed; restart proxy`, run `rundevrun proxy stop`, then `rundevrun up` or initialize `rundevtop` again. This restarts the proxy and keeps application processes running.
+
+To change the configured tailnet domain or Cloudflare zone, first run `rundevrun network cleanup-plan --json` and show its exact DNS and Serve removals. Get the user's direction, then apply that reviewed plan with `rundevrun network cleanup-apply --file cleanup-plan.json --json`. Cleanup removes only verified owned DNS and Serve forwarding. It preserves credentials and certificates. Then plan and apply the new domain settings, save its token reference if needed, and run a fresh setup plan. Do not edit ownership records manually.

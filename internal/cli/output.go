@@ -36,6 +36,7 @@ type envelope struct {
 	DryRun            bool                 `json:"dry_run"`
 	Results           []any                `json:"results"`
 	Errors            []commandError       `json:"errors"`
+	Warnings          []string             `json:"warnings,omitempty"`
 	Plan              any                  `json:"plan,omitempty"`
 	OperationID       string               `json:"operation_id,omitempty"`
 	JournalPath       string               `json:"journal_path,omitempty"`

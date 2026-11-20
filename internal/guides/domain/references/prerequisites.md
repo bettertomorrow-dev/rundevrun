@@ -10,9 +10,8 @@ account login/2FA may need their participation. Keep secrets out of chat and log
 Locate `rundevrun`, check `rundevrun version --json` and required `network` commands. Offer
 installation/update when unavailable or incompatible. Prefer the current trusted
 release/install procedure, or build from the user's trusted rundevrun checkout
-following its `docs/INSTALL.md`, `go.mod` and `--help`. If the skill was installed
-alone, locate that source with the user rather than assuming its parent directory
-is the repository. Do not guess a release URL or silently upgrade Go/system tools.
+following its `docs/INSTALL.md`, `go.mod` and `--help`. The guide directory is not necessarily a repository checkout. Locate the source
+with the user rather than assuming its parent directory is the repository. Do not guess a release URL or silently upgrade Go/system tools.
 
 Use a user-owned install directory where practical; retain previous binaries and
 existing configuration. Build `rundevrun` and `rundevtop` where supplied by that version.
@@ -69,7 +68,7 @@ node scripts/create-cloudflare-token.mjs --zone example.com --credential-ref clo
 node scripts/create-cloudflare-token.mjs --zone example.com --credential-ref cloudflare-dns-token --apply
 ```
 
-Resolve `scripts/` relative to this skill, not the user's current directory. Run
+Resolve `scripts/` relative to the guide directory, not the user's current directory. Run
 the helper with a Node version compatible with cf; it prepends that Node's
 directory to PATH for child processes. `--cf` and `--rundevrun` select executable paths.
 The first invocation is a read-only policy preview. Run `--apply` only within the
