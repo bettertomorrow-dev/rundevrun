@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -31,7 +31,13 @@ var names = []string{"onboard", "domain"}
 var snapshotURL = "https://codeload.github.com/bettertomorrow-dev/rundevrun/zip/refs/heads/main"
 var client = &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("redirects are not allowed") }}
 
-type Guide struct{ Name, Dir, Instructions, Source, Revision string }
+type Guide struct {
+	Name         string `json:"guide"`
+	Dir          string `json:"guide_dir"`
+	Instructions string `json:"instructions"`
+	Source       string `json:"source"`
+	Revision     string `json:"revision"`
+}
 type index struct {
 	Checked   time.Time         `json:"checked"`
 	Revisions map[string]string `json:"revisions"`
@@ -44,7 +50,7 @@ type manifest struct {
 func Load(name string, noUpdate bool) (Guide, string, error) {
 	var result Guide
 	result.Name = name
-	if !validName(name) {
+	if !slices.Contains(names, name) {
 		return result, "", fmt.Errorf("unknown guide %q", name)
 	}
 	config := os.Getenv("XDG_CONFIG_HOME")
@@ -146,14 +152,6 @@ func complete(name string, data map[string][]byte) error {
 }
 func Names() []string { return slices.Clone(names) }
 
-func validName(name string) bool {
-	for _, n := range names {
-		if name == n {
-			return true
-		}
-	}
-	return false
-}
 func validRevision(s string) bool {
 	if len(s) != 64 {
 		return false
@@ -162,13 +160,8 @@ func validRevision(s string) bool {
 	return err == nil && s == strings.ToLower(s)
 }
 func digest(data map[string][]byte) string {
-	keys := make([]string, 0, len(data))
-	for k := range data {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	h := sha256.New()
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(data)) {
 		fmt.Fprintf(h, "%d:%s:%d:", len(k), k, len(data[k]))
 		h.Write(data[k])
 	}

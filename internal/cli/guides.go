@@ -8,11 +8,7 @@ import (
 )
 
 type guideResult struct {
-	Guide        string `json:"guide"`
-	GuideDir     string `json:"guide_dir"`
-	Instructions string `json:"instructions"`
-	Source       string `json:"source"`
-	Revision     string `json:"revision"`
+	guides.Guide
 	WorktreeRoot string `json:"worktree_root,omitempty"`
 	ConfigState  string `json:"config_state,omitempty"`
 	ConfigMode   string `json:"config_mode,omitempty"`
@@ -58,7 +54,7 @@ func guideCommand(args []string, opts options, e *envelope) {
 		failError(e, err)
 		return
 	}
-	item.Guide, item.GuideDir, item.Instructions, item.Source, item.Revision = guide.Name, guide.Dir, guide.Instructions, guide.Source, guide.Revision
+	item.Guide = guide
 	if warning != "" {
 		e.Warnings = append(e.Warnings, warning)
 	}
