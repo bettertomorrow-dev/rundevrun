@@ -16,9 +16,9 @@ user's global instructions require it.
 
 1. Run `rundevrun config state --json`. Take the absolute runtime directory
    from `results[0].state_dir`. Never edit or delete files beneath it.
-   If a command reports legacy state, use its reported path through `RDR_HOME`
-   to inspect and manage the existing services. Report migration separately;
-   reset state only when the user requests it.
+   If a read-only command reports `STATE_MIGRATION_REQUIRED`, report the
+   suggested migration command. It stops services, shares, and the proxy
+   from the old state directory.
 2. From inside the repo, run `rundevrun config check --json`. It reports
    `config_mode`, `worktree_root` and every service with its `state`.
    Take service names from this output. Never assume them.

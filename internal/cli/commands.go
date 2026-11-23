@@ -30,6 +30,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/routing"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
+	"github.com/bettertomorrow-dev/rundevrun/internal/statemigration"
 )
 
 type projectInfo struct {
@@ -135,7 +136,7 @@ type hookInfo struct {
 
 func (i instanceInfo) String() string { return fmt.Sprintf("%s\t%s", i.ID, i.State) }
 
-func execute(ctx context.Context, args []string, opts options, e *envelope, out io.Writer) {
+func execute(ctx context.Context, args []string, opts options, e *envelope, out, errOut io.Writer) {
 	if args[0] == "guide" {
 		guideCommand(args, opts, e)
 		return
@@ -146,6 +147,10 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 	}
 	if opts.all && e.Command != "down" {
 		e.fail("USAGE", "--all is only valid with down")
+		return
+	}
+	if opts.all && (opts.project != "" || opts.worktree != "" || len(args) != 1) {
+		e.fail("USAGE", "down --all cannot be combined with --project, --worktree, or service selectors")
 		return
 	}
 	if opts.cascade && e.Command != "down" {
@@ -206,12 +211,46 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 		e.Results = append(e.Results, stateDirectoryInfo{StateDir: root})
 		return
 	}
-	if err := state.CheckLegacyRoot(root); err != nil {
-		failError(e, err)
-		return
-	}
 	store := &state.Store{Root: root}
+	var applyMigration bool
 	switch e.Command {
+	case statemigration.Command:
+		if !validArity(args, 2, 2, e) {
+			return
+		}
+		if opts.project != "" || opts.worktree != "" || opts.dryRun {
+			e.fail("USAGE", "config migrate-state accepts only --json")
+			return
+		}
+		if os.Getenv("RDR_HOME") != "" {
+			e.fail("USAGE", "RDR_HOME overrides the migration destination. Run env -u RDR_HOME rundevrun "+statemigration.Command+".")
+			return
+		}
+		applyMigration = true
+	case "up", "down", "restart":
+		if !validLifecycleArity(args, e.Command, e) {
+			return
+		}
+		applyMigration = !opts.dryRun
+	case "proxy status", "proxy reload", "proxy stop", "proxy abort":
+		if !validProxyArgs(args[1:], opts, e) {
+			return
+		}
+		applyMigration = e.Command == "proxy stop" && !opts.dryRun
+	}
+	if e.Command != "config external" {
+		if err := statemigration.Prepare(ctx, store, applyMigration, errOut); err != nil {
+			if errors.Is(err, statemigration.ErrRequired) {
+				e.fail("STATE_MIGRATION_REQUIRED", err.Error(), "rundevrun "+statemigration.Command)
+			} else {
+				failError(e, err)
+			}
+			return
+		}
+	}
+	switch e.Command {
+	case statemigration.Command:
+		e.Results = append(e.Results, stateDirectoryInfo{StateDir: root})
 	case "config external":
 		externalConfigCommand(args[2:], opts, e)
 	case "network inspect", "network check", "network plan", "network apply", "network setup-plan", "network setup-apply", "network setup-check", "network credential-store", "network setup-recover", "network adopt-dns", "network adopt-serve", "network resolve-challenge", "network credential-replace", "network adopt-existing-dns", "network cleanup-plan", "network cleanup-apply", "network resolve-finalization":
@@ -268,8 +307,6 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out 
 			if !validArity(args, 2, 2, e) {
 				return
 			}
-		} else if !validLifecycleArity(args, e.Command, e) {
-			return
 		}
 		if e.Command == "logs" && opts.dryRun {
 			e.fail("USAGE", "--dry-run is only valid for lifecycle mutations")
@@ -844,15 +881,19 @@ func reportFailed(r diagnostics.Report) bool {
 	return false
 }
 
-func proxyCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
+func validProxyArgs(args []string, opts options, e *envelope) bool {
 	if opts.project != "" || opts.worktree != "" || opts.toWorktree != "" || opts.file != "" || opts.all || opts.cascade || opts.retryHooks || opts.allServices || opts.noProxy || opts.follow || opts.tailSet {
 		e.fail("USAGE", "proxy commands do not accept selectors or unrelated flags")
-		return
+		return false
 	}
 	if len(args) != 1 {
 		e.fail("USAGE", "proxy requires status, reload, or stop")
-		return
+		return false
 	}
+	return true
+}
+
+func proxyCommand(ctx context.Context, store *state.Store, args []string, opts options, e *envelope) {
 	switch args[0] {
 	case "status":
 		if opts.dryRun {
@@ -1127,12 +1168,8 @@ func validLifecycleArity(args []string, command string, e *envelope) bool {
 }
 
 func lifecycleCommand(ctx context.Context, store *state.Store, services []string, opts options, e *envelope) {
-	if opts.all && (opts.project != "" || opts.worktree != "" || len(services) != 0) {
-		e.fail("USAGE", "down --all cannot be combined with --project, --worktree, or service selectors")
-		return
-	}
 	if opts.all {
-		selections, revision, err := allDownSelections(store)
+		selections, revision, err := runner.AllDownSelections(store)
 		if err != nil {
 			failError(e, err)
 			return
@@ -1815,33 +1852,6 @@ func currentDownSelections(store *state.Store, opts options, e *envelope) ([]run
 				return nil, 0, fmt.Errorf("registered instance metadata mismatch: %s", id)
 			}
 			selections = append(selections, runner.Selection{Project: d, Worktree: w, Service: i.Service})
-		}
-	}
-	return selections, reg.Revision, nil
-}
-
-func allDownSelections(store *state.Store) ([]runner.Selection, uint64, error) {
-	reg, err := store.Read()
-	if err != nil {
-		return nil, 0, err
-	}
-	selections := make([]runner.Selection, 0)
-	for _, projectID := range sortedKeys(reg.Projects) {
-		p, err := reg.Project(projectID)
-		if err != nil {
-			return nil, 0, err
-		}
-		d := descriptor(p)
-		for _, id := range sortedKeys(p.Instances) {
-			i := p.Instances[id]
-			if id != p.ID+"/"+i.WorktreeID+"/"+i.Service || i.Service == "" {
-				return nil, 0, fmt.Errorf("registered instance metadata mismatch: %s", id)
-			}
-			w, ok := findWorktree(p, i.WorktreeID)
-			if !ok || i.Service == "" {
-				return nil, 0, fmt.Errorf("registered instance %s has incomplete worktree metadata", id)
-			}
-			selections = append(selections, runner.Selection{Project: d, Worktree: &discovery.Worktree{ID: w.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached}, Service: i.Service})
 		}
 	}
 	return selections, reg.Revision, nil

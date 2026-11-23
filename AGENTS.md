@@ -5,6 +5,11 @@
 - Write as few tests as possible. Add only the minimum tests needed to verify the changed behavior.
 - In each source code file, write only one explanatory comment at the beginning describing the file's purpose. Keep the rest of the file free of comments, except required compiler or tool directives.
 
+## Runtime state migrations
+
+- Keep legacy detection, conversion, cleanup, and their unit tests in `internal/statemigration`. Entry points call the package and present its results. Keep shared operations in their owning packages.
+- Use [maintain-migrations](.agents/skills/maintain-migrations/SKILL.md) when adding, updating, or removing a runtime state migration or reviewing one for a release.
+
 ## Local rundevrun installation
 
 - Run `rtk proxy ./scripts/rdr-local update` from any worktree to build and install its current files, including uncommitted edits. Use `update --committed` to build only its committed HEAD. The previous binary is saved before replacement; build or smoke-check failures keep the installed binary.

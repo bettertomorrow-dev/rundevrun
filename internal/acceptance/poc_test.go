@@ -85,7 +85,7 @@ func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 		t.Skip("builds and runs real rundevrun service processes")
 	}
 
-	tmp, err := os.MkdirTemp("", "rdr-accept-")
+	tmp, err := os.MkdirTemp("/tmp", "rdr-accept-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,13 +96,14 @@ func TestProjectsWorktreesAndOrphanProcess(t *testing.T) {
 	}
 	_, source, _, _ := runtime.Caller(0)
 	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	binary := filepath.Join(base, "rundevrun")
+	binary := filepath.Join(base, "rdr")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/rundevrun")
 	build.Dir = repo
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build rundevrun: %v\n%s", err, out)
 	}
-	t.Setenv("RDR_HOME", filepath.Join(base, "state"))
+	t.Setenv("XDG_STATE_HOME", base)
+	t.Setenv("RDR_HOME", filepath.Join(base, "rundevrun"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
 	listener, proxyPort := reservePort(t)
 	firstPortLock, firstPort := reservePort(t)
@@ -530,6 +531,39 @@ build = "printf 'poc build failure\\n'; exit 1"
 	}
 	response.Body.Close()
 	assertRun(true)
+
+	blocker.Close()
+	invoke(first, true, "up", "web")
+	t.Setenv("RDR_HOME", "")
+	t.Cleanup(func() {
+		for _, args := range [][]string{{"down", "--all", "--json"}, {"proxy", "stop", "--json"}} {
+			if output, err := exec.Command(binary, args...).CombinedOutput(); err != nil {
+				t.Logf("cleanup migrated state: %v %s", err, output)
+			}
+		}
+	})
+	invoke(first, true, "up", "web")
+	if _, err := os.Stat(store.Root); !os.IsNotExist(err) {
+		t.Fatalf("legacy runtime directory remains: %v", err)
+	}
+	current, err := state.RuntimeRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := monitor.Read(ctx, &state.Store{Root: current}, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, service := range migrated.Services {
+		if service.ID == mainService.ID && service.State == "ready" && service.RunID != mainService.RunID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("migrated service was not restarted: %+v", migrated)
+	}
+	invoke(first, true, "down", "web")
 }
 
 func TestLocalLaunchURLs(t *testing.T) {

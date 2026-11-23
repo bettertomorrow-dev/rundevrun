@@ -191,8 +191,11 @@ Shares close before affected services stop and do not reopen automatically.
 
 ## Process and state invariants
 
-Runtime storage uses `RDR_HOME`, then `$XDG_CONFIG_HOME/rundevrun/state`, then
-`~/.config/rundevrun/state`. Directories are private and state writes are atomic.
+Runtime storage uses `RDR_HOME` when set, or defaults to
+`$XDG_CONFIG_HOME/rundevrun/state` with `~/.config/rundevrun/state` as the fallback.
+The `internal/statemigration` package stops legacy processes, imports
+registrations, and deletes the old runtime directory. Directories are private
+and state writes are atomic.
 Corrupt or uncertain state fails closed; application data must live elsewhere.
 
 - Acquire instance locks in ID order, then run spawn gates, then the registry
