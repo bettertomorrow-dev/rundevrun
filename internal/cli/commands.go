@@ -228,7 +228,8 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out,
 		}
 		applyMigration = true
 	case "up", "down", "restart":
-		if !validLifecycleArity(args, e.Command, e) {
+		if e.Command != "down" && len(args) < 2 {
+			e.fail("USAGE", "missing service selector", "see rundevrun --help")
 			return
 		}
 		applyMigration = !opts.dryRun
@@ -1153,18 +1154,6 @@ func mustProjectInstances(store *state.Store, id string, e *envelope) map[string
 		return nil
 	}
 	return p.Instances
-}
-
-func validLifecycleArity(args []string, command string, e *envelope) bool {
-	min := 2
-	if command == "down" {
-		min = 1
-	}
-	if len(args) < min {
-		e.fail("USAGE", "missing service selector", "see rundevrun --help")
-		return false
-	}
-	return true
 }
 
 func lifecycleCommand(ctx context.Context, store *state.Store, services []string, opts options, e *envelope) {

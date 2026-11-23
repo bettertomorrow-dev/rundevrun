@@ -26,14 +26,10 @@ func AllDownSelections(store *state.Store) ([]Selection, uint64, error) {
 		if err != nil {
 			return nil, 0, err
 		}
-		project := &discovery.Project{
-			ID: p.ID, Name: p.Name, Root: p.Root, GitCommonDir: p.GitCommonDir,
-			Worktrees: make([]discovery.Worktree, len(p.Worktrees)),
-		}
+		project := &discovery.Project{ID: p.ID}
 		worktrees := make(map[string]*discovery.Worktree, len(p.Worktrees))
-		for i, w := range p.Worktrees {
-			project.Worktrees[i] = discovery.Worktree{ID: w.ID, Root: w.Root, Branch: w.Branch, Detached: w.Detached}
-			worktrees[w.ID] = &project.Worktrees[i]
+		for _, w := range p.Worktrees {
+			worktrees[w.ID] = &discovery.Worktree{ID: w.ID, Root: w.Root}
 		}
 		for _, id := range slices.Sorted(maps.Keys(p.Instances)) {
 			instance := p.Instances[id]
