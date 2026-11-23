@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
+	"github.com/bettertomorrow-dev/rundevrun/internal/statemigration"
 	"github.com/bettertomorrow-dev/rundevrun/internal/tui"
 )
 
@@ -42,9 +44,6 @@ func main() {
 		os.Exit(2)
 	}
 	root, err := state.RuntimeRoot()
-	if err == nil {
-		err = state.CheckLegacyRoot(root)
-	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
@@ -56,7 +55,12 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err = tui.Run(ctx, &state.Store{Root: root}, cwd, os.Stdin, os.Stdout); err != nil {
+	store := &state.Store{Root: root}
+	if err := statemigration.Prepare(ctx, store, false, io.Discard); err != nil {
+		fmt.Fprintln(os.Stderr, "rundevtop:", err)
+		os.Exit(1)
+	}
+	if err = tui.Run(ctx, store, cwd, os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
 	}
