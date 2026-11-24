@@ -3,7 +3,6 @@ package update
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"go/version"
 	"io"
@@ -41,43 +40,41 @@ func newer(candidate, current string) bool {
 }
 
 func Check(ctx context.Context, current string) (Info, error) {
-	info, err := check(ctx, releases, http.DefaultClient, current)
-	if err == nil && stableVersion.MatchString(current) {
-		path, pathErr := executable()
-		if pathErr == nil {
-			cache, _ := os.UserCacheDir()
-			cacheRelease(cachePath(cache, filepath.Dir(path)), info.Latest)
-		}
+	latest, err := latestRelease(ctx, releases, http.DefaultClient)
+	if err != nil {
+		return Info{}, err
 	}
-	return info, err
+	cache, _ := os.UserCacheDir()
+	cacheRelease(cachePath(cache), latest)
+	return Info{Current: current, Latest: latest, Available: newer(latest, current)}, nil
 }
 
-func check(ctx context.Context, base string, client *http.Client, current string) (Info, error) {
+func latestRelease(ctx context.Context, base string, client *http.Client) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	redirect := *client
 	redirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, base+"/latest", nil)
 	if err != nil {
-		return Info{}, err
+		return "", err
 	}
 	resp, err := redirect.Do(req)
 	if err != nil {
-		return Info{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusTemporaryRedirect && resp.StatusCode != http.StatusPermanentRedirect {
-		return Info{}, fmt.Errorf("GitHub release check returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("GitHub release check returned HTTP %d", resp.StatusCode)
 	}
 	location, err := resp.Location()
 	if err != nil {
-		return Info{}, err
+		return "", err
 	}
 	latest, ok := strings.CutPrefix(location.String(), base+"/tag/v")
 	if !ok || !stableVersion.MatchString(latest) {
-		return Info{}, fmt.Errorf("GitHub did not return a stable release tag")
+		return "", fmt.Errorf("GitHub did not return a stable release tag")
 	}
-	return Info{Current: current, Latest: latest, Available: newer(latest, current)}, nil
+	return latest, nil
 }
 
 func Startup(ctx context.Context, current string, stderr io.Writer) {
@@ -114,14 +111,14 @@ func ensure(ctx context.Context, base string, client *http.Client, cache, path, 
 		return "", "", nil
 	}
 	prefix := brewPrefix(dir)
-	stamp := cachePath(cache, dir)
+	stamp := cachePath(cache)
 	latest := cachedRelease(stamp)
 	if latest == "" {
-		info, err := check(ctx, base, client, current)
+		var err error
+		latest, err = latestRelease(ctx, base, client)
 		if err != nil {
 			return "", "", err
 		}
-		latest = info.Latest
 		cacheRelease(stamp, latest)
 	}
 	if !newer(latest, current) {
@@ -155,18 +152,11 @@ func ensure(ctx context.Context, base string, client *http.Client, cache, path, 
 	return path, installed, nil
 }
 
-func cachePath(cache, dir string) string {
+func cachePath(cache string) string {
 	if cache == "" {
 		return ""
 	}
-	cache = filepath.Join(cache, "rundevrun", "updates")
-	if os.MkdirAll(cache, 0700) != nil {
-		return ""
-	}
-	if prefix := brewPrefix(dir); prefix != "" {
-		dir = prefix
-	}
-	return filepath.Join(cache, fmt.Sprintf("%x", sha256.Sum256([]byte(dir))))
+	return filepath.Join(cache, "rundevrun", "latest-release")
 }
 
 func brewPrefix(dir string) string {
@@ -195,7 +185,7 @@ func cachedRelease(path string) string {
 }
 
 func cacheRelease(path, latest string) {
-	if path == "" {
+	if path == "" || os.MkdirAll(filepath.Dir(path), 0700) != nil {
 		return
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".release-*")
