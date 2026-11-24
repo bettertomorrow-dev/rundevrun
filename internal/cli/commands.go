@@ -31,6 +31,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 	"github.com/bettertomorrow-dev/rundevrun/internal/statemigration"
+	"github.com/bettertomorrow-dev/rundevrun/internal/update"
 )
 
 type projectInfo struct {
@@ -193,6 +194,26 @@ func execute(ctx context.Context, args []string, opts options, e *envelope, out,
 		if validArity(args, 1, 1, e) {
 			e.Results = append(e.Results, versionInfo{"rundevrun", Version, APIVersion})
 		}
+		return
+	}
+	if args[0] == "update" {
+		if e.Command != "update check" {
+			e.fail("USAGE", "expected rundevrun update check")
+			return
+		}
+		if !validArity(args, 2, 2, e) {
+			return
+		}
+		if opts.project != "" || opts.worktree != "" || opts.toWorktree != "" || opts.dryRun {
+			e.fail("USAGE", "update check accepts only --json")
+			return
+		}
+		info, err := update.Check(ctx, Version)
+		if err != nil {
+			e.fail("UPDATE_CHECK_FAILED", err.Error())
+			return
+		}
+		e.Results = append(e.Results, info)
 		return
 	}
 	root, err := state.RuntimeRoot()

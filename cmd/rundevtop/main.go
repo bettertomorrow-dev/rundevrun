@@ -15,6 +15,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 	"github.com/bettertomorrow-dev/rundevrun/internal/statemigration"
 	"github.com/bettertomorrow-dev/rundevrun/internal/tui"
+	"github.com/bettertomorrow-dev/rundevrun/internal/update"
 )
 
 func main() {
@@ -43,6 +44,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rundevtop: unexpected argument:", os.Args[1])
 		os.Exit(2)
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	update.Startup(ctx, cli.Version, os.Stderr)
+	if ctx.Err() != nil {
+		return
+	}
 	root, err := state.RuntimeRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
@@ -53,8 +60,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	store := &state.Store{Root: root}
 	if err := statemigration.Prepare(ctx, store, false, io.Discard); err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
