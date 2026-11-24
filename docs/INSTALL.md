@@ -31,7 +31,8 @@ RUNDEVRUN_INSTALL_DIR="$HOME/tools/rundevrun" bash /tmp/install-rundevrun.sh
 ```
 
 A custom directory receives both binaries directly, without creating PATH links.
-Rerun the installer to update. Previous binaries are saved as
+Keep both binaries together in a directory owned by your user when unpacking a
+release by hand. Previous binaries are saved as
 `rundevrun.previous` and `rundevtop.previous`. Restore the CLI with
 `./scripts/rdr-local rollback` from a checkout, using `RDR_INSTALL_DIR` for a
 custom directory, or reinstall a specific release. Neither operation removes
@@ -47,7 +48,21 @@ brew upgrade --cask bettertomorrow-dev/tap/rundevrun
 ```
 
 Use one installation method per machine to avoid competing commands on PATH.
-Homebrew manages its own installation location and upgrades.
+
+## Automatic updates
+
+`rundevrun` and `rundevtop` check GitHub for a stable release when launched and
+reuse a successful check for 24 hours. If a newer release is available, they
+install it automatically and continue the same launch with the new version.
+There is no update setting or prompt. Homebrew installations upgrade through
+`brew`. Other release installations verify the archive checksum and both binary
+versions before replacing the installed pair.
+
+If the check or installation fails, the command reports the error and runs the
+installed version. A later launch retries. Running services keep their current
+supervisors. Source builds, `version`, and help skip automatic checks.
+`rundevrun update check` queries GitHub immediately and reports the installed
+and latest stable versions without installing anything. It also accepts `--json`.
 
 ## Build from source
 

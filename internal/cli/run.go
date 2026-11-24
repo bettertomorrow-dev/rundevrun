@@ -17,6 +17,7 @@ Discovery and registration:
   rundevrun guide domain [--no-update]
                                   Retrieve private HTTPS setup and recovery instructions.
   rundevrun version               Show the binary version and public API version.
+  rundevrun update check          Check GitHub for a newer stable release.
   rundevrun register [path]       Register a project and its existing worktrees.
   rundevrun projects              List registered projects and their stable IDs.
   rundevrun worktrees             List existing worktrees; never change Git state.
@@ -122,7 +123,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		command = positional[0]
 		if len(positional) > 1 {
 			switch command {
-			case "config", "proxy", "network", "guide":
+			case "config", "proxy", "network", "guide", "update":
 				command += " " + positional[1]
 			}
 		}
@@ -155,6 +156,19 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	execute(ctx, positional, opts, &e, out)
 	return writeResult(out, errOut, e, opts.json)
+}
+
+func ChecksForUpdates(args []string) bool {
+	opts, positional, err := parseArgs(args)
+	if err != nil || opts.help || len(positional) == 0 {
+		return false
+	}
+	switch positional[0] {
+	case "help", "version", "update":
+		return false
+	default:
+		return true
+	}
 }
 
 func validArity(args []string, min, max int, e *envelope) bool {

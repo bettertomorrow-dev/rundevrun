@@ -12,6 +12,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/proxy"
 	"github.com/bettertomorrow-dev/rundevrun/internal/publication"
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
+	"github.com/bettertomorrow-dev/rundevrun/internal/update"
 )
 
 func main() {
@@ -47,6 +48,9 @@ func main() {
 		os.Exit(0)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	if cli.ChecksForUpdates(os.Args[1:]) {
+		update.Startup(ctx, cli.Version, os.Stderr)
+	}
 	code := cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)

@@ -13,6 +13,7 @@ import (
 	"github.com/bettertomorrow-dev/rundevrun/internal/runner"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 	"github.com/bettertomorrow-dev/rundevrun/internal/tui"
+	"github.com/bettertomorrow-dev/rundevrun/internal/update"
 )
 
 func main() {
@@ -41,6 +42,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rundevtop: unexpected argument:", os.Args[1])
 		os.Exit(2)
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	update.Startup(ctx, cli.Version, os.Stderr)
+	if ctx.Err() != nil {
+		return
+	}
 	root, err := state.RuntimeRoot()
 	if err == nil {
 		err = state.CheckLegacyRoot(root)
@@ -54,8 +61,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	if err = tui.Run(ctx, &state.Store{Root: root}, cwd, os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "rundevtop:", err)
 		os.Exit(1)
