@@ -24,6 +24,7 @@ Discovery and registration:
   rundevrun services              List configured services, including stopped instances.
   rundevrun config check          Validate configuration without running project code.
   rundevrun config state          Show the absolute runtime state directory without changing it.
+  rundevrun config migrate-state  Stop legacy processes and migrate registrations.
   rundevrun config external [path] [--file PATH]
                                   Show the external config path, or import a config there.
   rundevrun up <service...>       Build and start services and their dependencies.
@@ -104,8 +105,10 @@ Quick Tunnels do not support server-sent events (SSE).
 Status shows switch journals without replay. Interrupted switches
 are not rolled back or retried automatically. Inspect the steps, then use up or
 down to recover explicitly. A failed after_start hook remains attached to its run.
-Runtime state: RDR_HOME, else XDG_CONFIG_HOME/rundevrun/state,
-else ~/.config/rundevrun/state. Registration runs no project commands.`
+Runtime state uses RDR_HOME when set, or defaults to XDG_CONFIG_HOME/rundevrun/state
+(normally ~/.config/rundevrun/state). Running up, down, restart, or proxy stop
+migrates legacy state first and stops its services and proxy.
+Registration runs no project commands.`
 
 func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	opts, positional, err := parseArgs(args)
@@ -154,7 +157,11 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		e.fail("CANCELLED", err.Error())
 		return writeResult(out, errOut, e, opts.json)
 	}
-	execute(ctx, positional, opts, &e, out)
+	progress := errOut
+	if opts.json {
+		progress = io.Discard
+	}
+	execute(ctx, positional, opts, &e, out, progress)
 	return writeResult(out, errOut, e, opts.json)
 }
 

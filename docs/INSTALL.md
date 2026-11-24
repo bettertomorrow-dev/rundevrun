@@ -113,24 +113,29 @@ moves a live service and its consumers. Inspect these operations with `--dry-run
 
 ## State and secrets
 
-Runtime state uses `$RDR_HOME`, then `$XDG_CONFIG_HOME/rundevrun/state`, then
-`~/.config/rundevrun/state`. Keep application data elsewhere; retention removes
-old run artifacts. Do not commit runtime files or publish their logs.
+Runtime state defaults to `$XDG_CONFIG_HOME/rundevrun/state` or
+`~/.config/rundevrun/state` when `XDG_CONFIG_HOME` is unset. Keep application data
+elsewhere because retention removes old run artifacts. Do not commit runtime
+files or publish their logs.
 
 Run `rundevrun config state` to print the absolute state directory, or add
 `--json` and read `results[0].state_dir`. This command works outside repositories,
-returns paths that do not exist yet, and does not read or create state.
+returns paths that do not exist yet, and does not read or create state files.
 `RDR_HOME` overrides runtime storage only; configuration stays in the config directory.
 
 Earlier versions stored state under `$XDG_STATE_HOME/rundevrun`, falling back to
-`~/.local/state/rundevrun`. If that directory contains files, both commands refuse
-to use the new default. Set `RDR_HOME` to the old absolute path to keep using it.
-To reset, use that override to stop services with `rundevrun down --all --json`
-and the proxy with `rundevrun proxy stop --json` first. Then remove the old runtime
-directory and unset `RDR_HOME`. Resetting discards registrations and run history;
-`register` or `up` registers projects again. Do not move live state or rewrite
-saved manifests, which contain absolute paths and integrity digests.
-`XDG_STATE_HOME` now serves only to detect legacy state.
+`~/.local/state/rundevrun`. Migration stops the services, shares, and proxy in
+that directory. Close any older rundevrun clients before migrating.
+With `RDR_HOME` unset, run `rundevrun config migrate-state`. The first
+`up`, `down`, `restart`, or `proxy stop` also migrates legacy state before
+executing the requested command. Read-only commands and dry runs report when
+migration is required. `rundevrun config state` prints the destination.
+
+Migration imports project and worktree registrations, aliases, and desired
+bindings for projects missing from the new directory. Existing projects there
+take precedence. Migration deletes the old runtime directory, including logs
+and run history, after importing registrations. After migration, use
+`rundevrun up SERVICE` to start any services you still need.
 
 Machine networking settings use `$XDG_CONFIG_HOME/rundevrun`, falling back to
 `~/.config/rundevrun`. See [networking](NETWORKING.md) and [existing TLS](LOCAL_HTTPS.md).

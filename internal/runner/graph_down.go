@@ -5,12 +5,39 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/bettertomorrow-dev/rundevrun/internal/discovery"
 	"github.com/bettertomorrow-dev/rundevrun/internal/state"
 )
+
+func AllDownSelections(store *state.Store) ([]Selection, uint64, error) {
+	reg, err := store.Read()
+	if err != nil {
+		return nil, 0, err
+	}
+	selections := make([]Selection, 0)
+	for _, id := range slices.Sorted(maps.Keys(reg.Projects)) {
+		p, err := reg.Project(id)
+		if err != nil {
+			return nil, 0, err
+		}
+		project := &discovery.Project{ID: p.ID}
+		worktrees := make(map[string]*discovery.Worktree, len(p.Worktrees))
+		for _, w := range p.Worktrees {
+			worktrees[w.ID] = &discovery.Worktree{ID: w.ID, Root: w.Root}
+		}
+		for _, id := range slices.Sorted(maps.Keys(p.Instances)) {
+			instance := p.Instances[id]
+			selections = append(selections, Selection{Project: project, Worktree: worktrees[instance.WorktreeID], Service: instance.Service})
+		}
+	}
+	return selections, reg.Revision, nil
+}
 
 func (r *Runner) DownGraph(ctx context.Context, selections []Selection, cascade bool) (out GraphResult, retErr error) {
 	out = GraphResult{Status: "ok", Results: []Result{}, Errors: []GraphError{}}
