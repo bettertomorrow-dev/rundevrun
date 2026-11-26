@@ -4,6 +4,9 @@ package procid
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -37,9 +40,46 @@ func Identity(pid int) (string, error) {
 }
 
 func bootID() (string, error) {
-	tv, err := unix.SysctlTimeval("kern.boottime")
+	id, err := unix.Sysctl("kern.bootsessionuuid")
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%d.%06d", tv.Sec, tv.Usec), nil
+	if id == "" {
+		return "", errors.New("empty boot session UUID")
+	}
+	return id, nil
+}
+
+func legacyBootTime(id string) (time.Time, bool) {
+	seconds, micros, ok := strings.Cut(id, ".")
+	if !ok || len(micros) != 6 {
+		return time.Time{}, false
+	}
+	sec, secErr := strconv.ParseInt(seconds, 10, 64)
+	usec, usecErr := strconv.ParseUint(micros, 10, 32)
+	if secErr != nil || usecErr != nil || sec <= 0 || usec >= 1000000 || fmt.Sprintf("%d.%06d", sec, usec) != id {
+		return time.Time{}, false
+	}
+	return time.Unix(sec, int64(usec)*1000), true
+}
+
+func LegacyBootID(id string) bool {
+	_, ok := legacyBootTime(id)
+	return ok
+}
+
+func matchesBootID(recorded, current string) (bool, error) {
+	if recorded == current {
+		return true, nil
+	}
+	legacy, ok := legacyBootTime(recorded)
+	if !ok {
+		return false, nil
+	}
+	tv, err := unix.SysctlTimeval("kern.boottime")
+	if err != nil {
+		return false, err
+	}
+	offset := legacy.Sub(time.Unix(tv.Sec, int64(tv.Usec)*1000))
+	return offset >= -time.Minute && offset <= time.Minute, nil
 }

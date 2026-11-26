@@ -220,14 +220,76 @@ func TestUsageAndVersionErrorsAreJSON(t *testing.T) {
 	}
 }
 
+func TestUnrecognizedProxyListener(t *testing.T) {
+	base := t.TempDir()
+	runtime := filepath.Join(base, "runtime")
+	t.Setenv("RDR_HOME", runtime)
+	t.Setenv("XDG_CONFIG_HOME", base)
+	cfgDir := filepath.Join(base, "rundevrun")
+	if err := os.Mkdir(cfgDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	config := fmt.Sprintf(`{"version":1,"local":{"listen":%q},"tailnet":{}}`, listener.Addr())
+	if err := os.WriteFile(filepath.Join(cfgDir, "networking.json"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e, code := invoke(t, "proxy", "status", "--json")
+	if code == 0 || e.Proxy == nil || e.Proxy.State != "stale" || e.Proxy.HTTPListen != listener.Addr().String() ||
+		len(e.Errors) != 1 || e.Errors[0].Code != "STALE_PROXY" || len(e.Errors[0].Actions) == 0 {
+		t.Fatalf("proxy status: %d %+v", code, e)
+	}
+	if _, err := os.Stat(runtime); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("status created runtime state: %v", err)
+	}
+	_, ssErr := exec.LookPath("ss")
+	_, lsofErr := os.Stat("/usr/sbin/lsof")
+	if (ssErr == nil || lsofErr == nil) && e.Proxy.PID != os.Getpid() {
+		t.Fatalf("expected listener PID %d, got %d", os.Getpid(), e.Proxy.PID)
+	}
+	path, err := routing.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &state.Store{Root: runtime}
+	checkStartupConflict := func() {
+		t.Helper()
+		err := proxy.Ensure(context.Background(), store, "unexpected-proxy-launch", path)
+		var conflict *proxy.Error
+		if !errors.As(err, &conflict) || conflict.Code != "PORT_CONFLICT" || len(conflict.Actions()) == 0 {
+			t.Fatalf("proxy startup: %v", err)
+		}
+	}
+	checkStartupConflict()
+	self, err := procid.Observe(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteProxy(state.ProxyRecord{Identity: self, State: "ready", ConfigPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	checkStartupConflict()
+	var output, stderr bytes.Buffer
+	textResult := envelope{Status: "ok"}
+	appendProxyError(context.Background(), &textResult, &proxy.Error{Code: "BUSY", Message: "example"})
+	writeResult(&output, &stderr, textResult, false)
+	if strings.Count(stderr.String(), "BUSY") != 1 {
+		t.Fatalf("duplicate proxy error code: %q", stderr.String())
+	}
+}
+
 func TestProxyStatusReadOnlyAndGrammar(t *testing.T) {
 	base := t.TempDir()
 	runtime := filepath.Join(base, "runtime")
 	cfgDir := filepath.Join(base, "config")
-	if err := os.MkdirAll(cfgDir, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "rundevrun"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("invalid = ["), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "rundevrun", "config.toml"), []byte("invalid = ["), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("RDR_HOME", runtime)

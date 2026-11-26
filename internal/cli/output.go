@@ -125,9 +125,17 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 			} else {
 				fmt.Fprintf(errOut, "rundevrun: %s: %s\n", err.Code, err.Message)
 			}
+			if err.Code == "STALE_PROXY" {
+				for _, action := range err.Actions {
+					fmt.Fprintln(errOut, singleLine(action))
+				}
+			}
 		}
 		for _, err := range e.ProxyErrors {
 			fmt.Fprintf(errOut, "rundevrun: proxy: %s: %s\n", err.Code, err.Message)
+			for _, action := range err.Actions {
+				fmt.Fprintln(errOut, singleLine(action))
+			}
 		}
 		for _, err := range e.RoutingErrors {
 			fmt.Fprintf(errOut, "rundevrun: routing: %s: %s\n", err.Code, err.Message)
@@ -154,7 +162,7 @@ func writeResult(out, errOut io.Writer, e envelope, asJSON bool) int {
 		return 0
 	}
 	switch e.Errors[0].Code {
-	case "BUSY", "STATE_CONFLICT", "PORT_CONFLICT", "ROUTE_CONFLICT":
+	case "BUSY", "STALE_PROXY", "STATE_CONFLICT", "PORT_CONFLICT", "ROUTE_CONFLICT":
 		return 3
 	case "STATE_CORRUPT", "IO_ERROR", "BUILD_FAILED", "HOOK_FAILED", "READINESS_TIMEOUT", "PROCESS_FAILED", "OWNERSHIP_UNKNOWN", "TLS_INVALID", "TUNNEL_FAILED", "DIAGNOSTICS_FAILED", "REGISTRY_ERROR":
 		return 4

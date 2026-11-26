@@ -44,3 +44,9 @@ func bootID() (string, error) {
 	}
 	return s, nil
 }
+
+func LegacyBootID(string) bool { return false }
+
+func matchesBootID(recorded, current string) (bool, error) {
+	return recorded == current, nil
+}

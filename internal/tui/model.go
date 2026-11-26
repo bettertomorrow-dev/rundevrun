@@ -51,7 +51,7 @@ func (m Model) rows() []monitor.Service {
 		if !m.AllProjects && m.Snapshot.CurrentProjectID != "" && s.ProjectID != m.Snapshot.CurrentProjectID {
 			continue
 		}
-		if m.Tab == 0 && s.State != "running" && s.State != "ready" && s.State != "starting" && s.State != "unhealthy" && s.State != "unknown" {
+		if m.Tab == 0 && s.State != "running" && s.State != "ready" && s.State != "starting" && s.State != "restarting" && s.State != "unhealthy" && s.State != "unknown" {
 			continue
 		}
 		if m.Tab == 1 && s.Error == "" {

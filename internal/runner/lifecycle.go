@@ -139,6 +139,16 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 	if v, ok := svc.Health["tcp"].(bool); ok {
 		manifest.Launch.HealthTCP = v
 	}
+	startTimeout, _ := time.ParseDuration(svc.StartTimeout)
+	if v, ok := svc.Health["timeout"].(string); ok {
+		startTimeout, _ = time.ParseDuration(v)
+	}
+	if svc.Restart != "" && svc.Restart != "never" {
+		delay, _ := time.ParseDuration(svc.RestartDelay)
+		maxDelay, _ := time.ParseDuration(svc.RestartMaxDelay)
+		stableAfter, _ := time.ParseDuration(svc.RestartStableAfter)
+		manifest.Launch.Restart = &state.RestartPolicy{Mode: svc.Restart, Delay: delay, MaxDelay: maxDelay, StableAfter: stableAfter, MaxAttempts: svc.RestartMaxAttempts, Consumers: svc.RestartConsumers, ReadyTimeout: startTimeout}
+	}
 	if err = r.Store.WriteManifest(runID, manifest); err != nil {
 		return preparedRun{}, err
 	}
@@ -180,10 +190,6 @@ func (r *Runner) prepareLocked(ctx context.Context, projectID string, fresh *dis
 		return preparedRun{}, &Error{"BUILD_FAILED", &os.PathError{Op: "build", Path: filepath.Join(runDir, "build.log"), Err: err}}
 	}
 
-	startTimeout, _ := time.ParseDuration(svc.StartTimeout)
-	if v, ok := svc.Health["timeout"].(string); ok {
-		startTimeout, _ = time.ParseDuration(v)
-	}
 	return preparedRun{projectID: projectID, plan: plan, runID: runID, manifest: manifest, timeout: startTimeout, reserved: true}, nil
 }
 
@@ -276,9 +282,9 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 	if err = log.Close(); err != nil {
 		return Result{}, err
 	}
-	timeout := prepared.timeout
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	claimTimeout := time.NewTimer(prepared.timeout)
+	defer claimTimeout.Stop()
+	waitDeadline := claimTimeout.C
 	for {
 		record, readErr := r.Store.ReadRun(runID)
 		if readErr == nil && (record.State == "running" || record.State == "ready") {
@@ -314,14 +320,32 @@ func (r *Runner) activateLocked(ctx context.Context, prepared *preparedRun) (Res
 		}
 		if readErr == nil && record.State == "failed" {
 			message := record.ErrorMessage
+			if message == "" && record.LastExit != nil {
+				message = record.LastExit.String()
+			}
 			if message == "" {
 				message = "supervisor failed"
 			}
 			return Result{}, &Error{"PROCESS_FAILED", errors.New(message)}
 		}
+		if readErr == nil && prepared.manifest.Launch.Restart != nil && record.Claim == "accepted" {
+			live, err := procid.Check(record.Supervisor)
+			if err != nil {
+				return Result{}, &Error{"OWNERSHIP_UNKNOWN", err}
+			}
+			if !live {
+				if terminal, err := r.Store.ReadRun(runID); err == nil && terminal.State == "failed" {
+					continue
+				}
+				return Result{}, &Error{"PROCESS_FAILED", errors.New("supervisor disappeared before readiness")}
+			}
+			waitDeadline = nil
+		}
 		select {
-		case <-waitCtx.Done():
-			return Result{}, &Error{"READINESS_TIMEOUT", waitCtx.Err()}
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		case <-waitDeadline:
+			return Result{}, &Error{"READINESS_TIMEOUT", context.DeadlineExceeded}
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
@@ -397,15 +421,23 @@ func (r *Runner) lockSpawnGate(ctx context.Context, runID string) (*state.Locks,
 	return gate, nil
 }
 func (r *Runner) stopLocked(ctx context.Context, projectID, id, runID string) error {
+	return r.stopRun(ctx, projectID, id, runID, false)
+}
+
+func (r *Runner) stopRun(ctx context.Context, projectID, id, runID string, preserveFailure bool) error {
 	gate, err := r.lockSpawnGate(ctx, runID)
 	if err != nil {
 		return err
 	}
 	defer gate.Close()
-	return r.stopUnderGate(ctx, projectID, id, runID)
+	return r.finishRunUnderGate(ctx, projectID, id, runID, preserveFailure)
 }
 
 func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string) error {
+	return r.finishRunUnderGate(ctx, projectID, id, runID, false)
+}
+
+func (r *Runner) finishRunUnderGate(ctx context.Context, projectID, id, runID string, preserveFailure bool) error {
 	reg, err := r.Store.Read()
 	if err != nil {
 		return err
@@ -439,11 +471,11 @@ func (r *Runner) stopUnderGate(ctx context.Context, projectID, id, runID string)
 			if !validIntent || (record.State != "starting" && record.State != "failed" && record.State != "stopped") || len(record.Members) != 0 || sup.PID <= 1 || sup.PGID != sup.PID || sup.SID != sup.PID || sup.Identity == "" || sup.BootID == "" {
 				return &Error{"OWNERSHIP_UNKNOWN", errors.New("incomplete unspawned claim")}
 			}
-			self, e := procid.Observe(os.Getpid())
+			currentBoot, e := procid.InCurrentBoot(sup.BootID)
 			if e != nil {
 				return &Error{"OWNERSHIP_UNKNOWN", e}
 			}
-			if sup.BootID != self.BootID {
+			if !currentBoot {
 				return &Error{"OWNERSHIP_UNKNOWN", errors.New("unspawned supervisor boot mismatch")}
 			}
 			live, e := procid.Check(sup)
@@ -563,6 +595,12 @@ stopped:
 		i.State = "stopped"
 		if i.Intent != nil {
 			i.Intent.Phase = "stopped"
+		}
+		if preserveFailure && record.State == "failed" && record.Child.PID > 0 {
+			i.State = "failed"
+			if i.Intent != nil {
+				i.Intent.Phase = "interrupted"
+			}
 		}
 		delete(i.Reservations, runID)
 		p.Instances[id] = i

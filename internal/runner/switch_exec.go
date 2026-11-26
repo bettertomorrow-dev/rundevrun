@@ -748,7 +748,7 @@ func (r *Runner) switchStep(ctx context.Context, step SwitchStep, operationID st
 		}
 		if x.prepared.active {
 			cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			cleanupErr := r.stopLocked(cleanup, x.project.ID, id, x.runID)
+			cleanupErr := r.stopRun(cleanup, x.project.ID, id, x.runID, true)
 			cancel()
 			x.pending = false
 			return errors.Join(e, cleanupErr)

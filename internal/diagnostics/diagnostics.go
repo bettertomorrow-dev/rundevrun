@@ -206,8 +206,10 @@ func Run(ctx context.Context, store *state.Store, configPath, projectID, worktre
 	if cfgErr == nil && !cfg.Routing.Enabled {
 		report.Proxy.Status = skip("routing is disabled")
 	} else {
-		info, e = proxy.Status(store)
-		if e != nil {
+		info, e = proxy.InspectStatus(ctx, store, configPath)
+		if e != nil && info.State == "stale" {
+			report.Proxy.Status = fail(e.Error())
+		} else if e != nil {
 			report.Proxy.Status = fail("proxy status unavailable")
 		} else if info.State == "ready" {
 			report.Proxy.Status = pass("ready")

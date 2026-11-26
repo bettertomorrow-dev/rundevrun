@@ -23,7 +23,7 @@ func verifySessionGone(anchor procid.Ref) error {
 	if err != nil {
 		return unknown(err)
 	}
-	if self.BootID != anchor.BootID {
+	if self.BootID != anchor.BootID && !procid.LegacyBootID(anchor.BootID) {
 		return nil
 	}
 	processes, err := unix.SysctlKinfoProcSlice("kern.proc.all")

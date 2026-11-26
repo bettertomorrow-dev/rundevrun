@@ -68,7 +68,8 @@ func scanMembers(leader procid.Ref, anchors []procid.Ref, session bool) ([]proci
 		if err != nil {
 			return nil, err
 		}
-		if (session || ref.PGID == leader.PGID) && ref.SID == leader.SID && ref.BootID == leader.BootID {
+		if (session || ref.PGID == leader.PGID) && ref.SID == leader.SID {
+			ref.BootID = leader.BootID
 			refs = append(refs, ref)
 		}
 	}

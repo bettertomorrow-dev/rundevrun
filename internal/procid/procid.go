@@ -58,7 +58,18 @@ func Check(r Ref) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return now == r, nil
+	if now.PGID != r.PGID || now.SID != r.SID || now.Identity != r.Identity {
+		return false, nil
+	}
+	return matchesBootID(r.BootID, now.BootID)
+}
+
+func InCurrentBoot(recorded string) (bool, error) {
+	current, err := bootID()
+	if err != nil {
+		return false, err
+	}
+	return matchesBootID(recorded, current)
 }
 
 func Terminate(refs []Ref, grace time.Duration) (alive []Ref) {

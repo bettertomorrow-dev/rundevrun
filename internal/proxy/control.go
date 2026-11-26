@@ -22,12 +22,14 @@ import (
 )
 
 type Error struct {
-	Code    string
-	Message string
+	Code     string
+	Message  string
+	Recovery []string
 }
 
-func (e *Error) Error() string  { return e.Code + ": " + e.Message }
-func busy(message string) error { return &Error{Code: "BUSY", Message: message} }
+func (e *Error) Error() string     { return e.Code + ": " + e.Message }
+func (e *Error) Actions() []string { return e.Recovery }
+func busy(message string) error    { return &Error{Code: "BUSY", Message: message} }
 func contextOrBusy(ctx context.Context, message string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -112,9 +114,20 @@ func control(ctx context.Context, store *state.Store, action string) (Info, erro
 	return result.Info, nil
 }
 func Status(store *state.Store) (Info, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return control(ctx, store, "status")
+	return control(context.Background(), store, "status")
+}
+
+func InspectStatus(ctx context.Context, store *state.Store, configPath string) (Info, error) {
+	info, err := control(ctx, store, "status")
+	if (info.State == "stopped" || err != nil) && ctx.Err() == nil {
+		if record, err := store.ReadProxy(); err == nil {
+			configPath = record.ConfigPath
+		}
+		if stale, conflict := unrecognizedListener(ctx, configPath); conflict != nil {
+			return stale, conflict
+		}
+	}
+	return info, err
 }
 
 func PrepareReloadTo(ctx context.Context, store *state.Store, listen string) error {
@@ -258,24 +271,43 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 		return err
 	}
 	defer release(lock)
+	listenerError := func(fallback error) error {
+		if _, conflict := unrecognizedListener(ctx, abs); conflict != nil {
+			conflict.Code = "PORT_CONFLICT"
+			return conflict
+		}
+		return fallback
+	}
 	record, err := store.ReadProxy()
 	if err == nil {
 		live, e := procid.Check(record.Identity)
 		if e != nil {
-			return busy("cannot verify existing proxy")
+			return listenerError(busy("cannot verify existing proxy"))
 		}
 		if live {
 			if record.ConfigPath != abs {
 				return busy("proxy uses a different configuration path")
 			}
-			err = Reload(ctx, store)
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return contextOrBusy(caller, "proxy control timed out")
+			if !procid.LegacyBootID(record.Identity.BootID) {
+				err = Reload(ctx, store)
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return contextOrBusy(caller, "proxy control timed out")
+				}
+				var controlErr *Error
+				if errors.As(err, &controlErr) && controlErr.Code == "BUSY" {
+					return listenerError(err)
+				}
+				return err
 			}
-			return err
+			if err = Stop(ctx, store); err != nil {
+				return listenerError(err)
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return busy("cannot read existing proxy identity")
+		return listenerError(busy("cannot read existing proxy identity"))
+	}
+	if err := listenerError(nil); err != nil {
+		return err
 	}
 	cmd := exec.Command(exe, "__rdr_proxy", store.Root, abs)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -291,12 +323,21 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 		return err
 	}
 	pid := cmd.Process.Pid
-	go func() { _ = cmd.Wait() }()
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+	daemonExited := false
 	for {
 		current, e := store.ReadProxy()
 		if e == nil && current.Identity.PID == pid {
 			if current.ErrorCode != "" {
-				return &Error{Code: current.ErrorCode, Message: current.ErrorMessage}
+				startupErr := &Error{Code: current.ErrorCode, Message: current.ErrorMessage}
+				if current.ErrorCode == "PORT_CONFLICT" {
+					return listenerError(startupErr)
+				}
+				return startupErr
 			}
 			if current.State == "ready" {
 				info, e := control(ctx, store, "status")
@@ -306,7 +347,12 @@ func Ensure(ctx context.Context, store *state.Store, exe, configPath string) err
 
 			}
 		}
+		if daemonExited {
+			return listenerError(contextOrBusy(caller, "proxy exited during startup"))
+		}
 		select {
+		case <-exited:
+			daemonExited = true
 		case <-ctx.Done():
 			return contextOrBusy(caller, "proxy startup did not complete")
 		case <-time.After(20 * time.Millisecond):

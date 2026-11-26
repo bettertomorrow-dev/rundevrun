@@ -5,9 +5,12 @@ package procid
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestReapedProcessIsGone(t *testing.T) {
@@ -46,5 +49,30 @@ func TestIdentityLiveProcess(t *testing.T) {
 	}
 	if ok, err := Check(ref); err != nil || !ok {
 		t.Fatalf("Check(current process) = %v, %v", ok, err)
+	}
+}
+
+func TestLegacyBootTimeDrift(t *testing.T) {
+	current, err := Observe(os.Getpid())
+	if err != nil || current.BootID == "" || LegacyBootID(current.BootID) {
+		t.Fatalf("expected a boot-session UUID: %+v %v", current, err)
+	}
+	boot, err := unix.SysctlTimeval("kern.boottime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := current
+	legacy.BootID = fmt.Sprintf("%d.%06d", boot.Sec-2, boot.Usec)
+	if !Matches(legacy) {
+		t.Fatal("clock drift invalidated a live legacy reference")
+	}
+	legacy.Identity += "0"
+	if Matches(legacy) {
+		t.Fatal("legacy boot time matched a different process identity")
+	}
+	legacy = current
+	legacy.BootID = fmt.Sprintf("%d.%06d", boot.Sec-120, boot.Usec)
+	if Matches(legacy) {
+		t.Fatal("legacy reference from a different boot matched")
 	}
 }
