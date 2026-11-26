@@ -77,10 +77,9 @@ func (r *Runner) reconcileFailedRun(id, runID string) error {
 	if !ok {
 		return nil
 	}
+	var logErr error
 	if record.State != "failed" || record.LastExit == nil {
-		if record.LastExit == nil || record.State != "failed" {
-			record.LastExit = &state.Exit{Reason: state.SupervisorLostReason, Time: time.Now().UTC()}
-		}
+		record.LastExit = &state.Exit{Reason: state.SupervisorLostReason, Time: time.Now().UTC()}
 		record.State = "failed"
 		lock, err := r.Store.LockRunWriter(runID)
 		if err != nil {
@@ -95,11 +94,9 @@ func (r *Runner) reconcileFailedRun(id, runID string) error {
 			_, err = fmt.Fprintf(log, "[rundevrun] %s %s\n", record.LastExit.Time.Format(time.RFC3339), record.LastExit)
 			err = errors.Join(err, log.Close())
 		}
-		if err != nil {
-			return errors.Join(err, releaseRunPort(r.Store, strings.SplitN(id, "/", 2)[0], id, runID))
-		}
+		logErr = err
 	}
-	return releaseRunPort(r.Store, strings.SplitN(id, "/", 2)[0], id, runID)
+	return errors.Join(logErr, releaseRunPort(r.Store, strings.SplitN(id, "/", 2)[0], id, runID))
 }
 
 type reservedPort struct {

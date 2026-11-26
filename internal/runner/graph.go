@@ -66,7 +66,6 @@ type graphPlanner struct {
 	reg      state.Registry
 	nodes    map[string]*graphNode
 	projects map[string]*discovery.Project
-	used     map[int]bool
 	order    []string
 	marks    map[string]int
 	override map[string]map[string]string
@@ -262,7 +261,7 @@ func (g *graphPlanner) walk(s Selection) error {
 	return nil
 }
 func newGraph(r *Runner, reg state.Registry) *graphPlanner {
-	return &graphPlanner{r: r, reg: reg, nodes: map[string]*graphNode{}, projects: map[string]*discovery.Project{}, used: map[int]bool{}, marks: map[string]int{}}
+	return &graphPlanner{r: r, reg: reg, nodes: map[string]*graphNode{}, projects: map[string]*discovery.Project{}, marks: map[string]int{}}
 }
 func (r *Runner) PlanGraph(ctx context.Context, action string, selections []Selection, cascade bool) (GraphPlan, error) {
 	return r.planGraph(ctx, action, selections, cascade, nil)
@@ -379,7 +378,6 @@ func (g *graphPlanner) finalize() error {
 					}
 				}
 				holders[v] = &reservedPort{port: v, instanceID: i.ID, runID: runID}
-				g.used[v] = true
 			}
 		}
 	}
@@ -387,13 +385,13 @@ func (g *graphPlanner) finalize() error {
 		n := g.nodes[id]
 		if !n.live || g.replace[id] {
 			if p, ok := n.service.Port.(int64); ok {
-				if g.used[int(p)] && !(g.replace[id] && n.saved.Reservations[n.saved.RunID] == int(p)) {
-					if holder := holders[int(p)]; holder != nil {
+				if holder, used := holders[int(p)]; used && !(g.replace[id] && n.saved.Reservations[n.saved.RunID] == int(p)) {
+					if holder != nil {
 						return &Error{"PORT_CONFLICT", holder}
 					}
 					return &Error{"PORT_CONFLICT", fmt.Errorf("selected instances request the same port %d", p)}
 				}
-				g.used[int(p)] = true
+				holders[int(p)] = nil
 			}
 		}
 	}
@@ -409,15 +407,17 @@ func (g *graphPlanner) finalize() error {
 				candidate := 20000
 				if g.replace[id] && n.saved.Reservations[n.saved.RunID] != 0 {
 					candidate = n.saved.Reservations[n.saved.RunID]
-					delete(g.used, candidate)
+					delete(holders, candidate)
 				}
-				for candidate <= 65535 && g.used[candidate] {
-					candidate++
+				for ; candidate <= 65535; candidate++ {
+					if _, used := holders[candidate]; !used {
+						break
+					}
 				}
 				if candidate > 65535 {
 					return &Error{"PORT_CONFLICT", errors.New("no port candidate available")}
 				}
-				g.used[candidate] = true
+				holders[candidate] = nil
 				port = fmt.Sprint(candidate)
 				n.plan.Addresses["tentative"] = "true"
 			}

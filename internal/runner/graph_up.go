@@ -278,7 +278,6 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		if e := r.ReservePlannedRoutes(reg, plan); e != nil {
 			return e
 		}
-		used := map[int]bool{}
 		holders := map[int]*reservedPort{}
 		for id := range reg.Projects {
 			p, e := reg.Project(id)
@@ -288,7 +287,6 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			for _, inst := range p.Instances {
 				for runID, v := range inst.Reservations {
 					holders[v] = &reservedPort{port: v, instanceID: inst.ID, runID: runID}
-					used[v] = true
 				}
 			}
 		}
@@ -299,13 +297,13 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			}
 			svc := x.worktree.Config.Services[strings.Split(x.plan.InstanceID, "/")[2]]
 			if fixed, ok := svc.Port.(int64); ok {
-				if used[int(fixed)] && x.oldPort != int(fixed) {
-					if holder := holders[int(fixed)]; holder != nil {
+				if holder, used := holders[int(fixed)]; used && x.oldPort != int(fixed) {
+					if holder != nil {
 						return &Error{"PORT_CONFLICT", holder}
 					}
 					return &Error{"PORT_CONFLICT", fmt.Errorf("selected instances request the same port %d", fixed)}
 				}
-				used[int(fixed)] = true
+				holders[int(fixed)] = nil
 			}
 		}
 		for i := range work {
@@ -323,7 +321,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 					start, end = int(fixed), int(fixed)
 				}
 				for port := start; x.port == 0 && port <= end; port++ {
-					if svc.Port == "auto" && used[port] {
+					if _, used := holders[port]; svc.Port == "auto" && used {
 						continue
 					}
 					l, e := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
@@ -335,7 +333,7 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 						return e
 					}
 					x.port = port
-					used[port] = true
+					holders[port] = nil
 					break
 				}
 				if x.port == 0 {

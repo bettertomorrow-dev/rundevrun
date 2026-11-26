@@ -4,7 +4,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -184,7 +183,7 @@ func writeServiceList(b *strings.Builder, e envelope, color bool) {
 		if row.Restarts != nil && *row.Restarts > 0 {
 			fmt.Fprintf(b, "  Restarts: %d\n", *row.Restarts)
 		}
-		for _, id := range slices.Sorted(maps.Keys(row.ConsumerErrors)) {
+		for _, id := range sortedKeys(row.ConsumerErrors) {
 			fmt.Fprintf(b, "  Consumer %s: %s\n", singleLine(id), singleLine(row.ConsumerErrors[id]))
 		}
 		if row.RestartRequired {

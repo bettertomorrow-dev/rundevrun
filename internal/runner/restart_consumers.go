@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -51,11 +50,6 @@ func restartConsumers(ctx context.Context, store *state.Store, source state.Mani
 		return failures
 	}
 	if len(plan.Instances) < 2 {
-		return failures
-	}
-	r.Executable, err = os.Executable()
-	if err != nil {
-		report(source.InstanceID, err)
 		return failures
 	}
 	path, err := routing.DefaultPath()

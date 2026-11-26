@@ -356,43 +356,28 @@ func within(root, p string) bool {
 	return e == nil && (r == "." || r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)))
 }
 func validateDurations(p string, s Service) error {
-	if s.Health != nil {
-		if raw, ok := s.Health["timeout"]; ok {
-			v, ok := raw.(string)
-			if !ok {
-				return fmt.Errorf("%s.health.timeout: must be duration", p)
-			}
-			d, e := time.ParseDuration(v)
-			if e != nil || d <= 0 {
-				return fmt.Errorf("%s.health.timeout: must be positive duration", p)
-			}
-			start := s.StartTimeout
-			if start == "" {
-				start = "30s"
-			}
-			limit, e := time.ParseDuration(start)
-			if e == nil && d > limit {
-				return fmt.Errorf("%s.health.timeout: exceeds start_timeout", p)
-			}
+	if raw, ok := s.Health["timeout"]; ok {
+		v, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("%s.health.timeout: must be duration", p)
+		}
+		d, e := time.ParseDuration(v)
+		if e != nil || d <= 0 {
+			return fmt.Errorf("%s.health.timeout: must be positive duration", p)
+		}
+		if limit, e := time.ParseDuration(s.StartTimeout); e == nil && d > limit {
+			return fmt.Errorf("%s.health.timeout: exceeds start_timeout", p)
 		}
 	}
-	for _, x := range []struct {
-		k, v string
-		d    string
-	}{{"build_timeout", s.BuildTimeout, "5m"}, {"start_timeout", s.StartTimeout, "30s"}, {"stop_timeout", s.StopTimeout, "20s"}, {"hook_timeout", s.HookTimeout, "60s"}, {"restart_delay", s.RestartDelay, "1s"}, {"restart_max_delay", s.RestartMaxDelay, "30s"}, {"restart_stable_after", s.RestartStableAfter, "60s"}} {
-		if x.v == "" {
-			switch x.k {
-			case "build_timeout":
-				s.BuildTimeout = x.d
-			case "start_timeout":
-				s.StartTimeout = x.d
-			case "stop_timeout":
-				s.StopTimeout = x.d
-			case "hook_timeout":
-				s.HookTimeout = x.d
-			}
-			continue
-		}
+	for _, x := range []struct{ k, v string }{
+		{"build_timeout", s.BuildTimeout},
+		{"start_timeout", s.StartTimeout},
+		{"stop_timeout", s.StopTimeout},
+		{"hook_timeout", s.HookTimeout},
+		{"restart_delay", s.RestartDelay},
+		{"restart_max_delay", s.RestartMaxDelay},
+		{"restart_stable_after", s.RestartStableAfter},
+	} {
 		d, e := time.ParseDuration(x.v)
 		if e != nil || d <= 0 {
 			return fmt.Errorf("%s.%s: must be positive duration", p, x.k)
