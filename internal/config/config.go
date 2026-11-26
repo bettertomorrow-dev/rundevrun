@@ -32,22 +32,28 @@ type Routing struct {
 	Domain string `toml:"domain"`
 }
 type Service struct {
-	Command      string            `toml:"command"`
-	CWD          string            `toml:"cwd"`
-	Build        string            `toml:"build"`
-	Protocol     string            `toml:"protocol"`
-	Port         any               `toml:"port"`
-	Singleton    bool              `toml:"singleton"`
-	DependsOn    []string          `toml:"depends_on"`
-	Env          map[string]string `toml:"env"`
-	BuildTimeout string            `toml:"build_timeout"`
-	StartTimeout string            `toml:"start_timeout"`
-	StopTimeout  string            `toml:"stop_timeout"`
-	HookTimeout  string            `toml:"hook_timeout"`
-	Health       map[string]any    `toml:"health"`
-	Hooks        map[string]string `toml:"hooks"`
-	Routes       []Route           `toml:"routes"`
-	Share        map[string]any    `toml:"share"`
+	Restart            string            `toml:"restart"`
+	RestartDelay       string            `toml:"restart_delay"`
+	RestartMaxDelay    string            `toml:"restart_max_delay"`
+	RestartStableAfter string            `toml:"restart_stable_after"`
+	RestartMaxAttempts int               `toml:"restart_max_attempts"`
+	RestartConsumers   bool              `toml:"restart_consumers"`
+	Command            string            `toml:"command"`
+	CWD                string            `toml:"cwd"`
+	Build              string            `toml:"build"`
+	Protocol           string            `toml:"protocol"`
+	Port               any               `toml:"port"`
+	Singleton          bool              `toml:"singleton"`
+	DependsOn          []string          `toml:"depends_on"`
+	Env                map[string]string `toml:"env"`
+	BuildTimeout       string            `toml:"build_timeout"`
+	StartTimeout       string            `toml:"start_timeout"`
+	StopTimeout        string            `toml:"stop_timeout"`
+	HookTimeout        string            `toml:"hook_timeout"`
+	Health             map[string]any    `toml:"health"`
+	Hooks              map[string]string `toml:"hooks"`
+	Routes             []Route           `toml:"routes"`
+	Share              map[string]any    `toml:"share"`
 }
 type Route struct {
 	Path        string `toml:"path"`
@@ -143,6 +149,21 @@ func (c *Config) Validate() error {
 		}
 		if s.HookTimeout == "" {
 			s.HookTimeout = "60s"
+		}
+		if s.Restart == "" {
+			s.Restart = "never"
+		}
+		if s.RestartDelay == "" {
+			s.RestartDelay = "1s"
+		}
+		if s.RestartMaxDelay == "" {
+			s.RestartMaxDelay = "30s"
+		}
+		if s.RestartStableAfter == "" {
+			s.RestartStableAfter = "60s"
+		}
+		if s.RestartMaxAttempts == 0 {
+			s.RestartMaxAttempts = 10
 		}
 		if s.Protocol == "" {
 			if s.Port == nil {
@@ -249,6 +270,14 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s.env.%s: %w", p, k, e)
 			}
 		}
+		switch s.Restart {
+		case "never", "on-failure", "always":
+		default:
+			return fmt.Errorf("%s.restart: expected never, on-failure, or always", p)
+		}
+		if s.RestartMaxAttempts <= 0 {
+			return fmt.Errorf("%s.restart_max_attempts: must be positive", p)
+		}
 		if e := validateDurations(p, s); e != nil {
 			return e
 		}
@@ -350,7 +379,7 @@ func validateDurations(p string, s Service) error {
 	for _, x := range []struct {
 		k, v string
 		d    string
-	}{{"build_timeout", s.BuildTimeout, "5m"}, {"start_timeout", s.StartTimeout, "30s"}, {"stop_timeout", s.StopTimeout, "20s"}, {"hook_timeout", s.HookTimeout, "60s"}} {
+	}{{"build_timeout", s.BuildTimeout, "5m"}, {"start_timeout", s.StartTimeout, "30s"}, {"stop_timeout", s.StopTimeout, "20s"}, {"hook_timeout", s.HookTimeout, "60s"}, {"restart_delay", s.RestartDelay, "1s"}, {"restart_max_delay", s.RestartMaxDelay, "30s"}, {"restart_stable_after", s.RestartStableAfter, "60s"}} {
 		if x.v == "" {
 			switch x.k {
 			case "build_timeout":
@@ -368,6 +397,11 @@ func validateDurations(p string, s Service) error {
 		if e != nil || d <= 0 {
 			return fmt.Errorf("%s.%s: must be positive duration", p, x.k)
 		}
+	}
+	delay, _ := time.ParseDuration(s.RestartDelay)
+	maxDelay, _ := time.ParseDuration(s.RestartMaxDelay)
+	if delay > maxDelay {
+		return fmt.Errorf("%s.restart_delay: exceeds restart_max_delay", p)
 	}
 	return nil
 }
@@ -553,12 +587,15 @@ func validateEmptyFields(root map[string]any) error {
 		if !ok {
 			continue
 		}
-		for _, field := range []string{"build", "cwd", "protocol", "build_timeout", "start_timeout", "stop_timeout", "hook_timeout"} {
+		for _, field := range []string{"build", "cwd", "protocol", "build_timeout", "start_timeout", "stop_timeout", "hook_timeout", "restart", "restart_delay", "restart_max_delay", "restart_stable_after"} {
 			if v, exists := s[field]; exists {
 				if text, ok := v.(string); ok && strings.TrimSpace(text) == "" {
 					return fmt.Errorf("services.%s.%s: must not be empty", name, field)
 				}
 			}
+		}
+		if attempts, ok := s["restart_max_attempts"].(int64); ok && attempts <= 0 {
+			return fmt.Errorf("services.%s.restart_max_attempts: must be positive", name)
 		}
 		if raw, exists := s["share"]; exists {
 			if share, ok := raw.(map[string]any); ok {

@@ -103,6 +103,15 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		return out, err
 	}
 	defer locks.Close()
+	if r.recoveredDependency != "" {
+		locked, err := r.PlanGraph(ctx, action, selections, false)
+		if err != nil {
+			return out, err
+		}
+		if err = r.checkConsumerRestart(locked); err != nil {
+			return out, err
+		}
+	}
 	for _, p := range initial.Instances {
 		parts := strings.Split(p.InstanceID, "/")
 		newWorktree := ""
@@ -121,6 +130,11 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 		}
 		if err = r.recoverPreparation(ctx, parts[0], p.InstanceID); err != nil {
 			return out, err
+		}
+		if p.State == "failed" {
+			if err = r.reconcileFailedRun(p.InstanceID, p.RunID); err != nil {
+				return out, err
+			}
 		}
 	}
 	plan, err := r.PlanGraph(ctx, action, selections, false)
@@ -200,6 +214,11 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	if err != nil {
 		return out, err
 	}
+	if r.recoveredDependency != "" {
+		if err = r.checkConsumerRestart(plan); err != nil {
+			return out, err
+		}
+	}
 	work := make([]upWork, len(plan.Instances))
 	projects := map[string]*discovery.Project{}
 	for i, p := range plan.Instances {
@@ -260,13 +279,15 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			return e
 		}
 		used := map[int]bool{}
+		holders := map[int]*reservedPort{}
 		for id := range reg.Projects {
 			p, e := reg.Project(id)
 			if e != nil {
 				return e
 			}
 			for _, inst := range p.Instances {
-				for _, v := range inst.Reservations {
+				for runID, v := range inst.Reservations {
+					holders[v] = &reservedPort{port: v, instanceID: inst.ID, runID: runID}
 					used[v] = true
 				}
 			}
@@ -279,7 +300,10 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 			svc := x.worktree.Config.Services[strings.Split(x.plan.InstanceID, "/")[2]]
 			if fixed, ok := svc.Port.(int64); ok {
 				if used[int(fixed)] && x.oldPort != int(fixed) {
-					return &Error{"PORT_CONFLICT", errors.New("fixed port reserved")}
+					if holder := holders[int(fixed)]; holder != nil {
+						return &Error{"PORT_CONFLICT", holder}
+					}
+					return &Error{"PORT_CONFLICT", fmt.Errorf("selected instances request the same port %d", fixed)}
 				}
 				used[int(fixed)] = true
 			}
@@ -453,6 +477,25 @@ func (r *Runner) startGraph(ctx context.Context, action string, selections []Sel
 	return out, nil
 }
 
+func (r *Runner) checkConsumerRestart(plan GraphPlan) error {
+	matched := 0
+	for _, p := range plan.Instances {
+		if !liveState(p.State) {
+			return &Error{"STATE_CONFLICT", fmt.Errorf("instance %s is no longer running", p.InstanceID)}
+		}
+		if runID, ok := r.ExpectedRuns[p.InstanceID]; ok {
+			if p.RunID != runID {
+				return &Error{"STATE_CONFLICT", fmt.Errorf("instance %s changed before automatic restart", p.InstanceID)}
+			}
+			matched++
+		}
+	}
+	if matched != len(r.ExpectedRuns) {
+		return &Error{"STATE_CONFLICT", errors.New("dependency graph changed before automatic restart")}
+	}
+	return r.dependencyReady(r.recoveredDependency)
+}
+
 func (r *Runner) dependencyReady(id string) error {
 	parts := strings.Split(id, "/")
 	if len(parts) != 3 {
@@ -499,7 +542,7 @@ func (r *Runner) activateGraphNode(ctx context.Context, x *upWork, out *GraphRes
 	}
 	if x.prepared.active {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err := r.stopLocked(cleanup, x.project.ID, x.plan.InstanceID, x.runID)
+		err := r.stopRun(cleanup, x.project.ID, x.plan.InstanceID, x.runID, true)
 		cancel()
 		x.pending = false
 		if err != nil {

@@ -61,6 +61,25 @@ must be unique. routes require HTTP and a declared HTTP dependency. Prefix paths
 start with '/', reject query/fragment and duplicate prefixes; longest path match
 on a segment boundary wins. No arbitrary upstream URL is accepted.
 
+Service crash recovery is opt-in. Set `restart = "on-failure"` for a nonzero
+exit or an unexpected signal. Set `restart = "always"` to retry after a clean
+exit too. The default is `"never"`. Retries start after `restart_delay` (1s)
+and double up to `restart_max_delay` (30s). The consecutive attempt count
+and delay reset after the process stays up for `restart_stable_after` (60s).
+After `restart_max_attempts` (10), the run becomes `failed`. Each attempt
+has the configured startup or health timeout to pass the readiness gate.
+A manual stop cancels pending
+retries. The supervisor keeps the same run ID, port, and application log
+while retrying. Status shows `restarting` during the wait and includes
+`restarts` and `last_exit` for diagnosis. Terminal failures release the port
+once rundevrun verifies that the run's processes are gone.
+
+Set `restart_consumers = true` to restart running consumers after a retry
+passes readiness. Rundevrun follows effective bindings and restarts each
+affected consumer once in dependency order. Stopped consumers stay stopped.
+A consumer failure is reported in the recovering service's status and log.
+Consumers that depend on that failed replacement are skipped.
+
 Snapshot build URLs require one unambiguous declared route prefix per dependency;
 multiple prefixes for the same dependency are rejected before snapshot build.
 Local and live routing still support multiple prefixes.
@@ -228,7 +247,13 @@ Local route changes never rewrite a running process's saved launch environment.
 Tailnet entry changes alone do not require an application restart.
 
 Proxies route only to verified live loopback targets. Reload validates the whole
-candidate before swapping it; invalid TLS never falls back to plaintext. Proxy
+candidate before swapping it; invalid TLS never falls back to plaintext. On macOS
+the proxy and service supervisors identify the boot with its session UUID.
+The first `up` that needs routing can replace a verified proxy using the old
+boot-time format through its control socket. If the configured port has a
+listener that rundevrun cannot verify, `proxy status` reports `stale` and
+exits 3. `up` reports `PORT_CONFLICT` with the address, the PID when available,
+and recovery actions. Proxy
 restart leaves apps running. Existing provided/external TLS settings remain in
 `config.toml`; networking operations do not rewrite them.
 

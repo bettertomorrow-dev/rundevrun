@@ -230,7 +230,7 @@ func Read(ctx context.Context, store *state.Store, cwd string) (Snapshot, error)
 			} else {
 				svc.State = observed
 			}
-			live := svc.State == "starting" || svc.State == "running" || svc.State == "ready" || svc.State == "unhealthy" || svc.State == "unknown"
+			live := svc.State == "starting" || svc.State == "restarting" || svc.State == "running" || svc.State == "ready" || svc.State == "unhealthy" || svc.State == "unknown"
 			if attempt, ok := history.Services[id]; ok && attempt.Error != "" && present[w.ID] {
 				svc.Error = attempt.Error
 			}

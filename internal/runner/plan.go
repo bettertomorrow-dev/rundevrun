@@ -17,7 +17,9 @@ type Runner struct {
 	Routing    *routing.Config
 	OnStarting func(service string, worktree *discovery.Worktree)
 
-	ExpectedRuns map[string]string
+	ExpectedRuns        map[string]string
+	recoveredDependency string
+	restartBindings     map[string]map[string]string
 
 	SkipStopHooks bool
 }

@@ -92,6 +92,9 @@ func (w worktreeInfo) String() string {
 }
 
 type instanceInfo struct {
+	Restarts          *int              `json:"restarts,omitempty"`
+	LastExit          *state.Exit       `json:"last_exit,omitempty"`
+	ConsumerErrors    map[string]string `json:"consumer_errors,omitempty"`
 	ConfigFile        string            `json:"config_file,omitempty"`
 	ConfigMode        string            `json:"config_mode,omitempty"`
 	WorktreeRoot      string            `json:"worktree_root,omitempty"`
@@ -619,7 +622,7 @@ func readSwitchFile(path string) (switchFile, error) {
 }
 
 func liveState(s string) bool {
-	return s == "starting" || s == "running" || s == "ready" || s == "unhealthy"
+	return s == "starting" || s == "restarting" || s == "running" || s == "ready" || s == "unhealthy"
 }
 
 func machineRouting() (routing.Config, string, error) {
@@ -922,12 +925,13 @@ func proxyCommand(ctx context.Context, store *state.Store, args []string, opts o
 			e.fail("USAGE", "proxy status does not support --dry-run")
 			return
 		}
-		info, err := proxy.Status(store)
+		info, err := proxy.InspectStatus(ctx, store, "")
+		if info.State != "" {
+			e.Proxy = proxyView(info)
+		}
 		if err != nil {
 			failError(e, err)
-			return
 		}
-		e.Proxy = proxyView(info)
 	case "reload":
 		if opts.dryRun {
 			info, err := proxy.Status(store)
@@ -1116,7 +1120,7 @@ func refreshProxyAfterAlias(ctx context.Context, store *state.Store, e *envelope
 
 func appendProxyError(ctx context.Context, e *envelope, err error) {
 	code := proxyErrorCode(ctx, err)
-	e.ProxyErrors = append(e.ProxyErrors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
+	e.ProxyErrors = append(e.ProxyErrors, commandError{Code: code, Message: proxyErrorMessage(err), Actions: recoveryActions(err)})
 	if code == "CANCELLED" {
 		e.fail("CANCELLED", err.Error())
 		return
@@ -1141,6 +1145,14 @@ func appendRoutingError(err error, e *envelope) {
 	}
 	e.RoutingErrors = append(e.RoutingErrors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
 	e.Status = "partial"
+}
+
+func proxyErrorMessage(err error) string {
+	var e *proxy.Error
+	if errors.As(err, &e) {
+		return e.Message
+	}
+	return err.Error()
 }
 
 func proxyErrorCode(ctx context.Context, err error) string {
@@ -1529,7 +1541,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 		e.Steps = append(e.Steps, operationStepView{ID: step.ID, Phase: step.Status, Status: terminalStepStatus(step.Status), Code: step.Code, Message: step.Message})
 	}
 	for _, failure := range result.Errors {
-		e.Errors = append(e.Errors, commandError{Code: failure.Code, Message: failure.Message, InstanceID: failure.InstanceID, Actions: []string{}})
+		e.Errors = append(e.Errors, commandError{Code: failure.Code, Message: failure.Message, InstanceID: failure.InstanceID, Actions: recoveryActions(err)})
 	}
 	if err != nil {
 		code := graphFailureCode(ctx, err)
@@ -1544,7 +1556,7 @@ func runGraph(ctx context.Context, store *state.Store, action string, selections
 			}
 		}
 		if appendError {
-			e.Errors = append(e.Errors, commandError{Code: code, Message: err.Error(), Actions: []string{}})
+			e.Errors = append(e.Errors, commandError{Code: code, Message: err.Error(), Actions: recoveryActions(err)})
 		}
 	}
 	switch result.Status {
@@ -2397,9 +2409,17 @@ func addRunDetails(store *state.Store, instance state.Instance, info *instanceIn
 	info.DirectURL, info.URL = manifest.Addresses["direct_url"], manifest.Addresses["url"]
 	base := filepath.Join(store.Root, "runs", instance.RunID)
 	info.LogPaths = map[string]string{"build": filepath.Join(base, "build.log"), "application": filepath.Join(base, "application.log"), "supervisor": filepath.Join(base, "supervisor.log")}
-	if info.State == "starting" || info.State == "running" || info.State == "ready" || info.State == "unhealthy" {
-		if record, err := store.ReadRun(instance.RunID); err == nil {
+	if record, err := store.ReadRun(instance.RunID); err == nil {
+		if liveState(info.State) && info.State != "restarting" {
 			info.PID = record.Child.PID
+		}
+		info.LastExit = record.LastExit
+		if info.State == "failed" && record.State != "failed" {
+			info.LastExit = &state.Exit{Reason: state.SupervisorLostReason}
+		}
+		info.ConsumerErrors = record.ConsumerErrors
+		if manifest.Launch.Restart != nil {
+			info.Restarts = &record.Restarts
 		}
 	}
 }
@@ -2464,7 +2484,7 @@ func configDrift(store *state.Store, instance state.Instance, currentDigest stri
 func addDependencyDetails(store *state.Store, project state.Project, worktree state.Worktree, service *config.Service, instance state.Instance, registered bool, info *instanceInfo, e *envelope) {
 	desired := copyBindings(instance.DesiredBindings)
 	effective := copyBindings(instance.EffectiveBindings)
-	live := !info.StateUnknown && (info.State == "starting" || info.State == "running" || info.State == "ready" || info.State == "unhealthy")
+	live := !info.StateUnknown && liveState(info.State)
 	var manifest *state.Manifest
 	if live && instance.RunID != "" {
 		m, err := store.ReadManifest(instance.RunID)
@@ -2668,6 +2688,16 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+func recoveryActions(err error) []string {
+	var recoverable interface{ Actions() []string }
+	if errors.As(err, &recoverable) {
+		if actions := recoverable.Actions(); actions != nil {
+			return actions
+		}
+	}
+	return []string{}
+}
+
 func failError(e *envelope, err error) {
 	code := "IO_ERROR"
 	var configErr *config.Error
@@ -2701,7 +2731,7 @@ func failError(e *envelope, err error) {
 	case errors.As(err, &diagnosticErr):
 		code = diagnosticErr.Code
 	}
-	e.fail(code, err.Error())
+	e.fail(code, proxyErrorMessage(err), recoveryActions(err)...)
 	if errors.As(err, &configErr) {
 		e.Errors[len(e.Errors)-1].Field = configErr.Field
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bettertomorrow-dev/rundevrun/internal/procid"
 	"golang.org/x/sys/unix"
@@ -93,14 +94,24 @@ type StopContract struct {
 	HookEnv     map[string]map[string]string `json:"hook_env,omitempty"`
 }
 type LaunchContract struct {
-	Command     string   `json:"command"`
-	Cwd         string   `json:"cwd"`
-	Env         []string `json:"env"`
-	Protocol    string   `json:"protocol"`
-	Port        int      `json:"port,omitempty"`
-	HealthPath  string   `json:"health_path,omitempty"`
-	HealthTCP   bool     `json:"health_tcp,omitempty"`
-	StopTimeout string   `json:"stop_timeout"`
+	Restart     *RestartPolicy `json:"restart,omitempty"`
+	Command     string         `json:"command"`
+	Cwd         string         `json:"cwd"`
+	Env         []string       `json:"env"`
+	Protocol    string         `json:"protocol"`
+	Port        int            `json:"port,omitempty"`
+	HealthPath  string         `json:"health_path,omitempty"`
+	HealthTCP   bool           `json:"health_tcp,omitempty"`
+	StopTimeout string         `json:"stop_timeout"`
+}
+type RestartPolicy struct {
+	Mode         string        `json:"mode"`
+	Delay        time.Duration `json:"delay"`
+	MaxDelay     time.Duration `json:"max_delay"`
+	StableAfter  time.Duration `json:"stable_after"`
+	MaxAttempts  int           `json:"max_attempts"`
+	Consumers    bool          `json:"consumers,omitempty"`
+	ReadyTimeout time.Duration `json:"ready_timeout"`
 }
 type Route struct {
 	Path        string `json:"path"`
@@ -118,13 +129,36 @@ type Manifest struct {
 	StopContract      StopContract      `json:"stop_contract"`
 	Launch            LaunchContract    `json:"launch"`
 }
+
+const SupervisorLostReason = "supervisor disappeared; exit status unavailable"
+
+type Exit struct {
+	Reason string    `json:"reason"`
+	Code   *int      `json:"code,omitempty"`
+	Signal string    `json:"signal,omitempty"`
+	Time   time.Time `json:"time,omitzero"`
+}
+
+func (e Exit) String() string {
+	if e.Signal != "" {
+		return e.Reason + " (signal " + e.Signal + ")"
+	}
+	if e.Code != nil {
+		return fmt.Sprintf("%s (code %d)", e.Reason, *e.Code)
+	}
+	return e.Reason
+}
+
 type RunRecord struct {
-	ErrorMessage string       `json:"error_message,omitempty"`
-	Claim        string       `json:"claim,omitempty"`
-	Supervisor   procid.Ref   `json:"supervisor"`
-	Child        procid.Ref   `json:"child"`
-	Members      []procid.Ref `json:"members,omitempty"`
-	State        string       `json:"state"`
+	LastExit       *Exit             `json:"last_exit,omitempty"`
+	Restarts       int               `json:"restarts,omitempty"`
+	ConsumerErrors map[string]string `json:"consumer_errors,omitempty"`
+	ErrorMessage   string            `json:"error_message,omitempty"`
+	Claim          string            `json:"claim,omitempty"`
+	Supervisor     procid.Ref        `json:"supervisor"`
+	Child          procid.Ref        `json:"child"`
+	Members        []procid.Ref      `json:"members,omitempty"`
+	State          string            `json:"state"`
 }
 
 func empty() Registry { return Registry{Schema: 1, Projects: map[string]json.RawMessage{}} }

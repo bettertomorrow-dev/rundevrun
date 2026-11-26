@@ -77,7 +77,7 @@ type graphPlanner struct {
 }
 
 func liveState(s string) bool {
-	return s == "starting" || s == "running" || s == "ready" || s == "unhealthy"
+	return s == "starting" || s == "restarting" || s == "running" || s == "ready" || s == "unhealthy"
 }
 func selectionID(s Selection) (string, error) {
 	if s.Project == nil || s.Worktree == nil || s.Service == "" {
@@ -220,6 +220,16 @@ func (g *graphPlanner) walk(s Selection) error {
 		for k, v := range n.plan.Bindings {
 			bindings[k] = v
 		}
+	} else if effective, ok := g.r.restartBindings[id]; ok {
+		if len(effective) != len(n.service.DependsOn) {
+			return &Error{"STATE_CONFLICT", fmt.Errorf("dependencies changed for %s", id)}
+		}
+		for _, dep := range n.service.DependsOn {
+			if effective[dep] == "" {
+				return &Error{"STATE_CONFLICT", fmt.Errorf("dependencies changed for %s", id)}
+			}
+		}
+		bindings = effective
 	} else {
 		for _, dep := range n.service.DependsOn {
 			target := n.saved.DesiredBindings[dep]
@@ -349,6 +359,7 @@ func (r *Runner) planGraph(ctx context.Context, action string, selections []Sele
 	return result, nil
 }
 func (g *graphPlanner) finalize() error {
+	holders := map[int]*reservedPort{}
 	for id := range g.reg.Projects {
 		p, err := g.reg.Project(id)
 		if err != nil {
@@ -362,6 +373,12 @@ func (g *graphPlanner) finalize() error {
 				if g.nodes[i.ID] != nil && i.Preparation != nil && i.Preparation.RunID == runID {
 					continue
 				}
+				if n := g.nodes[i.ID]; n != nil && n.plan.State == "failed" && i.RunID == runID {
+					if _, ok := g.r.reclaimableRun(runID); ok {
+						continue
+					}
+				}
+				holders[v] = &reservedPort{port: v, instanceID: i.ID, runID: runID}
 				g.used[v] = true
 			}
 		}
@@ -371,7 +388,10 @@ func (g *graphPlanner) finalize() error {
 		if !n.live || g.replace[id] {
 			if p, ok := n.service.Port.(int64); ok {
 				if g.used[int(p)] && !(g.replace[id] && n.saved.Reservations[n.saved.RunID] == int(p)) {
-					return &Error{"PORT_CONFLICT", fmt.Errorf("port %d is already reserved", p)}
+					if holder := holders[int(p)]; holder != nil {
+						return &Error{"PORT_CONFLICT", holder}
+					}
+					return &Error{"PORT_CONFLICT", fmt.Errorf("selected instances request the same port %d", p)}
 				}
 				g.used[int(p)] = true
 			}

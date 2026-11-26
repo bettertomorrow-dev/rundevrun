@@ -4,10 +4,12 @@ package cli
 import (
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -72,7 +74,7 @@ func textStatus(state string, color bool) string {
 	switch state {
 	case "ready", "running":
 		return terminalSymbol("●", "32", color)
-	case "starting":
+	case "starting", "restarting":
 		return terminalSymbol("○", "36", color)
 	case "failed", "unhealthy":
 		return lifecycleSymbol("failed", color)
@@ -168,6 +170,22 @@ func writeServiceList(b *strings.Builder, e envelope, color bool) {
 			if note != "" {
 				fmt.Fprintf(b, "  %s\n", singleLine(note))
 			}
+		}
+		if row.LastExit != nil {
+			when := ""
+			if !row.LastExit.Time.IsZero() {
+				when = " at " + row.LastExit.Time.Local().Format(time.RFC3339)
+			}
+			fmt.Fprintf(b, "  Last exit: %s%s\n", singleLine(row.LastExit.String()), when)
+			if row.State == "failed" && row.LogPaths["application"] != "" {
+				fmt.Fprintf(b, "  Log: %s\n", singleLine(row.LogPaths["application"]))
+			}
+		}
+		if row.Restarts != nil && *row.Restarts > 0 {
+			fmt.Fprintf(b, "  Restarts: %d\n", *row.Restarts)
+		}
+		for _, id := range slices.Sorted(maps.Keys(row.ConsumerErrors)) {
+			fmt.Fprintf(b, "  Consumer %s: %s\n", singleLine(id), singleLine(row.ConsumerErrors[id]))
 		}
 		if row.RestartRequired {
 			b.WriteString("  Restart required.\n")
